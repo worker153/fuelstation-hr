@@ -13,6 +13,34 @@ const MONTHS = ['January','February','March','April','May','June',
 
 const fmt = n => `₦${Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
+const REASON_OPTIONS = [
+  { value: 'cash_shortage',      label: 'Cash Shortage'      },
+  { value: 'fuel_shortage',      label: 'Fuel Shortage'      },
+  { value: 'equipment_damage',   label: 'Equipment Damage'   },
+  { value: 'customer_complaint', label: 'Customer Complaint' },
+  { value: 'late_arrival',       label: 'Late Arrival'       },
+  { value: 'absent',             label: 'Absent'             },
+  { value: 'other',              label: 'Other'              },
+];
+
+const REASON_LABELS = Object.fromEntries(REASON_OPTIONS.map(r => [r.value, r.label]));
+
+const SOURCE_CFG = {
+  late_arrival: { icon: '🕐', label: 'Auto · Late',    cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  absent:       { icon: '❌', label: 'Auto · Absent',  cls: 'bg-red-50 text-red-700 border border-red-200' },
+  no_clockin:   { icon: '👻', label: 'Auto · No Show', cls: 'bg-red-50 text-red-700 border border-red-200' },
+};
+
+const SourceBadge = ({ source }) => {
+  const cfg = SOURCE_CFG[source];
+  if (!cfg) return null;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.cls}`}>
+      {cfg.icon} {cfg.label}
+    </span>
+  );
+};
+
 const StatusBadge = ({ status }) => {
   const map = {
     pending:  { cls: 'bg-amber-100 text-amber-700',  icon: Clock,        label: 'Pending'  },
@@ -36,6 +64,7 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
   const [year,     setYear    ] = useState(now.getFullYear());
   const [date,     setDate    ] = useState(now.toISOString().split('T')[0]);
   const [amount,   setAmount  ] = useState('');
+  const [reason,   setReason  ] = useState('cash_shortage');
   const [notes,    setNotes   ] = useState('');
   const [loading,  setLoading ] = useState(false);
   const years = Array.from({ length: 3 }, (_, i) => now.getFullYear() - i);
@@ -46,7 +75,7 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
     if (!amount || Number(amount) <= 0) return notify('Enter a valid amount', 'error');
     setLoading(true);
     try {
-      const { data } = await api.post('/shortages', { workerId, month, year, date, amount: Number(amount), notes });
+      const { data } = await api.post('/shortages', { workerId, month, year, date, amount: Number(amount), reason, notes });
       notify('Shortage submitted for approval ✓');
       onSubmitted(data.data);
     } catch (err) {
@@ -102,6 +131,13 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
             <label className="label">Shortage Amount (₦) *</label>
             <input type="number" min="1" className="input" placeholder="e.g. 5000"
               value={amount} onChange={e => setAmount(e.target.value)} required />
+          </div>
+
+          <div>
+            <label className="label">Reason *</label>
+            <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
+              {REASON_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
           </div>
 
           <div>
@@ -355,14 +391,22 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
               <Building2 size={10} /> {shortage.branchName}
             </span>
           )}
+          <SourceBadge source={shortage.source} />
         </div>
         <div className="flex items-center gap-3 mt-1 flex-wrap">
           <span className="text-sm font-bold text-red-600">{fmt(shortage.amount)}</span>
+          {shortage.reason && shortage.reason !== 'other' && (
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+              {REASON_LABELS[shortage.reason] || shortage.reason}
+            </span>
+          )}
           <span className="text-xs text-gray-400">{MONTHS[(shortage.month||1)-1]} {shortage.year}</span>
           {shortage.date && <span className="text-xs text-gray-400">{new Date(shortage.date).toLocaleDateString('en-NG')}</span>}
-          {shortage.submittedBy?.name
-            ? <span className="text-xs text-gray-400">by {shortage.submittedBy.name}</span>
-            : <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full">🔑 PIN</span>
+          {shortage.source && shortage.source !== 'manual'
+            ? <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full">Auto-deduction</span>
+            : shortage.submittedBy?.name
+              ? <span className="text-xs text-gray-400">by {shortage.submittedBy.name}</span>
+              : <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full">🔑 PIN</span>
           }
         </div>
         {shortage.notes && <p className="text-xs text-gray-500 mt-1 italic">"{shortage.notes}"</p>}
@@ -400,9 +444,15 @@ function ShortageRow({ shortage, isAdmin, onApprove, onReject, onDelete }) {
           {shortage.branchName && (
             <span className="text-xs text-gray-500">· {shortage.branchName}</span>
           )}
+          <SourceBadge source={shortage.source} />
         </div>
         <div className="flex items-center gap-3 mt-0.5 flex-wrap">
           <span className="text-sm font-bold text-red-600">{fmt(shortage.amount)}</span>
+          {shortage.reason && shortage.reason !== 'other' && (
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+              {REASON_LABELS[shortage.reason] || shortage.reason}
+            </span>
+          )}
           <span className="text-xs text-gray-400">{MONTHS[(shortage.month||1)-1]} {shortage.year}</span>
           {shortage.date && <span className="text-xs text-gray-400">{new Date(shortage.date).toLocaleDateString('en-NG')}</span>}
         </div>
@@ -411,11 +461,13 @@ function ShortageRow({ shortage, isAdmin, onApprove, onReject, onDelete }) {
           <p className="text-xs text-red-500 mt-0.5">Reason: {shortage.rejectionReason}</p>
         )}
         <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-          {shortage.submittedBy?.name
-            ? <>Submitted by {shortage.submittedBy.name}</>
-            : <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">
-                🔑 Self-service (PIN)
-              </span>
+          {shortage.source && shortage.source !== 'manual'
+            ? <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full font-medium">Auto-deduction</span>
+            : shortage.submittedBy?.name
+              ? <>Submitted by {shortage.submittedBy.name}</>
+              : <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">
+                  🔑 Self-service (PIN)
+                </span>
           }
           {' · '}
           {new Date(shortage.createdAt).toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' })}

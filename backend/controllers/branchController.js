@@ -200,7 +200,8 @@ const createBranch = async (req, res) => {
     location:  location || undefined,
     phone:     phone?.trim(),
     manager:   managerId || undefined,
-    createdBy: req.user._id
+    createdBy: req.user._id,
+    attendanceSettings: req.body.attendanceSettings || undefined,
   });
 
   await branch.populate('manager', 'name email role');
@@ -228,6 +229,13 @@ const updateBranch = async (req, res) => {
       if (!mgr) return res.status(400).json({ success: false, message: 'Manager not found' });
       branch.manager = managerId;
     }
+  }
+
+  if (req.body.attendanceSettings) {
+    branch.attendanceSettings = {
+      ...(branch.attendanceSettings?.toObject?.() || {}),
+      ...req.body.attendanceSettings,
+    };
   }
 
   await branch.save();

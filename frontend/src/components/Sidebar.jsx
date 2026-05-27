@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
-  Building2, Briefcase, Clock, ReceiptText, AlertTriangle, Smartphone, KeyRound
+  Building2, Briefcase, Clock, CalendarCheck, ReceiptText, AlertTriangle, Smartphone, KeyRound
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -19,8 +19,9 @@ export default function Sidebar({ onClose }) {
     { to: '/workers',        icon: Users,           label: 'Workers',         show: true },
     { to: '/active-workers', icon: Briefcase,       label: 'Active Workers',  show: true },
     { to: '/branches',       icon: Building2,       label: 'Branches',        show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
-    { to: '/shifts',         icon: Clock,           label: 'Shifts',          show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
-    { to: '/payroll',        icon: ReceiptText,     label: 'Payroll',         show: isSuperAdmin() || can('manageBranches') },
+    { to: '/shifts',      icon: Clock,          label: 'Shifts',     show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
+    { to: '/attendance',  icon: CalendarCheck,  label: 'Attendance', show: isSuperAdmin() || can('manageBranches') },
+    { to: '/payroll',     icon: ReceiptText,    label: 'Payroll',    show: isSuperAdmin() || can('manageBranches') },
     { to: '/shortages',      icon: AlertTriangle,   label: 'Shortages',       show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
     { to: '/approval-queue',     icon: ShieldCheck, label: 'Approval Queue',    show: isSuperAdmin() },
     { to: '/staff',              icon: UserCog,     label: 'Staff',             show: isSuperAdmin() },

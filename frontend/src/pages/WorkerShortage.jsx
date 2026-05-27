@@ -110,6 +110,7 @@ export default function WorkerShortage() {
   const [supervisor,     setSupervisor    ] = useState(null);
   const [targetWorker,   setTargetWorker  ] = useState(null);
   const [amount,         setAmount        ] = useState('');
+  const [reason,         setReason        ] = useState('cash_shortage');
   const [notes,          setNotes         ] = useState('');
   const [date,           setDate          ] = useState(new Date().toISOString().split('T')[0]);
   const [loading,        setLoading       ] = useState(false);
@@ -145,7 +146,7 @@ export default function WorkerShortage() {
     if (!amount || Number(amount) <= 0) return setError('Enter a valid amount');
     setLoading(true); setError('');
     try {
-      const payload = { pin, amount: Number(amount), notes, date };
+      const payload = { pin, amount: Number(amount), reason, notes, date };
       if (targetWorker._id !== supervisor._id) payload.targetWorkerId = targetWorker._id;
       const { data } = await axios.post(`${BASE}/shortages/worker`, payload);
       setResult(data);
@@ -279,6 +280,19 @@ export default function WorkerShortage() {
                   <input type="date"
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"
                     value={date} onChange={e => setDate(e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Reason *</label>
+                  <select
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                    value={reason} onChange={e => setReason(e.target.value)}>
+                    <option value="cash_shortage">Cash Shortage</option>
+                    <option value="fuel_shortage">Fuel Shortage</option>
+                    <option value="equipment_damage">Equipment Damage</option>
+                    <option value="customer_complaint">Customer Complaint</option>
+                    <option value="other">Other</option>
+                  </select>
                 </div>
 
                 <div>

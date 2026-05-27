@@ -23,6 +23,7 @@ import AttendanceDevices   from './pages/AttendanceDevices';
 import AttendanceTerminal  from './pages/AttendanceTerminal';
 import WorkerPins          from './pages/WorkerPins';
 import WorkerPinReset     from './pages/WorkerPinReset';
+import Attendance         from './pages/Attendance';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="/shifts"        element={<Shifts />} />
               <Route path="/payroll"       element={<Payroll />} />
               <Route path="/shortages"     element={<Shortages />} />
+              <Route path="/attendance"    element={<Attendance />} />
 
               <Route path="/workers/new"                                    element={<WorkerForm />} />
               <Route path="/workers/:id"                                    element={<WorkerDetail />} />

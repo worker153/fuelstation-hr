@@ -1,7 +1,9 @@
 const Attendance       = require('../models/Attendance');
 const AttendanceDevice = require('../models/AttendanceDevice');
 const Worker           = require('../models/Worker');
+const Branch           = require('../models/Branch');
 const cloudinary       = require('../config/cloudinary');
+const { createAttendanceShortage } = require('./shortageController');
 
 // Haversine distance in metres between two GPS coordinates
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -125,6 +127,55 @@ const terminalClock = async (req, res) => {
     ...(gps ? { lastGPS: { ...gps, updatedAt: now } } : {}),
   }).exec();
 
+  // ── Step 7: auto-deduction for late/absent clock-in ──────────────────────────
+  if (type === 'clock_in') {
+    try {
+      const branch   = await Branch.findById(device.branch).lean();
+      const settings = branch?.attendanceSettings;
+
+      if (settings && (settings.lateDeductionAmount > 0 || settings.absentDeductionAmount > 0)) {
+        const clockH    = now.getHours();
+        const clockM    = now.getMinutes();
+        const clockMins = clockH * 60 + clockM;
+
+        const [dlH, dlM] = (settings.clockInDeadline || '07:00').split(':').map(Number);
+        const [atH, atM] = (settings.absentThreshold  || '09:00').split(':').map(Number);
+        const deadlineMins  = dlH * 60 + dlM;
+        const thresholdMins = atH * 60 + atM;
+        const timeStr = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
+        const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
+
+        if (clockMins >= thresholdMins && settings.absentDeductionAmount > 0) {
+          await createAttendanceShortage({
+            company:     device.company,
+            worker,
+            branchId:    device.branch,
+            branchName:  device.branchName,
+            amount:      settings.absentDeductionAmount,
+            source:      'absent',
+            reason:      'absent',
+            attendanceDate,
+            notes: `Absent — arrived at ${timeStr} (threshold: ${settings.absentThreshold})`,
+          });
+        } else if (clockMins > deadlineMins && settings.lateDeductionAmount > 0) {
+          await createAttendanceShortage({
+            company:     device.company,
+            worker,
+            branchId:    device.branch,
+            branchName:  device.branchName,
+            amount:      settings.lateDeductionAmount,
+            source:      'late_arrival',
+            reason:      'late_arrival',
+            attendanceDate,
+            notes: `Late arrival — clocked in at ${timeStr} (deadline: ${settings.clockInDeadline})`,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Auto-deduction error:', e.message);
+    }
+  }
+
   res.status(201).json({
     success: true,
     message: `${type === 'clock_in' ? 'Clocked in' : 'Clocked out'} — ${worker.fullName}`,
@@ -219,4 +270,66 @@ const todaySummary = async (req, res) => {
   res.json({ success: true, data: Object.entries(byWorker).map(([id, v]) => ({ worker: id, ...v })), date: today });
 };
 
-module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary };
+// ── POST /api/attendance/process-absences  (admin — mark no-shows for a date) ──
+const processAbsences = async (req, res) => {
+  const { branchId, date } = req.body;   // date = 'YYYY-MM-DD'
+  if (!branchId || !date)
+    return res.status(400).json({ success: false, message: 'branchId and date are required' });
+
+  const [yr, mo, dy] = date.split('-').map(Number);
+  const localDate = new Date(yr, mo - 1, dy);
+  if (isNaN(localDate.getTime()))
+    return res.status(400).json({ success: false, message: 'Invalid date' });
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (localDate > today)
+    return res.status(400).json({ success: false, message: 'Cannot process absences for a future date' });
+
+  const cid    = req.user.company._id;
+  const branch = await Branch.findOne({ _id: branchId, company: cid }).lean();
+  if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
+
+  const settings       = branch.attendanceSettings || {};
+  const deductionAmount = settings.absentDeductionAmount || 0;
+
+  // Skip if it's not a configured work day
+  if (settings.workDays?.length) {
+    if (!settings.workDays.includes(localDate.getDay()))
+      return res.json({ success: true, processed: 0, total: 0, message: 'Not a configured work day for this branch' });
+  }
+
+  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active' }).lean();
+  const clockedIn = await Attendance.find({ company: cid, branch: branchId, date, type: 'clock_in' })
+    .distinct('worker');
+  const clockedSet = new Set(clockedIn.map(String));
+
+  const absentWorkers = workers.filter(w => !clockedSet.has(String(w._id)));
+
+  let processed = 0;
+  if (deductionAmount > 0) {
+    for (const worker of absentWorkers) {
+      const result = await createAttendanceShortage({
+        company:  cid,
+        worker,
+        branchId: branch._id,
+        branchName: branch.name,
+        amount:   deductionAmount,
+        source:   'no_clockin',
+        reason:   'no_clockin',
+        attendanceDate: localDate,
+        notes:    `No clock-in — absent on ${date}`,
+      });
+      if (!result._alreadyExisted) processed++;
+    }
+  }
+
+  res.json({
+    success:  true,
+    processed,
+    total:    absentWorkers.length,
+    message:  deductionAmount > 0
+      ? `${processed} absence deduction(s) recorded for ${date}`
+      : `${absentWorkers.length} absent worker(s) found (no deduction amount configured)`,
+  });
+};
+
+module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences };

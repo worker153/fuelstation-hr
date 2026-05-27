@@ -6,9 +6,61 @@ const Payroll  = require('../models/Payroll');
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
+// ─── Shared helper: create an auto-approved attendance-based shortage ─────────
+// Idempotent: returns existing record if already created for same worker/source/date.
+const createAttendanceShortage = async ({
+  company, worker, branchId, branchName,
+  amount, source, reason, attendanceDate, notes,
+}) => {
+  // Idempotency check
+  const existing = await Shortage.findOne({
+    company, worker: worker._id, source, attendanceDate,
+    status: { $ne: 'rejected' },
+  }).lean();
+  if (existing) return { ...existing, _alreadyExisted: true };
+
+  const month = attendanceDate.getMonth() + 1;
+  const year  = attendanceDate.getFullYear();
+
+  const shortage = await Shortage.create({
+    company, branchId, branchName,
+    worker:     worker._id,
+    workerName: worker.fullName,
+    workerRole: worker.role,
+    month, year,
+    date: attendanceDate, attendanceDate,
+    amount, notes, reason, source,
+    status:     'approved',
+    reviewedAt: new Date(),
+    submittedBy: null,
+  });
+
+  // Auto-sync to draft payroll (same pattern as manual approval)
+  try {
+    const payroll = await Payroll.findOne({ company, branchId, month, year, status: 'draft' });
+    if (payroll) {
+      const allApproved = await Shortage.find({
+        company, worker: worker._id, branchId, month, year, status: 'approved',
+      }).lean();
+      const total = allApproved.reduce((s, x) => s + x.amount, 0);
+      const entry = payroll.entries.find(e => String(e.worker) === String(worker._id));
+      if (entry) {
+        payroll.entries = payroll.entries.map(e => {
+          const plain = e.toObject();
+          if (String(plain.worker) === String(worker._id)) plain.shortage = total;
+          return plain;
+        });
+        await payroll.save();
+      }
+    }
+  } catch (e) { console.error('payroll sync error:', e.message); }
+
+  return shortage;
+};
+
 // ─── POST /api/shortages  (supervisor submits) ────────────────────────────────
 const submitShortage = async (req, res) => {
-  const { workerId, branchId, month, year, date, amount, notes } = req.body;
+  const { workerId, branchId, month, year, date, amount, notes, reason } = req.body;
 
   if (!workerId || !month || !year || amount == null)
     return res.status(400).json({ success: false, message: 'workerId, month, year and amount are required' });
@@ -39,6 +91,8 @@ const submitShortage = async (req, res) => {
     date:        date ? new Date(date) : undefined,
     amount:      Number(amount),
     notes:       notes?.trim() || '',
+    reason:      reason || 'cash_shortage',
+    source:      'manual',
     submittedBy: req.user._id,
     status:      'pending'
   });
@@ -184,7 +238,7 @@ const getShortagesSummary = async (req, res) => {
 
 // ─── POST /api/shortages/worker  (public — worker enters PIN, auto-approved) ──
 const workerPinSubmit = async (req, res) => {
-  const { pin, amount, notes, date, targetWorkerId } = req.body;
+  const { pin, amount, notes, reason, date, targetWorkerId } = req.body;
 
   if (!pin)    return res.status(400).json({ success: false, message: 'PIN is required' });
   if (!amount || Number(amount) <= 0)
@@ -224,6 +278,8 @@ const workerPinSubmit = async (req, res) => {
     date:        date ? new Date(date) : now,
     amount:      Number(amount),
     notes:       notes?.trim() || '',
+    reason:      reason || 'cash_shortage',
+    source:      'manual',
     submittedBy: null,   // self-service — no staff user
     status:      'approved',  // auto-approved
     reviewedAt:  now
@@ -321,5 +377,6 @@ const workerPinLookup = async (req, res) => {
 
 module.exports = {
   submitShortage, getShortages, approveShortage, rejectShortage,
-  deleteShortage, getShortagesSummary, workerPinSubmit, workerPinLookup
+  deleteShortage, getShortagesSummary, workerPinSubmit, workerPinLookup,
+  createAttendanceShortage,
 };

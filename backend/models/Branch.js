@@ -17,7 +17,15 @@ const branchSchema = new mongoose.Schema({
   phone:    { type: String, trim: true },
   manager:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   isActive: { type: Boolean, default: true },
-  createdBy:{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  createdBy:{ type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+  attendanceSettings: {
+    clockInDeadline:       { type: String, default: '07:00' },
+    absentThreshold:       { type: String, default: '09:00' },
+    lateDeductionAmount:   { type: Number, default: 0 },
+    absentDeductionAmount: { type: Number, default: 0 },
+    workDays:              { type: [Number], default: [1,2,3,4,5,6] },
+  },
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });

@@ -19,6 +19,19 @@ const shortageSchema = new mongoose.Schema({
   amount: { type: Number, required: true, min: 0 },
   notes:  { type: String, trim: true },
 
+  reason: {
+    type: String,
+    enum: ['cash_shortage','fuel_shortage','equipment_damage',
+           'customer_complaint','late_arrival','absent','no_clockin','other'],
+    default: 'other',
+  },
+  source: {
+    type: String,
+    enum: ['manual','late_arrival','absent','no_clockin'],
+    default: 'manual',
+  },
+  attendanceDate: { type: Date },
+
   status: {
     type: String,
     enum: ['pending', 'approved', 'rejected'],
@@ -32,6 +45,7 @@ const shortageSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 shortageSchema.index({ company: 1, status: 1 });
+shortageSchema.index({ company: 1, worker: 1, source: 1, attendanceDate: 1 });
 shortageSchema.index({ company: 1, worker: 1, month: 1, year: 1 });
 shortageSchema.index({ company: 1, branchId: 1, month: 1, year: 1 });
 

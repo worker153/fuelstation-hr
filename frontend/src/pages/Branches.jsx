@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   GitBranch, Plus, Edit2, Phone, MapPin, User, Users,
   CheckCircle, XCircle, X, Save, Loader, ToggleLeft, ToggleRight,
-  Building2, Navigation, Link2, AlertCircle
+  Building2, Navigation, Link2, AlertCircle, Clock, ChevronDown
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -56,9 +56,18 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     phone:     branch?.phone     || '',
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
+    attendanceSettings: {
+      clockInDeadline:       branch?.attendanceSettings?.clockInDeadline       || '06:00',
+      absentThreshold:       branch?.attendanceSettings?.absentThreshold       || '08:00',
+      lateDeductionAmount:   branch?.attendanceSettings?.lateDeductionAmount   || 0,
+      absentDeductionAmount: branch?.attendanceSettings?.absentDeductionAmount || 0,
+      workDays:              branch?.attendanceSettings?.workDays              || [1,2,3,4,5,6],
+    },
   });
+  const [showAttendance, setShowAttendance] = useState(false);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set    = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setAs  = (k, v) => setForm(f => ({ ...f, attendanceSettings: { ...f.attendanceSettings, [k]: v } }));
 
   // ── Google Maps import ──────────────────────────────────────────────────────
   const importFromMaps = async () => {
@@ -163,11 +172,12 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = {
-        name:      form.name.trim(),
-        address:   form.address.trim(),
-        phone:     form.phone.trim(),
-        managerId: form.managerId || null,
-        location:  form.location  || null,
+        name:               form.name.trim(),
+        address:            form.address.trim(),
+        phone:              form.phone.trim(),
+        managerId:          form.managerId || null,
+        location:           form.location  || null,
+        attendanceSettings: form.attendanceSettings,
       };
       const res = branch
         ? await api.put(`/branches/${branch._id}`, payload)
@@ -279,6 +289,73 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Attendance Settings */}
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <button type="button" onClick={() => setShowAttendance(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
+              <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <Clock size={14} /> Attendance Rules
+              </span>
+              <ChevronDown size={14} className={`text-gray-400 transition-transform ${showAttendance ? 'rotate-180' : ''}`} />
+            </button>
+            {showAttendance && (
+              <div className="px-4 py-4 space-y-4 border-t border-gray-100">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Clock-in Deadline</label>
+                    <input type="time" className="input"
+                      value={form.attendanceSettings.clockInDeadline}
+                      onChange={e => setAs('clockInDeadline', e.target.value)} />
+                    <p className="text-xs text-gray-400 mt-1">Late if clocked in after this</p>
+                  </div>
+                  <div>
+                    <label className="label">Absent Threshold</label>
+                    <input type="time" className="input"
+                      value={form.attendanceSettings.absentThreshold}
+                      onChange={e => setAs('absentThreshold', e.target.value)} />
+                    <p className="text-xs text-gray-400 mt-1">Absent even if they do clock in</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Late Deduction (₦)</label>
+                    <input type="number" min="0" className="input"
+                      value={form.attendanceSettings.lateDeductionAmount}
+                      onChange={e => setAs('lateDeductionAmount', Number(e.target.value))} />
+                  </div>
+                  <div>
+                    <label className="label">Absent Deduction (₦)</label>
+                    <input type="number" min="0" className="input"
+                      value={form.attendanceSettings.absentDeductionAmount}
+                      onChange={e => setAs('absentDeductionAmount', Number(e.target.value))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Work Days</label>
+                  <div className="flex gap-3 flex-wrap mt-1">
+                    {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day, i) => (
+                      <label key={i} className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox"
+                          checked={form.attendanceSettings.workDays.includes(i)}
+                          onChange={e => {
+                            const cur = form.attendanceSettings.workDays;
+                            setAs('workDays', e.target.checked
+                              ? [...cur, i].sort((a,b) => a-b)
+                              : cur.filter(d => d !== i));
+                          }} />
+                        <span className="text-sm text-gray-700">{day}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
+                  ⚠️ Times use server clock (UTC). For Nigeria (WAT = UTC+1), enter 1 hour earlier —
+                  e.g. 6:30 AM WAT → enter <strong>05:30</strong>. Set amounts to ₦0 to disable auto-deductions.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Map pin (optional manual override) */}
@@ -424,6 +501,19 @@ function BranchCard({ branch, canManage, onEdit, onToggle }) {
             </div>
           )}
         </div>
+
+        {/* Attendance settings summary */}
+        {(branch.attendanceSettings?.lateDeductionAmount > 0 ||
+          branch.attendanceSettings?.absentDeductionAmount > 0) && (
+          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg">
+            <Clock size={11} className="shrink-0" />
+            <span>
+              Deadline {branch.attendanceSettings.clockInDeadline}
+              {' · '}Late ₦{Number(branch.attendanceSettings.lateDeductionAmount).toLocaleString()}
+              {' · '}Absent ₦{Number(branch.attendanceSettings.absentDeductionAmount).toLocaleString()}
+            </span>
+          </div>
+        )}
 
         {/* View workers link */}
         <div className="pt-2 border-t border-gray-100">
