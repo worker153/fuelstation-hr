@@ -728,6 +728,68 @@ const uploadCompanyStamp = async (req, res) => {
   res.json({ success: true, data: worker });
 };
 
+// ─── POST /api/workers/self-reset-pin  (PUBLIC — worker resets own PIN via phone verification) ──
+const selfResetPin = async (req, res) => {
+  const { workerId, phone, newPin } = req.body;
+
+  if (!workerId || !phone || !newPin)
+    return res.status(400).json({ success: false, message: 'workerId, phone and newPin are required' });
+  if (!/^\d{4}$/.test(String(newPin)))
+    return res.status(400).json({ success: false, message: 'New PIN must be exactly 4 digits' });
+
+  // Find worker and verify phone matches
+  const worker = await Worker.findOne({ _id: workerId, employmentStatus: 'active' });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found or not active' });
+
+  // Normalise phone: strip spaces and leading zeros/country codes for comparison
+  const normalise = p => String(p).replace(/\s+/g, '').replace(/^(\+234|234|0)/, '');
+  if (normalise(worker.phone) !== normalise(phone))
+    return res.status(400).json({ success: false, message: 'Phone number does not match our records' });
+
+  // Ensure new PIN is not already used by someone else in the same company
+  const conflict = await Worker.findOne({
+    pin:     String(newPin),
+    company: worker.company,
+    _id:     { $ne: worker._id }
+  });
+  if (conflict)
+    return res.status(400).json({ success: false, message: 'That PIN is already in use — choose a different one' });
+
+  worker.pin = String(newPin);
+  await worker.save();
+
+  res.json({
+    success: true,
+    message: 'PIN reset successfully — use your new PIN on the attendance terminal',
+  });
+};
+
+// ─── POST /api/workers/search-by-name  (PUBLIC — for PIN reset worker search) ──
+const searchByName = async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.trim().length < 2)
+    return res.status(400).json({ success: false, message: 'Enter at least 2 characters' });
+
+  const workers = await Worker.find({
+    fullName:         { $regex: q.trim(), $options: 'i' },
+    employmentStatus: 'active',
+  })
+    .select('fullName role branch passportPhoto')
+    .limit(8)
+    .lean();
+
+  res.json({
+    success: true,
+    data: workers.map(w => ({
+      _id:      w._id,
+      fullName: w.fullName,
+      role:     w.role,
+      branch:   w.branch,
+      photo:    w.passportPhoto?.url,
+    }))
+  });
+};
+
 // ─── GET /api/workers/pins  (super admin — list all workers + their PINs) ─────
 const getWorkerPins = async (req, res) => {
   const cid = req.user.company._id;
@@ -815,7 +877,7 @@ const updateWorkerPin = async (req, res) => {
 
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
-  getWorkerPins, bulkGeneratePins,
+  getWorkerPins, bulkGeneratePins, selfResetPin, searchByName,
   uploadSignature, updateAddressLocation,
   uploadVerificationDoc, deleteVerificationDoc, updateVerificationStatus,
   updateHouseVerification, deleteHousePhoto,

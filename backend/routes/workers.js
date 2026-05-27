@@ -16,7 +16,12 @@ const {
   updateSalary, updateBank,
   updateWorkerPin,
   getWorkerPins, bulkGeneratePins,
+  selfResetPin, searchByName,
 } = require('../controllers/workerController');
+
+// ── Public routes (NO auth required — before protect) ─────────────────────────
+router.get('/search-by-name', searchByName);
+router.post('/self-reset-pin', selfResetPin);
 
 router.use(protect);
 
