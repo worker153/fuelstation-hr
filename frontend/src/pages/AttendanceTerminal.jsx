@@ -211,33 +211,46 @@ function PinPad({ onComplete, loading, error, onClearError }) {
 
 // ── Face Camera hook ──────────────────────────────────────────────────────────
 function useFaceCamera() {
-  const videoRef    = useRef(null);
-  const overlayRef  = useRef(null);
-  const captureRef  = useRef(null);
-  const streamRef   = useRef(null);
-  const loopRef     = useRef(null);
+  // videoNodeRef holds the actual DOM element (used by detection loops)
+  const videoNodeRef = useRef(null);
+  const overlayRef   = useRef(null);
+  const captureRef   = useRef(null);
+  const streamRef    = useRef(null);
+  const loopRef      = useRef(null);
 
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }
-      });
-      streamRef.current = stream;
-      // Attach now if video is already mounted; if not, components attach via attachStream()
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-      return true;
-    } catch { return false; }
+  // Callback ref — React calls this synchronously when <video> mounts/unmounts.
+  // This guarantees the stream is attached the instant the element enters the DOM.
+  const videoRef = useCallback(node => {
+    videoNodeRef.current = node;
+    if (node && streamRef.current) {
+      node.srcObject = streamRef.current;
+      node.play().catch(() => {});
+    }
   }, []);
 
-  // Call this after your scanning stage renders the <video> element
-  const attachStream = useCallback(() => {
-    if (videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-      videoRef.current.play().catch(() => {});
+  const startCamera = useCallback(async () => {
+    // Try front-facing first, fall back to any camera, then bare true
+    const attempts = [
+      { video: { facingMode: 'user' } },
+      { video: { facingMode: { ideal: 'user' } } },
+      { video: true },
+    ];
+    let stream = null;
+    let lastErr = '';
+    for (const constraints of attempts) {
+      try { stream = await navigator.mediaDevices.getUserMedia(constraints); break; }
+      catch (e) { lastErr = e?.name || 'Unknown'; }
     }
+    if (!stream) return { ok: false, error: lastErr };
+
+    streamRef.current = stream;
+    // If <video> is already in the DOM, attach immediately
+    if (videoNodeRef.current) {
+      videoNodeRef.current.srcObject = stream;
+      await videoNodeRef.current.play().catch(() => {});
+    }
+    // If not yet mounted, the callback ref above will attach on mount
+    return { ok: true };
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -247,7 +260,7 @@ function useFaceCamera() {
   }, []);
 
   const captureFrame = useCallback(() => {
-    const v = videoRef.current, c = captureRef.current;
+    const v = videoNodeRef.current, c = captureRef.current;
     if (!v || !c) return null;
     c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext('2d').drawImage(v, 0, 0);
@@ -256,7 +269,7 @@ function useFaceCamera() {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  return { videoRef, overlayRef, captureRef, loopRef, streamRef, startCamera, stopCamera, captureFrame, attachStream };
+  return { videoRef, videoNodeRef, overlayRef, captureRef, loopRef, streamRef, startCamera, stopCamera, captureFrame };
 }
 
 // ── Model loader (singleton — loads once) ─────────────────────────────────────
@@ -275,8 +288,8 @@ async function loadModels(onProgress) {
 
 // ── Face REGISTER step (first time only) ──────────────────────────────────────
 function FaceRegister({ worker, token, onDone, onBack }) {
-  const { videoRef, overlayRef, captureRef, loopRef, startCamera, stopCamera, captureFrame, attachStream } = useFaceCamera();
-  const [stage,    setStage   ] = useState('loading');  // loading | ready | scanning | captured | saving | error
+  const { videoRef, videoNodeRef, overlayRef, captureRef, loopRef, startCamera, stopCamera, captureFrame } = useFaceCamera();
+  const [stage,    setStage   ] = useState('loading');  // loading | scanning | captured | saving | error
   const [progress, setProgress] = useState(0);
   const [faceOk,   setFaceOk  ] = useState(false);
   const [error,    setError   ] = useState('');
@@ -289,26 +302,24 @@ function FaceRegister({ worker, token, onDone, onBack }) {
     (async () => {
       try {
         await loadModels(p => { if (!cancelled) setProgress(p); });
-        const ok = await startCamera();
-        if (!cancelled) setStage(ok ? 'scanning' : 'error');
-      } catch { if (!cancelled) setStage('error'); }
+        const result = await startCamera();
+        if (!cancelled) {
+          if (result.ok) setStage('scanning');
+          else { setError(result.error === 'NotAllowedError' ? 'Camera permission denied — allow camera in your browser settings' : `Camera unavailable (${result.error})`); setStage('error'); }
+        }
+      } catch (e) { if (!cancelled) { setError(String(e)); setStage('error'); } }
     })();
     return () => { cancelled = true; stopCamera(); };
   }, [startCamera, stopCamera]);
-
-  // Re-attach stream once <video> is in the DOM (fixes black screen on mobile)
-  useEffect(() => {
-    if (stage === 'scanning') attachStream();
-  }, [stage, attachStream]);
 
   // Detection loop — wait for clear face before capturing
   useEffect(() => {
     if (stage !== 'scanning') return;
 
     const loop = async () => {
-      const video   = videoRef.current;
+      const video   = videoNodeRef.current;
       const overlay = overlayRef.current;
-      if (!video || !overlay) { loopRef.current = requestAnimationFrame(loop); return; }
+      if (!video || !overlay || video.readyState < 2) { loopRef.current = requestAnimationFrame(loop); return; }
 
       try {
         const det = await faceapi
@@ -332,7 +343,6 @@ function FaceRegister({ worker, token, onDone, onBack }) {
           ctx.strokeRect(b.x, b.y, b.width, b.height);
 
           if (stableRef.current >= STABLE_FRAMES) {
-            // Capture this frame's descriptor
             capturedDesc.current = Array.from(det.descriptor);
             stopCamera();
             setStage('captured');
@@ -370,9 +380,10 @@ function FaceRegister({ worker, token, onDone, onBack }) {
 
   const retake = async () => {
     capturedDesc.current = null; stableRef.current = 0;
-    setFaceOk(false);
-    await startCamera();
-    setStage('scanning'); // set AFTER startCamera so attachStream effect fires with fresh stream
+    setFaceOk(false); setError('');
+    const result = await startCamera();
+    if (result.ok) setStage('scanning');
+    else { setError('Camera unavailable — try again'); setStage('error'); }
   };
 
   return (
@@ -473,12 +484,13 @@ function FaceRegister({ worker, token, onDone, onBack }) {
 
 // ── Face VERIFY step (returning workers) ──────────────────────────────────────
 function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
-  const { videoRef, overlayRef, captureRef, loopRef, startCamera, stopCamera, attachStream } = useFaceCamera();
+  const { videoRef, videoNodeRef, overlayRef, captureRef, loopRef, startCamera, stopCamera } = useFaceCamera();
   const [stage,     setStage    ] = useState('loading');  // loading | scanning | matched | fail
   const [progress,  setProgress ] = useState(0);
   const [liveScore, setLiveScore] = useState(null);
   const [faceFound, setFaceFound] = useState(false);
   const [capturedB64, setCapturedB64] = useState(null);
+  const [failMsg,   setFailMsg  ] = useState('');
   const stableRef  = useRef(0);
 
   useEffect(() => {
@@ -486,17 +498,15 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
     (async () => {
       try {
         await loadModels(p => { if (!cancelled) setProgress(p); });
-        const ok = await startCamera();
-        if (!cancelled) setStage(ok ? 'scanning' : 'fail');
-      } catch { if (!cancelled) setStage('fail'); }
+        const result = await startCamera();
+        if (!cancelled) {
+          if (result.ok) setStage('scanning');
+          else { setFailMsg(result.error === 'NotAllowedError' ? 'Camera permission denied' : `Camera unavailable (${result.error})`); setStage('fail'); }
+        }
+      } catch (e) { if (!cancelled) { setFailMsg(String(e)); setStage('fail'); } }
     })();
     return () => { cancelled = true; stopCamera(); };
   }, [startCamera, stopCamera]);
-
-  // Re-attach stream once <video> is in the DOM (fixes black screen on mobile)
-  useEffect(() => {
-    if (stage === 'scanning') attachStream();
-  }, [stage, attachStream]);
 
   // Convert stored array → Float32Array for faceapi
   const refDesc = useRef(storedDescriptor ? new Float32Array(storedDescriptor) : null);
@@ -505,9 +515,9 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
     if (stage !== 'scanning' || !refDesc.current) return;
 
     const loop = async () => {
-      const video   = videoRef.current;
+      const video   = videoNodeRef.current;
       const overlay = overlayRef.current;
-      if (!video || !overlay) { loopRef.current = requestAnimationFrame(loop); return; }
+      if (!video || !overlay || video.readyState < 2) { loopRef.current = requestAnimationFrame(loop); return; }
 
       try {
         const det = await faceapi
@@ -536,7 +546,6 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
           if (matched) {
             stableRef.current++;
             if (stableRef.current >= STABLE_FRAMES) {
-              // Capture selfie
               const c = captureRef.current;
               c.width = video.videoWidth; c.height = video.videoHeight;
               c.getContext('2d').drawImage(video, 0, 0);
@@ -670,10 +679,11 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
 
       {/* Fail */}
       {stage === 'fail' && (
-        <div className="bg-red-900/50 border border-red-700 rounded-2xl p-4 text-center space-y-2">
+        <div className="bg-red-900/50 border border-red-700 rounded-2xl p-4 text-center space-y-3">
           <XCircle size={28} className="text-red-400 mx-auto" />
           <p className="text-white font-semibold">Camera unavailable</p>
-          <p className="text-red-300 text-sm">Allow camera access and try again</p>
+          <p className="text-red-300 text-sm">{failMsg || 'Allow camera access and try again'}</p>
+          <p className="text-white/40 text-xs">In Chrome: tap the 🔒 lock icon in the address bar → Allow camera</p>
         </div>
       )}
 
