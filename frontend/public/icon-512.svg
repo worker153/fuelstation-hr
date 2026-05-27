@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="100" fill="#166534"/>
+  <!-- Leaf shape -->
+  <path d="M256 90 C256 90 145 155 145 260 C145 325 195 380 256 380 C317 380 367 325 367 260 C367 155 256 90 256 90Z" fill="#22c55e"/>
+  <!-- Stem -->
+  <line x1="256" y1="380" x2="256" y2="252" stroke="#166534" stroke-width="14" stroke-linecap="round"/>
+  <!-- Veins -->
+  <line x1="256" y1="252" x2="188" y2="192" stroke="#166534" stroke-width="10" stroke-linecap="round"/>
+  <line x1="256" y1="252" x2="324" y2="192" stroke="#166534" stroke-width="9" stroke-linecap="round"/>
+  <line x1="256" y1="310" x2="210" y2="278" stroke="#166534" stroke-width="7" stroke-linecap="round"/>
+  <line x1="256" y1="310" x2="302" y2="278" stroke="#166534" stroke-width="7" stroke-linecap="round"/>
+  <!-- Text -->
+  <text x="256" y="440" text-anchor="middle" font-family="Arial, sans-serif" font-size="38" font-weight="bold" fill="#86efac">FuelStation HR</text>
+</svg>

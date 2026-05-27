@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#166534"/>
+  <!-- Leaf shape -->
+  <path d="M96 35 C96 35 54 58 54 98 C54 122 73 142 96 142 C119 142 138 122 138 98 C138 58 96 35 96 35Z" fill="#22c55e"/>
+  <!-- Stem and veins -->
+  <line x1="96" y1="142" x2="96" y2="95" stroke="#166534" stroke-width="5" stroke-linecap="round"/>
+  <line x1="96" y1="95" x2="70" y2="72" stroke="#166534" stroke-width="4" stroke-linecap="round"/>
+  <line x1="96" y1="95" x2="122" y2="72" stroke="#166534" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- FuelStation HR text -->
+  <text x="96" y="165" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#86efac">FuelStation HR</text>
+</svg>
