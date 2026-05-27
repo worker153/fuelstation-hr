@@ -5,6 +5,22 @@ const Branch           = require('../models/Branch');
 const cloudinary       = require('../config/cloudinary');
 const { createAttendanceShortage } = require('./shortageController');
 
+// Pick the attendance rule that applies to a given worker role.
+// Prefers an exact role match (case-insensitive), falls back to 'default',
+// then falls back to legacy attendanceSettings.
+function getSettingsForRole(branch, workerRole) {
+  const rules = branch?.attendanceRules;
+  if (rules?.length) {
+    const lRole = (workerRole || '').toLowerCase().trim();
+    return (
+      rules.find(r => r.role !== 'default' && r.role.toLowerCase().trim() === lRole) ||
+      rules.find(r => r.role === 'default') ||
+      null
+    );
+  }
+  return branch?.attendanceSettings || null;
+}
+
 // Haversine distance in metres between two GPS coordinates
 function haversineDistance(lat1, lng1, lat2, lng2) {
   const R    = 6371000;
@@ -131,7 +147,7 @@ const terminalClock = async (req, res) => {
   if (type === 'clock_in') {
     try {
       const branch   = await Branch.findById(device.branch).lean();
-      const settings = branch?.attendanceSettings;
+      const settings = getSettingsForRole(branch, worker.role);
 
       if (settings && (settings.lateDeductionAmount > 0 || settings.absentDeductionAmount > 0)) {
         const clockH    = now.getHours();
@@ -180,7 +196,7 @@ const terminalClock = async (req, res) => {
   if (type === 'clock_out') {
     try {
       const branch   = await Branch.findById(device.branch).lean();
-      const settings = branch?.attendanceSettings;
+      const settings = getSettingsForRole(branch, worker.role);
 
       if (settings?.shiftEnd && settings.earlyDepartureDeductionAmount > 0) {
         const clockH    = now.getHours();
@@ -323,12 +339,10 @@ const processAbsences = async (req, res) => {
   const branch = await Branch.findOne({ _id: branchId, company: cid }).lean();
   if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
 
-  const settings       = branch.attendanceSettings || {};
-  const deductionAmount = settings.absentDeductionAmount || 0;
-
-  // Skip if it's not a configured work day
-  if (settings.workDays?.length) {
-    if (!settings.workDays.includes(localDate.getDay()))
+  // Use default rule to check work days
+  const defaultSettings = getSettingsForRole(branch, null) || {};
+  if (defaultSettings.workDays?.length) {
+    if (!defaultSettings.workDays.includes(localDate.getDay()))
       return res.json({ success: true, processed: 0, total: 0, message: 'Not a configured work day for this branch' });
   }
 
@@ -340,8 +354,11 @@ const processAbsences = async (req, res) => {
   const absentWorkers = workers.filter(w => !clockedSet.has(String(w._id)));
 
   let processed = 0;
-  if (deductionAmount > 0) {
-    for (const worker of absentWorkers) {
+  for (const worker of absentWorkers) {
+    // Use the rule that matches this worker's role
+    const settings = getSettingsForRole(branch, worker.role) || {};
+    const deductionAmount = settings.absentDeductionAmount || 0;
+    if (deductionAmount > 0) {
       const result = await createAttendanceShortage({
         company:  cid,
         worker,
@@ -361,9 +378,9 @@ const processAbsences = async (req, res) => {
     success:  true,
     processed,
     total:    absentWorkers.length,
-    message:  deductionAmount > 0
+    message:  processed > 0
       ? `${processed} absence deduction(s) recorded for ${date}`
-      : `${absentWorkers.length} absent worker(s) found (no deduction amount configured)`,
+      : `${absentWorkers.length} absent worker(s) found — no deductions configured for their roles`,
   });
 };
 

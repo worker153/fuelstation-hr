@@ -40,6 +40,102 @@ async function reverseGeocode(lat, lng) {
   return d.display_name || '';
 }
 
+// ─── Attendance Rule Card ─────────────────────────────────────────────────────
+const PRESET_ROLES = ['Supervisor', 'Security', 'Pump Attendant', 'Manager', 'Cashier'];
+
+function RuleCard({ rule, isDefault, onChange, onRemove }) {
+  return (
+    <div className={`rounded-xl border p-3 space-y-3 ${isDefault ? 'border-brand-200 bg-brand-50/30' : 'border-gray-200 bg-white'}`}>
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        {isDefault ? (
+          <span className="text-sm font-semibold text-brand-700 flex-1">Default (All Roles)</span>
+        ) : (
+          <>
+            <input
+              list="role-suggestions-list"
+              className="input py-1.5 text-sm flex-1"
+              placeholder="Role name — e.g. Supervisor"
+              value={rule.role}
+              onChange={e => onChange('role', e.target.value)}
+            />
+            <button type="button" onClick={onRemove}
+              className="p-1 text-gray-300 hover:text-red-500 transition-colors shrink-0" title="Remove rule">
+              <X size={14} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Times */}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">Clock-In Time</p>
+          <input type="time" className="input py-1.5 text-sm"
+            value={rule.clockInDeadline || ''}
+            onChange={e => onChange('clockInDeadline', e.target.value)} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">Clock-Out Time</p>
+          <input type="time" className="input py-1.5 text-sm"
+            value={rule.shiftEnd || ''}
+            onChange={e => onChange('shiftEnd', e.target.value)} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">Absent After</p>
+          <input type="time" className="input py-1.5 text-sm"
+            value={rule.absentThreshold || ''}
+            onChange={e => onChange('absentThreshold', e.target.value)} />
+        </div>
+      </div>
+
+      {/* Deductions */}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">Late ₦</p>
+          <input type="number" min="0" className="input py-1.5 text-sm"
+            value={rule.lateDeductionAmount || 0}
+            onChange={e => onChange('lateDeductionAmount', Number(e.target.value))} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">Absent ₦</p>
+          <input type="number" min="0" className="input py-1.5 text-sm"
+            value={rule.absentDeductionAmount || 0}
+            onChange={e => onChange('absentDeductionAmount', Number(e.target.value))} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">Early Exit ₦</p>
+          <input type="number" min="0" className="input py-1.5 text-sm"
+            value={rule.earlyDepartureDeductionAmount || 0}
+            onChange={e => onChange('earlyDepartureDeductionAmount', Number(e.target.value))} />
+        </div>
+      </div>
+
+      {/* Work days — only on default rule */}
+      {isDefault && (
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1.5">Work Days</p>
+          <div className="flex gap-3 flex-wrap">
+            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day, i) => (
+              <label key={i} className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox"
+                  checked={(rule.workDays || [1,2,3,4,5,6]).includes(i)}
+                  onChange={e => {
+                    const cur = rule.workDays || [1,2,3,4,5,6];
+                    onChange('workDays', e.target.checked
+                      ? [...cur, i].sort((a,b) => a-b)
+                      : cur.filter(d => d !== i));
+                  }} />
+                <span className="text-sm text-gray-700">{day}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Branch Form Modal ────────────────────────────────────────────────────────
 function BranchModal({ branch, staff, onClose, onSaved }) {
   const notify = useNotify();
@@ -50,26 +146,54 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
   const [importError, setImportError] = useState('');
   const [imported,    setImported  ] = useState(false);
 
+  // Migrate legacy attendanceSettings → attendanceRules on first edit
+  const getInitialRules = () => {
+    if (branch?.attendanceRules?.length > 0) {
+      return branch.attendanceRules.map(r => ({ ...r }));
+    }
+    const s = branch?.attendanceSettings;
+    return [{
+      role:                         'default',
+      clockInDeadline:              s?.clockInDeadline              || '06:00',
+      absentThreshold:              s?.absentThreshold              || '08:00',
+      shiftEnd:                     s?.shiftEnd                     || '',
+      lateDeductionAmount:          s?.lateDeductionAmount          || 0,
+      absentDeductionAmount:        s?.absentDeductionAmount        || 0,
+      earlyDepartureDeductionAmount:s?.earlyDepartureDeductionAmount|| 0,
+      workDays:                     s?.workDays                     || [1,2,3,4,5,6],
+    }];
+  };
+
   const [form, setForm] = useState({
     name:      branch?.name      || '',
     address:   branch?.address   || '',
     phone:     branch?.phone     || '',
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
-    attendanceSettings: {
-      clockInDeadline:               branch?.attendanceSettings?.clockInDeadline               || '06:00',
-      absentThreshold:               branch?.attendanceSettings?.absentThreshold               || '08:00',
-      shiftEnd:                      branch?.attendanceSettings?.shiftEnd                      || '',
-      lateDeductionAmount:           branch?.attendanceSettings?.lateDeductionAmount           || 0,
-      absentDeductionAmount:         branch?.attendanceSettings?.absentDeductionAmount         || 0,
-      earlyDepartureDeductionAmount: branch?.attendanceSettings?.earlyDepartureDeductionAmount || 0,
-      workDays:                      branch?.attendanceSettings?.workDays                      || [1,2,3,4,5,6],
-    },
+    attendanceRules: getInitialRules(),
   });
   const [showAttendance, setShowAttendance] = useState(false);
 
-  const set    = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const setAs  = (k, v) => setForm(f => ({ ...f, attendanceSettings: { ...f.attendanceSettings, [k]: v } }));
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const setRule = (idx, key, val) => setForm(f => {
+    const rules = [...f.attendanceRules];
+    rules[idx] = { ...rules[idx], [key]: val };
+    return { ...f, attendanceRules: rules };
+  });
+
+  const addRule = () => setForm(f => ({
+    ...f,
+    attendanceRules: [...f.attendanceRules, {
+      role: '', clockInDeadline: '06:00', absentThreshold: '08:00', shiftEnd: '',
+      lateDeductionAmount: 0, absentDeductionAmount: 0, earlyDepartureDeductionAmount: 0,
+    }],
+  }));
+
+  const removeRule = (idx) => setForm(f => ({
+    ...f,
+    attendanceRules: f.attendanceRules.filter((_, i) => i !== idx),
+  }));
 
   // ── Google Maps import ──────────────────────────────────────────────────────
   const importFromMaps = async () => {
@@ -174,12 +298,12 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = {
-        name:               form.name.trim(),
-        address:            form.address.trim(),
-        phone:              form.phone.trim(),
-        managerId:          form.managerId || null,
-        location:           form.location  || null,
-        attendanceSettings: form.attendanceSettings,
+        name:            form.name.trim(),
+        address:         form.address.trim(),
+        phone:           form.phone.trim(),
+        managerId:       form.managerId || null,
+        location:        form.location  || null,
+        attendanceRules: form.attendanceRules,
       };
       const res = branch
         ? await api.put(`/branches/${branch._id}`, payload)
@@ -293,84 +417,46 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
             </select>
           </div>
 
-          {/* Attendance Settings */}
+          {/* Attendance Rules */}
           <div className="rounded-xl border border-gray-200 overflow-hidden">
             <button type="button" onClick={() => setShowAttendance(v => !v)}
               className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
               <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
                 <Clock size={14} /> Attendance Rules
+                {form.attendanceRules.length > 1 && (
+                  <span className="text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-medium">
+                    {form.attendanceRules.length} roles
+                  </span>
+                )}
               </span>
               <ChevronDown size={14} className={`text-gray-400 transition-transform ${showAttendance ? 'rotate-180' : ''}`} />
             </button>
+
             {showAttendance && (
-              <div className="px-4 py-4 space-y-4 border-t border-gray-100">
-                {/* Shift times */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Clock-In Time</label>
-                    <input type="time" className="input"
-                      value={form.attendanceSettings.clockInDeadline}
-                      onChange={e => setAs('clockInDeadline', e.target.value)} />
-                    <p className="text-xs text-gray-400 mt-1">Late if clocked in after this</p>
-                  </div>
-                  <div>
-                    <label className="label">Clock-Out Time</label>
-                    <input type="time" className="input"
-                      value={form.attendanceSettings.shiftEnd}
-                      onChange={e => setAs('shiftEnd', e.target.value)} />
-                    <p className="text-xs text-gray-400 mt-1">Early departure if clocked out before</p>
-                  </div>
-                </div>
-                {/* Absent threshold */}
-                <div>
-                  <label className="label">Absent Threshold</label>
-                  <input type="time" className="input"
-                    value={form.attendanceSettings.absentThreshold}
-                    onChange={e => setAs('absentThreshold', e.target.value)} />
-                  <p className="text-xs text-gray-400 mt-1">Clock-in after this time = Absent (even if physically present)</p>
-                </div>
-                {/* Deduction amounts */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="label">Late Deduction (₦)</label>
-                    <input type="number" min="0" className="input"
-                      value={form.attendanceSettings.lateDeductionAmount}
-                      onChange={e => setAs('lateDeductionAmount', Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <label className="label">Absent Deduction (₦)</label>
-                    <input type="number" min="0" className="input"
-                      value={form.attendanceSettings.absentDeductionAmount}
-                      onChange={e => setAs('absentDeductionAmount', Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <label className="label">Early Exit Deduction (₦)</label>
-                    <input type="number" min="0" className="input"
-                      value={form.attendanceSettings.earlyDepartureDeductionAmount}
-                      onChange={e => setAs('earlyDepartureDeductionAmount', Number(e.target.value))} />
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Work Days</label>
-                  <div className="flex gap-3 flex-wrap mt-1">
-                    {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day, i) => (
-                      <label key={i} className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox"
-                          checked={form.attendanceSettings.workDays.includes(i)}
-                          onChange={e => {
-                            const cur = form.attendanceSettings.workDays;
-                            setAs('workDays', e.target.checked
-                              ? [...cur, i].sort((a,b) => a-b)
-                              : cur.filter(d => d !== i));
-                          }} />
-                        <span className="text-sm text-gray-700">{day}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+              <div className="px-4 py-4 space-y-3 border-t border-gray-100">
+                {/* datalist for role autocomplete */}
+                <datalist id="role-suggestions-list">
+                  {PRESET_ROLES.map(r => <option key={r} value={r} />)}
+                </datalist>
+
+                {form.attendanceRules.map((rule, idx) => (
+                  <RuleCard
+                    key={idx}
+                    rule={rule}
+                    isDefault={rule.role === 'default'}
+                    onChange={(key, val) => setRule(idx, key, val)}
+                    onRemove={() => removeRule(idx)}
+                  />
+                ))}
+
+                <button type="button" onClick={addRule}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-brand-300 hover:text-brand-600 transition-colors">
+                  <Plus size={14} /> Add Role-Specific Rule
+                </button>
+
                 <p className="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
-                  ⚠️ Times use server clock (UTC). For Nigeria (WAT = UTC+1), enter 1 hour earlier —
-                  e.g. 6:30 AM WAT → enter <strong>05:30</strong>. Set amounts to ₦0 to disable auto-deductions.
+                  ⚠️ Times use server clock (UTC). Nigeria (WAT = UTC+1) → enter 1 hour earlier,
+                  e.g. 6:30 AM → <strong>05:30</strong>. Set ₦ amounts to 0 to track without deducting.
                 </p>
               </div>
             )}
@@ -520,29 +606,36 @@ function BranchCard({ branch, canManage, onEdit, onToggle }) {
           )}
         </div>
 
-        {/* Attendance settings summary */}
-        {(branch.attendanceSettings?.clockInDeadline ||
-          branch.attendanceSettings?.shiftEnd ||
-          branch.attendanceSettings?.lateDeductionAmount > 0 ||
-          branch.attendanceSettings?.absentDeductionAmount > 0) && (
-          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg">
-            <Clock size={11} className="shrink-0 mt-0.5" />
-            <span className="space-y-0.5">
-              <span className="block font-medium">
-                🕐 {branch.attendanceSettings.clockInDeadline || '—'}
-                {branch.attendanceSettings.shiftEnd
-                  ? ` – ${branch.attendanceSettings.shiftEnd}`
-                  : ''}
-              </span>
-              <span className="block text-amber-600">
-                Late ₦{Number(branch.attendanceSettings.lateDeductionAmount || 0).toLocaleString()}
-                {' · '}Absent ₦{Number(branch.attendanceSettings.absentDeductionAmount || 0).toLocaleString()}
-                {branch.attendanceSettings.earlyDepartureDeductionAmount > 0 &&
-                  ` · Early exit ₦${Number(branch.attendanceSettings.earlyDepartureDeductionAmount).toLocaleString()}`}
-              </span>
-            </span>
-          </div>
-        )}
+        {/* Attendance rules summary */}
+        {(() => {
+          const rules = branch.attendanceRules?.length > 0
+            ? branch.attendanceRules
+            : branch.attendanceSettings?.clockInDeadline
+              ? [{ role: 'default', ...branch.attendanceSettings }]
+              : null;
+          if (!rules) return null;
+          return (
+            <div className="text-xs text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg space-y-0.5">
+              {rules.map((r, i) => (
+                <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                  <Clock size={10} className="shrink-0" />
+                  {rules.length > 1 && (
+                    <span className="font-semibold">{r.role === 'default' ? 'Default' : r.role}:</span>
+                  )}
+                  <span className="font-medium">
+                    {r.clockInDeadline || '—'}{r.shiftEnd ? ` – ${r.shiftEnd}` : ''}
+                  </span>
+                  {(r.lateDeductionAmount > 0 || r.absentDeductionAmount > 0) && (
+                    <span className="text-amber-600">
+                      · Late ₦{Number(r.lateDeductionAmount||0).toLocaleString()}
+                      {' '}Absent ₦{Number(r.absentDeductionAmount||0).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* View workers link */}
         <div className="pt-2 border-t border-gray-100">

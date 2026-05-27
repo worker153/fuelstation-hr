@@ -19,15 +19,28 @@ const branchSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   createdBy:{ type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
+  // Legacy single-rule (kept for backward compat — controller prefers attendanceRules)
   attendanceSettings: {
-    clockInDeadline:              { type: String, default: '07:00' },  // late threshold (HH:MM UTC)
-    absentThreshold:              { type: String, default: '09:00' },  // absent threshold (HH:MM UTC)
-    shiftEnd:                     { type: String, default: '' },       // scheduled clock-out (HH:MM UTC)
+    clockInDeadline:              { type: String, default: '' },
+    absentThreshold:              { type: String, default: '' },
+    shiftEnd:                     { type: String, default: '' },
     lateDeductionAmount:          { type: Number, default: 0 },
     absentDeductionAmount:        { type: Number, default: 0 },
     earlyDepartureDeductionAmount:{ type: Number, default: 0 },
     workDays:                     { type: [Number], default: [1,2,3,4,5,6] },
   },
+
+  // Per-role rules — role='default' applies to any role not specifically listed
+  attendanceRules: [{
+    role:                         { type: String, default: 'default' },
+    clockInDeadline:              { type: String, default: '' },
+    absentThreshold:              { type: String, default: '' },
+    shiftEnd:                     { type: String, default: '' },
+    lateDeductionAmount:          { type: Number, default: 0 },
+    absentDeductionAmount:        { type: Number, default: 0 },
+    earlyDepartureDeductionAmount:{ type: Number, default: 0 },
+    workDays:                     { type: [Number], default: [1,2,3,4,5,6] },
+  }],
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });

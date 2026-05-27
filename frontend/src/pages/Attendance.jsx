@@ -24,6 +24,20 @@ function fmtHours(inTs, outTs) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+// Pick the attendance rule that applies to a given worker role (frontend mirror of controller helper)
+function getSettingsForRole(branch, workerRole) {
+  const rules = branch?.attendanceRules;
+  if (rules?.length) {
+    const lRole = (workerRole || '').toLowerCase().trim();
+    return (
+      rules.find(r => r.role !== 'default' && r.role.toLowerCase().trim() === lRole) ||
+      rules.find(r => r.role === 'default') ||
+      null
+    );
+  }
+  return branch?.attendanceSettings || null;
+}
+
 // Compare clock-in timestamp against branch settings — returns status string
 function computeStatus(clockInRecord, settings) {
   if (!clockInRecord) return 'no_show';
@@ -157,29 +171,32 @@ export default function Attendance() {
       if (r.type === 'clock_out' && !clockOutMap[wid]) clockOutMap[wid] = r;
     });
 
-    const settings = selectedBranch?.attendanceSettings;
-
     if (filterBranch && allWorkers.length > 0) {
-      // Show all workers for branch with attendance overlay
+      // Show all workers for branch — each worker uses settings for their own role
       return allWorkers.map(w => {
-        const wid       = String(w._id);
-        const ci        = clockInMap[wid];
-        const co        = clockOutMap[wid];
-        const status    = computeStatus(ci, settings);
-        const coStatus  = computeClockOutStatus(co, settings);
-        return { _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
-                 clockIn: ci, clockOut: co, status, coStatus };
+        const wid      = String(w._id);
+        const ci       = clockInMap[wid];
+        const co       = clockOutMap[wid];
+        const settings = getSettingsForRole(selectedBranch, w.role);
+        return {
+          _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
+          clockIn: ci, clockOut: co,
+          status:   computeStatus(ci, settings),
+          coStatus: computeClockOutStatus(co, settings),
+          settings,
+        };
       });
     }
 
-    // No branch selected — show raw records only
+    // No branch selected — show raw records only (use default/fallback settings)
     const seen = new Set();
     const result = [];
     records.forEach(r => {
       const wid = String(r.worker?._id || r.worker);
       if (!seen.has(wid)) {
         seen.add(wid);
-        const ci = clockInMap[wid], co = clockOutMap[wid];
+        const ci       = clockInMap[wid], co = clockOutMap[wid];
+        const settings = getSettingsForRole(selectedBranch, r.workerRole);
         result.push({
           _id: wid,
           fullName: r.workerName,
@@ -188,6 +205,7 @@ export default function Attendance() {
           clockIn: ci, clockOut: co,
           status:   computeStatus(ci, settings),
           coStatus: computeClockOutStatus(co, settings),
+          settings,
         });
       }
     });
@@ -310,31 +328,46 @@ export default function Attendance() {
       )}
 
       {/* Shift schedule banner */}
-      {filterBranch && selectedBranch?.attendanceSettings?.clockInDeadline && (
-        <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-4 text-sm">
-          <div className="flex items-center gap-2 text-brand-700">
-            <Clock size={14} className="shrink-0" />
-            <span className="font-semibold">Scheduled shift:</span>
+      {filterBranch && selectedBranch && (() => {
+        const rules = selectedBranch.attendanceRules?.length > 0
+          ? selectedBranch.attendanceRules
+          : selectedBranch.attendanceSettings?.clockInDeadline
+            ? [{ role: 'default', ...selectedBranch.attendanceSettings }]
+            : null;
+        if (!rules) return null;
+        return (
+          <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2 text-brand-700 text-sm font-semibold">
+              <Clock size={14} />
+              Shift schedule{rules.length > 1 ? ' (per role)' : ''}
+            </div>
+            <div className={`grid gap-2 ${rules.length > 1 ? 'sm:grid-cols-2 lg:grid-cols-3' : ''}`}>
+              {rules.map((r, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-3 text-sm text-brand-800">
+                  {rules.length > 1 && (
+                    <span className="text-xs font-semibold bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">
+                      {r.role === 'default' ? 'Default' : r.role}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1">
+                    <LogIn size={12} className="text-green-600" />
+                    <strong>{r.clockInDeadline || '—'}</strong>
+                  </span>
+                  {r.shiftEnd && (
+                    <span className="flex items-center gap-1">
+                      <LogOut size={12} className="text-red-500" />
+                      <strong>{r.shiftEnd}</strong>
+                    </span>
+                  )}
+                  {r.absentThreshold && (
+                    <span className="text-xs text-brand-400">absent after {r.absentThreshold}</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-brand-800">
-            <span className="flex items-center gap-1.5">
-              <LogIn size={13} className="text-green-600" />
-              Clock In by <strong>{selectedBranch.attendanceSettings.clockInDeadline}</strong>
-            </span>
-            {selectedBranch.attendanceSettings.shiftEnd && (
-              <span className="flex items-center gap-1.5">
-                <LogOut size={13} className="text-red-500" />
-                Clock Out by <strong>{selectedBranch.attendanceSettings.shiftEnd}</strong>
-              </span>
-            )}
-            {selectedBranch.attendanceSettings.absentThreshold && (
-              <span className="text-xs text-brand-500">
-                (Absent after {selectedBranch.attendanceSettings.absentThreshold})
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Settings note if branch selected but no settings configured */}
       {filterBranch && selectedBranch &&

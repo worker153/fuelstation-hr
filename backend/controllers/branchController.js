@@ -202,6 +202,7 @@ const createBranch = async (req, res) => {
     manager:   managerId || undefined,
     createdBy: req.user._id,
     attendanceSettings: req.body.attendanceSettings || undefined,
+    attendanceRules:    req.body.attendanceRules    || undefined,
   });
 
   await branch.populate('manager', 'name email role');
@@ -236,6 +237,9 @@ const updateBranch = async (req, res) => {
       ...(branch.attendanceSettings?.toObject?.() || {}),
       ...req.body.attendanceSettings,
     };
+  }
+  if (req.body.attendanceRules !== undefined) {
+    branch.attendanceRules = req.body.attendanceRules;
   }
 
   await branch.save();
