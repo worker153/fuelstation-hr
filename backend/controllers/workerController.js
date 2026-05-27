@@ -62,10 +62,11 @@ const getWorkers = async (req, res) => {
   const { page = 1, limit = 20, search, status, branch } = req.query;
   const query = { company: req.user.company._id };
 
-  // Branch-scoped: supervisors (non-admin) only see their own branch
+  // Branch/shift-scoped: supervisors only see their branch (and optionally their shift)
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
-  if (!isAdmin && req.user.branchId) {
-    query.branchId = req.user.branchId;
+  if (!isAdmin) {
+    if (req.user.branchId) query.branchId = req.user.branchId;
+    if (req.user.can('viewOwnShift') && req.user.shiftId) query.shiftId = req.user.shiftId;
   }
 
   if (search) {
@@ -104,10 +105,11 @@ const getActiveWorkers = async (req, res) => {
 
   const filter = { company: cid };
 
-  // Branch-scoped: supervisors only see their assigned branch
+  // Branch/shift-scoped: supervisors only see their assigned branch + optionally shift
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
-  if (!isAdmin && req.user.branchId) {
-    filter.branchId = req.user.branchId;
+  if (!isAdmin) {
+    if (req.user.branchId) filter.branchId = req.user.branchId;
+    if (req.user.can('viewOwnShift') && req.user.shiftId) filter.shiftId = req.user.shiftId;
   }
 
   if (status) {
@@ -116,7 +118,7 @@ const getActiveWorkers = async (req, res) => {
     filter.employmentStatus = { $in: ['active', 'suspended', 'sacked', 'inactive'] };
   }
 
-  if (branchId && (isAdmin || !req.user.branchId)) filter.branchId = branchId;
+  if (branchId && isAdmin) filter.branchId = branchId;
   if (shiftId)  filter.shiftId  = shiftId;
   if (role)     filter.role = { $regex: role, $options: 'i' };
   if (search) {

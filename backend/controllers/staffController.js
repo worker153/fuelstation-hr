@@ -30,6 +30,8 @@ const getStaff = async (req, res) => {
   const staff = await User.find({ company: req.user.company._id })
     .select('-password')
     .populate('createdBy', 'name')
+    .populate('branchId',  'name')
+    .populate('shiftId',   'name startTime endTime')
     .sort({ createdAt: -1 });
   res.json({ success: true, data: staff });
 };
@@ -57,7 +59,7 @@ const createStaff = async (req, res) => {
   const safeRole = role === 'super_admin' ? 'hr_staff' : role;
   const perms    = permissions || ROLE_DEFAULTS[safeRole] || {};
 
-  const { branchId } = req.body;
+  const { branchId, shiftId } = req.body;
   const user = await User.create({
     company:     req.user.company._id,
     name, email,
@@ -65,6 +67,7 @@ const createStaff = async (req, res) => {
     role:        safeRole,
     permissions: perms,
     branchId:    branchId || undefined,
+    shiftId:     shiftId  || undefined,
     isActive:    true,
     createdBy:   req.user._id
   });
@@ -82,10 +85,11 @@ const updateStaff = async (req, res) => {
     return res.status(403).json({ success: false, message: 'Cannot modify another Super Admin' });
   }
 
-  const { name, role, permissions, isActive, branchId } = req.body;
+  const { name, role, permissions, isActive, branchId, shiftId } = req.body;
   if (name) staff.name = name;
   if (role && role !== 'super_admin') staff.role = role;
   if (branchId !== undefined) staff.branchId = branchId || undefined;
+  if (shiftId  !== undefined) staff.shiftId  = shiftId  || undefined;
   if (permissions) {
     const existing = staff.permissions?.toObject ? staff.permissions.toObject() : (staff.permissions || {});
     staff.permissions = { ...existing, ...permissions };

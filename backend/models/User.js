@@ -11,7 +11,8 @@ const permissionsSchema = new mongoose.Schema({
   manageStaff:      { type: Boolean, default: false },
   viewWorkers:      { type: Boolean, default: true  },
   addWorkers:       { type: Boolean, default: false },
-  submitShortages:  { type: Boolean, default: false }  // supervisor can submit shortages for approval
+  submitShortages:  { type: Boolean, default: false },  // supervisor can submit shortages for approval
+  viewOwnShift:     { type: Boolean, default: false }   // restrict view to own shift only (within branch)
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
@@ -26,6 +27,7 @@ const userSchema = new mongoose.Schema({
   },
   permissions: { type: permissionsSchema, default: () => ({}) },
   branchId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },  // assigned branch for supervisors
+  shiftId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Shift'  },  // assigned shift (optional)
   isActive:    { type: Boolean, default: true },
   createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

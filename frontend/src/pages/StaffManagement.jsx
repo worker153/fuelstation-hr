@@ -26,6 +26,7 @@ const ALL_PERMISSIONS = [
   { key: 'manageStaff',      label: 'Manage Staff',       desc: 'Can view staff list' },
   { key: 'approveWorkers',   label: 'Approve Workers',    desc: 'Can approve verifications' },
   { key: 'submitShortages',  label: 'Submit Shortages',   desc: 'Can report worker shortages for approval' },
+  { key: 'viewOwnShift',    label: 'View Own Shift Only', desc: 'Restricts worker view to their assigned shift only' },
 ];
 
 const ROLE_MAP = Object.fromEntries(ROLES.map(r => [r.value, r]));
@@ -62,6 +63,21 @@ function StaffForm({ existing, onSave, onCancel }) {
   const [showPwd, setShowPwd] = useState(false);
   const [saving, setSaving]   = useState(false);
 
+  // Branch & shift assignment
+  const [branches,  setBranches ] = useState([]);
+  const [shifts,    setShifts   ] = useState([]);
+  const [branchId,  setBranchId ] = useState(existing?.branchId?._id || existing?.branchId || '');
+  const [shiftId,   setShiftId  ] = useState(existing?.shiftId?._id  || existing?.shiftId  || '');
+
+  useEffect(() => {
+    api.get('/branches').then(r => setBranches(r.data.data || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!branchId) { setShifts([]); setShiftId(''); return; }
+    api.get(`/shifts?branchId=${branchId}`).then(r => setShifts(r.data.data || [])).catch(() => {});
+  }, [branchId]);
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const applyRoleDefaults = async () => {
@@ -83,10 +99,15 @@ function StaffForm({ existing, onSave, onCancel }) {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload = {
+        name: form.name, role: form.role, permissions,
+        branchId: branchId || undefined,
+        shiftId:  shiftId  || undefined,
+      };
       if (existing) {
-        await api.put(`/staff/${existing._id}`, { name: form.name, role: form.role, permissions });
+        await api.put(`/staff/${existing._id}`, payload);
       } else {
-        await api.post('/staff', { ...form, permissions });
+        await api.post('/staff', { ...form, ...payload });
       }
       notify(existing ? 'Staff updated ✓' : 'Staff created ✓');
       onSave();
@@ -126,6 +147,26 @@ function StaffForm({ existing, onSave, onCancel }) {
           <select className="input" value={form.role} onChange={set('role')} required>
             {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="label">Assigned Branch</label>
+          <select className="input" value={branchId} onChange={e => setBranchId(e.target.value)}>
+            <option value="">— No branch —</option>
+            {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Assigned Shift</label>
+          {!branchId ? (
+            <p className="text-xs text-gray-400 px-1 py-2">Select a branch first</p>
+          ) : shifts.length === 0 ? (
+            <p className="text-xs text-amber-600 px-1 py-2">No shifts for this branch</p>
+          ) : (
+            <select className="input" value={shiftId} onChange={e => setShiftId(e.target.value)}>
+              <option value="">— No shift restriction —</option>
+              {shifts.map(s => <option key={s._id} value={s._id}>{s.name}{s.startTime ? ` (${s.startTime}–${s.endTime})` : ''}</option>)}
+            </select>
+          )}
         </div>
       </div>
 
@@ -329,7 +370,19 @@ export default function StaffManagement() {
                       {!s.isActive && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">Inactive</span>}
                     </div>
                     <p className="text-xs text-gray-500 truncate">{s.email}</p>
-                    <div className="mt-1"><RoleBadge role={s.role} /></div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <RoleBadge role={s.role} />
+                      {s.branchId?.name && (
+                        <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                          🏢 {s.branchId.name}
+                        </span>
+                      )}
+                      {s.shiftId?.name && (
+                        <span className="text-xs bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-medium">
+                          🕐 {s.shiftId.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions */}
