@@ -728,6 +728,26 @@ const uploadCompanyStamp = async (req, res) => {
   res.json({ success: true, data: worker });
 };
 
+// ─── PUT /api/workers/:id/pin  (super admin sets worker PIN) ─────────────────
+const updateWorkerPin = async (req, res) => {
+  const { pin } = req.body;
+  if (!pin || !/^\d{4}$/.test(String(pin)))
+    return res.status(400).json({ success: false, message: 'PIN must be exactly 4 digits' });
+
+  // Check PIN is not already used by another worker
+  const existing = await Worker.findOne({ pin: String(pin), _id: { $ne: req.params.id } });
+  if (existing)
+    return res.status(400).json({ success: false, message: 'This PIN is already in use by another worker' });
+
+  const worker = await Worker.findOneAndUpdate(
+    { _id: req.params.id, company: req.user.company._id },
+    { pin: String(pin) },
+    { new: true }
+  );
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  res.json({ success: true, message: 'PIN updated', data: { pin: worker.pin } });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   uploadSignature, updateAddressLocation,
@@ -739,5 +759,6 @@ module.exports = {
   // Employment management
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
-  updateSalary, updateBank
+  updateSalary, updateBank,
+  updateWorkerPin
 };

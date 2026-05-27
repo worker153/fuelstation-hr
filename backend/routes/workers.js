@@ -13,7 +13,8 @@ const {
   uploadAuthorisedSignature, uploadCompanyStamp,
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
-  updateSalary, updateBank
+  updateSalary, updateBank,
+  updateWorkerPin
 } = require('../controllers/workerController');
 
 router.use(protect);
@@ -37,6 +38,7 @@ router.route('/:id')
 // ── Signature ─────────────────────────────────────────────────────────────────
 router.post('/:id/signature',             upload.single('signature'), uploadSignature);
 router.put('/:id/registration-date',      superAdminOnly, updateRegistrationDate);
+router.put('/:id/pin',                    superAdminOnly, updateWorkerPin);
 router.put('/:id/resumption',             updateResumptionDate);
 router.post('/:id/authorised-signature',  upload.single('signature'), uploadAuthorisedSignature);
 router.post('/:id/company-stamp',         upload.single('stamp'),     uploadCompanyStamp);

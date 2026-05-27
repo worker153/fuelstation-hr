@@ -155,7 +155,8 @@ const workerSchema = new mongoose.Schema({
   employmentHistory: [employmentHistorySchema],
 
   addedBy:      { type: ObjectId, ref: 'User' },
-  registeredAt: { type: Date }   // override for the displayed "Registered" date (editable by super admin)
+  registeredAt: { type: Date },  // override for the displayed "Registered" date (editable by super admin)
+  pin:          { type: String, trim: true }  // 4-digit PIN for self-service shortage entry
 }, { timestamps: true });
 
 workerSchema.index({ company: 1 });

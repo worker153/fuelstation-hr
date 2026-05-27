@@ -5,19 +5,22 @@ const { requirePermission } = require('../middleware/permissions');
 const {
   submitShortage, getShortages,
   approveShortage, rejectShortage,
-  deleteShortage, getShortagesSummary
+  deleteShortage, getShortagesSummary,
+  workerPinSubmit, workerPinLookup
 } = require('../controllers/shortageController');
 
+// ── Public routes (no auth — worker PIN self-service) ─────────────────────────
+router.get('/worker/lookup', workerPinLookup);
+router.post('/worker',       workerPinSubmit);
+
+// ── Protected routes ──────────────────────────────────────────────────────────
 router.use(protect);
 
-// Named routes first
 router.get('/summary', requirePermission('manageBranches'), getShortagesSummary);
 
-// Collection
 router.get('/',  getShortages);
 router.post('/', requirePermission('submitShortages'), submitShortage);
 
-// Single
 router.delete('/:id', deleteShortage);
 router.post('/:id/approve', requirePermission('manageBranches'), approveShortage);
 router.post('/:id/reject',  requirePermission('manageBranches'), rejectShortage);

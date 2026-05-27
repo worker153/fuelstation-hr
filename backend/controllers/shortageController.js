@@ -182,4 +182,105 @@ const getShortagesSummary = async (req, res) => {
   res.json({ success: true, data: Object.values(byWorker) });
 };
 
-module.exports = { submitShortage, getShortages, approveShortage, rejectShortage, deleteShortage, getShortagesSummary };
+// ─── POST /api/shortages/worker  (public — worker enters PIN, auto-approved) ──
+const workerPinSubmit = async (req, res) => {
+  const { pin, amount, notes, date } = req.body;
+
+  if (!pin)    return res.status(400).json({ success: false, message: 'PIN is required' });
+  if (!amount || Number(amount) <= 0)
+    return res.status(400).json({ success: false, message: 'Enter a valid amount' });
+
+  // Find worker by PIN across all companies
+  const worker = await Worker.findOne({ pin: String(pin).trim() })
+    .populate('branchId', 'name')
+    .lean();
+
+  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN — worker not found' });
+  if (worker.employmentStatus !== 'active')
+    return res.status(400).json({ success: false, message: 'Only active workers can submit shortages' });
+
+  const now    = new Date();
+  const month  = now.getMonth() + 1;
+  const year   = now.getFullYear();
+
+  const shortage = await Shortage.create({
+    company:     worker.company,
+    branchId:    worker.branchId?._id || worker.branchId,
+    branchName:  worker.branchId?.name || worker.branch || '',
+    worker:      worker._id,
+    workerName:  worker.fullName,
+    workerRole:  worker.role,
+    month,
+    year,
+    date:        date ? new Date(date) : now,
+    amount:      Number(amount),
+    notes:       notes?.trim() || '',
+    submittedBy: null,   // self-service — no staff user
+    status:      'approved',  // auto-approved
+    reviewedAt:  now
+  });
+
+  // ── Auto-deduct from draft payroll if exists ──────────────────────────────
+  try {
+    const payroll = await Payroll.findOne({
+      company:  worker.company,
+      branchId: worker.branchId?._id || worker.branchId,
+      month, year,
+      status:   'draft'
+    });
+
+    if (payroll) {
+      const allApproved = await Shortage.find({
+        company: worker.company,
+        worker:  worker._id,
+        month, year,
+        status:  'approved'
+      }).lean();
+
+      const totalShortage = allApproved.reduce((sum, s) => sum + s.amount, 0);
+
+      payroll.entries = payroll.entries.map(e => {
+        const plain = e.toObject();
+        if (String(plain.worker) === String(worker._id)) plain.shortage = totalShortage;
+        return plain;
+      });
+      await payroll.save();
+    }
+  } catch (err) {
+    console.error('Payroll sync error:', err.message);
+  }
+
+  res.status(201).json({
+    success: true,
+    message: `Shortage of ₦${Number(amount).toLocaleString()} recorded for ${worker.fullName}`,
+    data: { workerName: worker.fullName, branchName: worker.branchId?.name || worker.branch, amount: Number(amount), month, year }
+  });
+};
+
+// ─── GET /api/shortages/worker/lookup?pin=xxxx  (public — verify PIN) ─────────
+const workerPinLookup = async (req, res) => {
+  const { pin } = req.query;
+  if (!pin) return res.status(400).json({ success: false, message: 'PIN required' });
+
+  const worker = await Worker.findOne({ pin: String(pin).trim() })
+    .populate('branchId', 'name')
+    .select('fullName role branch branchId employmentStatus passportPhoto')
+    .lean();
+
+  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN' });
+  if (worker.employmentStatus !== 'active')
+    return res.status(400).json({ success: false, message: 'This worker account is not active' });
+
+  res.json({ success: true, data: {
+    _id: worker._id,
+    fullName:   worker.fullName,
+    role:       worker.role,
+    branchName: worker.branchId?.name || worker.branch,
+    photo:      worker.passportPhoto?.url
+  }});
+};
+
+module.exports = {
+  submitShortage, getShortages, approveShortage, rejectShortage,
+  deleteShortage, getShortagesSummary, workerPinSubmit, workerPinLookup
+};

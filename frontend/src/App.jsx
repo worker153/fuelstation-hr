@@ -18,6 +18,7 @@ import ActiveWorkers      from './pages/ActiveWorkers';
 import WorkerPrint        from './pages/WorkerPrint';
 import Payroll            from './pages/Payroll';
 import Shortages          from './pages/Shortages';
+import WorkerShortage     from './pages/WorkerShortage';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+            <Route path="/shortage" element={<WorkerShortage />} />
 
             <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route path="/dashboard"     element={<Dashboard />} />

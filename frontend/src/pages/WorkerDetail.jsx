@@ -1302,6 +1302,11 @@ export default function WorkerDetail() {
   // Create staff account modal
   const [showCreateStaff, setShowCreateStaff] = useState(false);
 
+  // Worker PIN management
+  const [editPin,   setEditPin  ] = useState(false);
+  const [pinValue,  setPinValue ] = useState('');
+  const [savingPin, setSavingPin] = useState(false);
+
   const load = async () => {
     try {
       const [w, g] = await Promise.all([
@@ -1353,6 +1358,20 @@ export default function WorkerDetail() {
     } catch (err) {
       notify(err.response?.data?.message || 'Failed to update date', 'error');
     } finally { setSavingReg(false); }
+  };
+
+  const savePin = async () => {
+    if (!/^\d{4}$/.test(pinValue)) return notify('PIN must be exactly 4 digits', 'error');
+    setSavingPin(true);
+    try {
+      await api.put(`/workers/${id}/pin`, { pin: pinValue });
+      await load();
+      setEditPin(false);
+      setPinValue('');
+      notify('PIN set ✓');
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to set PIN', 'error');
+    } finally { setSavingPin(false); }
   };
 
   const handleWhatsApp = () => {
@@ -1533,6 +1552,41 @@ export default function WorkerDetail() {
                   </div>
                 )}
               </div>
+
+              {/* Shortage PIN — super admin only */}
+              {isSuperAdmin() && (
+                <div className="flex gap-3 py-2 items-start border-t border-gray-50 mt-1 pt-3">
+                  <span className="text-sm text-gray-400 w-28 shrink-0 mt-0.5">Shortage PIN</span>
+                  {editPin ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input
+                        type="text" inputMode="numeric" maxLength={4}
+                        className="input max-w-[100px] text-center tracking-widest font-bold text-lg"
+                        placeholder="0000"
+                        value={pinValue}
+                        onChange={e => setPinValue(e.target.value.replace(/\D/g,'').slice(0,4))}
+                        autoFocus
+                      />
+                      <button onClick={savePin} disabled={savingPin}
+                        className="btn-primary text-xs px-3 py-1.5">
+                        {savingPin ? <Loader size={12} className="animate-spin" /> : <><Save size={12}/> Save</>}
+                      </button>
+                      <button onClick={() => { setEditPin(false); setPinValue(''); }}
+                        className="text-xs text-gray-500 hover:text-gray-800 px-2 py-2">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-800 font-medium font-mono tracking-widest">
+                        {worker.pin ? '••••' : <span className="text-gray-400 italic font-sans tracking-normal">Not set</span>}
+                      </span>
+                      <button onClick={() => { setPinValue(''); setEditPin(true); }}
+                        className="text-xs text-brand-600 hover:text-brand-800 flex items-center gap-1 font-medium">
+                        <Edit2 size={11} /> {worker.pin ? 'Change' : 'Set PIN'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
