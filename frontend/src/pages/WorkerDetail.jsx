@@ -1553,10 +1553,10 @@ export default function WorkerDetail() {
                 )}
               </div>
 
-              {/* Shortage PIN — super admin only */}
+              {/* Worker PIN (attendance + shortage) — super admin only */}
               {isSuperAdmin() && (
                 <div className="flex gap-3 py-2 items-start border-t border-gray-50 mt-1 pt-3">
-                  <span className="text-sm text-gray-400 w-28 shrink-0 mt-0.5">Shortage PIN</span>
+                  <span className="text-sm text-gray-400 w-28 shrink-0 mt-0.5">Worker PIN</span>
                   {editPin ? (
                     <div className="flex items-center gap-2 flex-wrap">
                       <input
