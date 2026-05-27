@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@react-google-maps/api": "^2.19.3",
+    "@vladmandic/face-api": "^1.7.15",
     "axios": "^1.7.7",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.447.0",

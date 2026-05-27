@@ -16,7 +16,7 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 
 // ── POST /api/attendance/clock  (public — called from terminal) ───────────────
 const terminalClock = async (req, res) => {
-  const { deviceToken, workerId, type, gps, selfieBase64 } = req.body;
+  const { deviceToken, workerId, type, gps, selfieBase64, faceMatchScore } = req.body;
 
   if (!deviceToken || !workerId || !type)
     return res.status(400).json({ success: false, message: 'deviceToken, workerId and type are required' });
@@ -86,7 +86,8 @@ const terminalClock = async (req, res) => {
 
   // ── 5. Determine overall status ──────────────────────────────────────────────
   const deviceVerified = true;
-  const status = (gpsVerified && selfie.url && failReasons.length === 0)
+  const faceVerified   = typeof faceMatchScore === 'number' && faceMatchScore >= 55;
+  const status = (gpsVerified && selfie.url && faceVerified && failReasons.length === 0)
     ? 'verified'
     : failReasons.length > 0 ? 'partial' : 'verified';
 
@@ -110,6 +111,8 @@ const terminalClock = async (req, res) => {
     gpsVerified,
     gpsDistance,
     selfie,
+    faceMatchScore: faceMatchScore || null,
+    faceVerified,
     deviceVerified,
     status,
     failReasons,

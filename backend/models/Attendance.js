@@ -38,6 +38,7 @@ const attendanceSchema = new mongoose.Schema({
   },
 
   // Verification flags
+  faceMatchScore: { type: Number },   // 0-100 from face-api.js on terminal
   faceVerified:   { type: Boolean, default: false },
   deviceVerified: { type: Boolean, default: false },
 
