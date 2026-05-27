@@ -21,6 +21,7 @@ import Shortages           from './pages/Shortages';
 import WorkerShortage      from './pages/WorkerShortage';
 import AttendanceDevices   from './pages/AttendanceDevices';
 import AttendanceTerminal  from './pages/AttendanceTerminal';
+import WorkerPins          from './pages/WorkerPins';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -79,6 +80,7 @@ export default function App() {
               <Route path="/approval-queue"       element={<AdminRoute><ApprovalQueue /></AdminRoute>} />
               <Route path="/staff"                element={<AdminRoute><StaffManagement /></AdminRoute>} />
               <Route path="/attendance-devices"   element={<AdminRoute><AttendanceDevices /></AdminRoute>} />
+              <Route path="/worker-pins"          element={<AdminRoute><WorkerPins /></AdminRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>

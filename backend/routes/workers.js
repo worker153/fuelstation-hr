@@ -14,15 +14,18 @@ const {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin
+  updateWorkerPin,
+  getWorkerPins, bulkGeneratePins,
 } = require('../controllers/workerController');
 
 router.use(protect);
 
 // ── Named routes BEFORE /:id ──────────────────────────────────────────────────
-router.get('/stats',          getStats);
-router.get('/approval-queue', getApprovalQueue);
-router.get('/active-workers', getActiveWorkers);
+router.get('/stats',           getStats);
+router.get('/approval-queue',  getApprovalQueue);
+router.get('/active-workers',  getActiveWorkers);
+router.get('/pins',            superAdminOnly, getWorkerPins);
+router.post('/bulk-generate-pins', superAdminOnly, bulkGeneratePins);
 
 // ── Collection ────────────────────────────────────────────────────────────────
 router.route('/')

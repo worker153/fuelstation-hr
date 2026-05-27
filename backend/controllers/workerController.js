@@ -728,6 +728,71 @@ const uploadCompanyStamp = async (req, res) => {
   res.json({ success: true, data: worker });
 };
 
+// ─── GET /api/workers/pins  (super admin — list all workers + their PINs) ─────
+const getWorkerPins = async (req, res) => {
+  const cid = req.user.company._id;
+  const { branchId } = req.query;
+  const filter = { company: cid };
+  if (branchId) filter.branchId = branchId;
+
+  const workers = await Worker.find(filter)
+    .select('fullName role branch branchId employmentStatus pin passportPhoto')
+    .populate('branchId', 'name')
+    .sort({ branch: 1, fullName: 1 })
+    .lean();
+
+  res.json({ success: true, data: workers });
+};
+
+// ─── POST /api/workers/bulk-generate-pins  (super admin — generate PINs for all workers without one) ───
+const bulkGeneratePins = async (req, res) => {
+  const cid = req.user.company._id;
+  const { overwrite = false } = req.body; // if true, regenerate even existing PINs
+
+  // Get all existing PINs in this company to avoid duplicates
+  const existing = await Worker.find({ company: cid, pin: { $exists: true, $ne: null, $ne: '' } })
+    .select('pin').lean();
+  const usedPins = new Set(existing.map(w => w.pin));
+
+  // Generate a unique 4-digit PIN
+  const generatePin = () => {
+    let attempts = 0;
+    while (attempts < 10000) {
+      const p = String(Math.floor(1000 + Math.random() * 9000)); // 1000-9999
+      if (!usedPins.has(p)) { usedPins.add(p); return p; }
+      attempts++;
+    }
+    throw new Error('Cannot generate unique PIN — too many workers');
+  };
+
+  // Find workers that need a PIN
+  const query = { company: cid };
+  if (!overwrite) query.$or = [{ pin: { $exists: false } }, { pin: null }, { pin: '' }];
+
+  const workers = await Worker.find(query).select('_id fullName pin').lean();
+  if (workers.length === 0)
+    return res.json({ success: true, message: 'All workers already have PINs', updated: 0 });
+
+  // Assign PINs in bulk
+  const bulkOps = workers.map(w => {
+    const pin = generatePin();
+    return {
+      updateOne: {
+        filter: { _id: w._id },
+        update: { $set: { pin } }
+      }
+    };
+  });
+
+  await Worker.bulkWrite(bulkOps);
+
+  res.json({
+    success: true,
+    message: `Generated PINs for ${workers.length} worker${workers.length !== 1 ? 's' : ''}`,
+    updated: workers.length
+  });
+};
+
 // ─── PUT /api/workers/:id/pin  (super admin sets worker PIN) ─────────────────
 const updateWorkerPin = async (req, res) => {
   const { pin } = req.body;
@@ -750,6 +815,7 @@ const updateWorkerPin = async (req, res) => {
 
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
+  getWorkerPins, bulkGeneratePins,
   uploadSignature, updateAddressLocation,
   uploadVerificationDoc, deleteVerificationDoc, updateVerificationStatus,
   updateHouseVerification, deleteHousePhoto,
