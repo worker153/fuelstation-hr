@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { AlertTriangle, Leaf, CheckCircle, ArrowLeft, Loader, Users, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { AlertTriangle, Leaf, CheckCircle, ArrowLeft, Loader, Users, ChevronRight, Delete } from 'lucide-react';
 import axios from 'axios';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -7,12 +7,108 @@ const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
+// ── Custom PIN Pad ─────────────────────────────────────────────────────────────
+function PinPad({ pin, onChange, onSubmit, loading, error }) {
+  const [shake, setShake] = useState(false);
+
+  const press = (d) => {
+    if (pin.length < 4) {
+      const next = pin + d;
+      onChange(next);
+      if (next.length === 4) {
+        // small delay so the 4th dot fills before submitting
+        setTimeout(() => onSubmit(next), 180);
+      }
+    }
+  };
+
+  const del = () => onChange(pin.slice(0, -1));
+
+  // shake on error
+  useEffect(() => {
+    if (error) {
+      setShake(true);
+      onChange('');
+      const t = setTimeout(() => setShake(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [error]);
+
+  const KEYS = [
+    ['1','2','3'],
+    ['4','5','6'],
+    ['7','8','9'],
+    [null,'0','del'],
+  ];
+
+  return (
+    <div className="px-6 pb-6">
+      {/* Dot indicators */}
+      <div className={`flex justify-center gap-5 mb-7 ${shake ? 'animate-[shake_0.5s_ease]' : ''}`}>
+        {[0,1,2,3].map(i => (
+          <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-200
+            ${pin.length > i
+              ? 'bg-brand-600 border-brand-600 scale-110'
+              : 'bg-transparent border-gray-300'}`}
+          />
+        ))}
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4 text-center">{error}</p>
+      )}
+
+      {/* Keypad */}
+      <div className="space-y-3">
+        {KEYS.map((row, ri) => (
+          <div key={ri} className="grid grid-cols-3 gap-3">
+            {row.map((key, ki) => {
+              if (key === null) return <div key={ki} />;
+              if (key === 'del') return (
+                <button key={ki} onClick={del}
+                  className="h-14 rounded-2xl bg-gray-100 hover:bg-gray-200 active:scale-95
+                             flex items-center justify-center transition-all duration-100
+                             text-gray-600 disabled:opacity-40"
+                  disabled={!pin.length || loading}>
+                  <Delete size={20} />
+                </button>
+              );
+              return (
+                <button key={ki} onClick={() => press(key)}
+                  disabled={pin.length === 4 || loading}
+                  className="h-14 rounded-2xl bg-gray-50 hover:bg-brand-50 active:bg-brand-100
+                             active:scale-95 border border-gray-200 hover:border-brand-300
+                             flex flex-col items-center justify-center transition-all duration-100
+                             disabled:opacity-50 select-none">
+                  <span className="text-xl font-bold text-gray-800 leading-none">{key}</span>
+                  <span className="text-[9px] text-gray-400 leading-none mt-0.5">
+                    {{'2':'ABC','3':'DEF','4':'GHI','5':'JKL','6':'MNO',
+                      '7':'PQRS','8':'TUV','9':'WXYZ','0':'+'}[key] || ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center gap-2 mt-5 text-brand-600">
+          <Loader size={16} className="animate-spin" />
+          <span className="text-sm font-medium">Verifying…</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WorkerShortage() {
-  // step: 'pin' | 'pick' | 'form' | 'done'
   const [step,           setStep          ] = useState('pin');
   const [pin,            setPin           ] = useState('');
-  const [supervisor,     setSupervisor    ] = useState(null);   // the PIN holder
-  const [targetWorker,   setTargetWorker  ] = useState(null);   // who shortage is FOR
+  const [supervisor,     setSupervisor    ] = useState(null);
+  const [targetWorker,   setTargetWorker  ] = useState(null);
   const [amount,         setAmount        ] = useState('');
   const [notes,          setNotes         ] = useState('');
   const [date,           setDate          ] = useState(new Date().toISOString().split('T')[0]);
@@ -22,36 +118,28 @@ export default function WorkerShortage() {
 
   const now = new Date();
 
-  // ── Step 1: verify PIN ──────────────────────────────────────────────────────
-  const verifyPin = async (e) => {
-    e.preventDefault();
-    if (pin.length !== 4) return setError('Enter your 4-digit PIN');
+  const verifyPin = async (submittedPin) => {
+    const p = submittedPin || pin;
+    if (p.length !== 4) return;
     setLoading(true); setError('');
     try {
-      const { data } = await axios.get(`${BASE}/shortages/worker/lookup?pin=${pin}`);
+      const { data } = await axios.get(`${BASE}/shortages/worker/lookup?pin=${p}`);
       const worker = data.data;
       setSupervisor(worker);
-
       if (worker.isSupervisor && worker.workers?.length > 0) {
-        // Supervisor → show worker picker
         setStep('pick');
       } else {
-        // Regular worker → shortage is for themselves
         setTargetWorker({ _id: worker._id, fullName: worker.fullName, role: worker.role, photo: worker.photo });
         setStep('form');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid PIN');
+      setError(err.response?.data?.message || 'Invalid PIN — try again');
+      setPin('');
     } finally { setLoading(false); }
   };
 
-  // ── Step 2 (supervisor): pick which worker ──────────────────────────────────
-  const pickWorker = (w) => {
-    setTargetWorker(w);
-    setStep('form');
-  };
+  const pickWorker = (w) => { setTargetWorker(w); setStep('form'); };
 
-  // ── Step 3: submit shortage ─────────────────────────────────────────────────
   const submitShortage = async (e) => {
     e.preventDefault();
     if (!amount || Number(amount) <= 0) return setError('Enter a valid amount');
@@ -59,7 +147,6 @@ export default function WorkerShortage() {
     try {
       const payload = { pin, amount: Number(amount), notes, date };
       if (targetWorker._id !== supervisor._id) payload.targetWorkerId = targetWorker._id;
-
       const { data } = await axios.post(`${BASE}/shortages/worker`, payload);
       setResult(data);
       setStep('done');
@@ -79,7 +166,7 @@ export default function WorkerShortage() {
       <div className="w-full max-w-sm">
 
         {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mb-8">
+        <div className="flex items-center justify-center gap-2 mb-6">
           <div className="bg-white/20 rounded-xl p-2">
             <Leaf size={22} className="text-white" />
           </div>
@@ -91,46 +178,32 @@ export default function WorkerShortage() {
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
 
-          {/* ── STEP 1: PIN entry ─────────────────────────────────────────────── */}
+          {/* ── STEP 1: PIN pad ─────────────────────────────────────────────────── */}
           {step === 'pin' && (
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
-                  <AlertTriangle size={18} className="text-red-600" />
+            <div>
+              <div className="px-6 pt-6 pb-5 border-b border-gray-100 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-brand-600 flex items-center justify-center mx-auto mb-3">
+                  <AlertTriangle size={20} className="text-white" />
                 </div>
-                <div>
-                  <p className="font-bold text-gray-900">Report Shortage</p>
-                  <p className="text-xs text-gray-500">Enter your 4-digit PIN to continue</p>
-                </div>
+                <p className="font-bold text-gray-900 text-base">Enter your PIN</p>
+                <p className="text-xs text-gray-500 mt-0.5">4-digit PIN to report a shortage</p>
               </div>
 
-              <form onSubmit={verifyPin} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Your PIN</label>
-                  <input
-                    type="password" inputMode="numeric" maxLength={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-2xl tracking-[1rem] font-bold focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    placeholder="••••"
-                    value={pin}
-                    onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(''); }}
-                    autoFocus
-                  />
-                </div>
-                {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-                <button type="submit" disabled={loading || pin.length !== 4}
-                  className="w-full py-3 rounded-xl bg-brand-600 text-white font-semibold text-sm
-                             hover:bg-brand-700 transition-colors disabled:opacity-50
-                             flex items-center justify-center gap-2">
-                  {loading ? <Loader size={16} className="animate-spin" /> : 'Continue'}
-                </button>
-              </form>
+              <div className="pt-6">
+                <PinPad
+                  pin={pin}
+                  onChange={(v) => { setPin(v); setError(''); }}
+                  onSubmit={verifyPin}
+                  loading={loading}
+                  error={error}
+                />
+              </div>
             </div>
           )}
 
-          {/* ── STEP 2: Worker picker (supervisor only) ───────────────────────── */}
+          {/* ── STEP 2: Worker picker ─────────────────────────────────────────── */}
           {step === 'pick' && supervisor && (
             <div>
-              {/* Supervisor banner */}
               <div className="bg-brand-600 px-5 py-4 flex items-center gap-3">
                 {supervisor.photo
                   ? <img src={supervisor.photo} className="w-10 h-10 rounded-xl object-cover border-2 border-white/30" alt="" />
@@ -151,7 +224,8 @@ export default function WorkerShortage() {
                 <div className="space-y-1.5 max-h-72 overflow-y-auto">
                   {supervisor.workers.map(w => (
                     <button key={w._id} onClick={() => pickWorker(w)}
-                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl border border-gray-100 hover:border-brand-200 hover:bg-brand-50 transition-colors text-left">
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl border border-gray-100
+                                 hover:border-brand-200 hover:bg-brand-50 transition-colors text-left">
                       {w.photo
                         ? <img src={w.photo} className="w-9 h-9 rounded-lg object-cover shrink-0" alt="" />
                         : <div className="w-9 h-9 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm shrink-0">{w.fullName[0]}</div>
@@ -253,7 +327,9 @@ export default function WorkerShortage() {
                 ✓ Will be deducted from salary for {MONTHS[(result.data?.month || 1) - 1]}
               </p>
 
-              <button onClick={supervisor?.isSupervisor ? () => { setTargetWorker(null); setAmount(''); setNotes(''); setError(''); setResult(null); setStep('pick'); } : reset}
+              <button onClick={supervisor?.isSupervisor
+                  ? () => { setTargetWorker(null); setAmount(''); setNotes(''); setError(''); setResult(null); setStep('pick'); }
+                  : reset}
                 className="w-full py-3 rounded-xl bg-brand-600 text-white font-semibold text-sm hover:bg-brand-700 transition-colors">
                 {supervisor?.isSupervisor ? 'Report Another Worker' : 'Report Another'}
               </button>
