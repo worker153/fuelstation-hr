@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, CheckCircle, Clock, ShieldCheck, Plus, ChevronRight } from 'lucide-react';
+import { Users, CheckCircle, Clock, ShieldCheck, AlertCircle, Plus, ChevronRight } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import VerificationBadge from '../components/VerificationBadge';
@@ -18,7 +18,7 @@ function StatCard({ icon: Icon, label, value, color }) {
 }
 
 export default function Dashboard() {
-  const { user }                    = useAuth();
+  const { user, isSuperAdmin }      = useAuth();
   const [stats, setStats]           = useState(null);
   const [recent, setRecent]         = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -71,11 +71,30 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Users}       label="Total Workers"    value={stats?.total}          color="bg-blue-500" />
-          <StatCard icon={CheckCircle} label="Verified"         value={stats?.verified}        color="bg-green-500" />
-          <StatCard icon={Clock}       label="Pending Review"   value={stats?.pending}         color="bg-amber-500" />
-          <StatCard icon={ShieldCheck} label="Have Guarantors"  value={stats?.withGuarantors}  color="bg-purple-500" />
+          <StatCard icon={Users}       label="Total Workers"    value={stats?.total}            color="bg-blue-500" />
+          <StatCard icon={CheckCircle} label="Verified"         value={stats?.verified}          color="bg-green-500" />
+          <StatCard icon={Clock}       label="In Progress"      value={stats?.pending}           color="bg-amber-500" />
+          <StatCard icon={AlertCircle} label="Pending Approval" value={stats?.pendingApproval ?? 0} color="bg-purple-600" />
         </div>
+      )}
+
+      {/* Pending Approval CTA — only show to super admins when there's a queue */}
+      {!loading && isSuperAdmin() && (stats?.pendingApproval ?? 0) > 0 && (
+        <Link
+          to="/approval-queue"
+          className="flex items-center gap-4 p-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:border-purple-400 hover:bg-purple-100 transition-all"
+        >
+          <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center shrink-0">
+            <ShieldCheck size={20} className="text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-purple-900">
+              {stats.pendingApproval} worker{stats.pendingApproval !== 1 ? 's' : ''} awaiting your approval
+            </p>
+            <p className="text-sm text-purple-600 mt-0.5">Review and approve verification submissions</p>
+          </div>
+          <ChevronRight size={18} className="text-purple-400 shrink-0" />
+        </Link>
       )}
 
       {/* Recent workers */}

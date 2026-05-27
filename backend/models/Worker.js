@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ObjectId } = mongoose.Schema.Types;
 
 const fileRefSchema = new mongoose.Schema({
   url:       String,
@@ -28,52 +29,139 @@ const housePhotoSchema = new mongoose.Schema({
 }, { _id: true });
 
 const houseVerificationSchema = new mongoose.Schema({
-  coordinates: { lat: Number, lng: Number },
-  address:     String,
+  coordinates:      { lat: Number, lng: Number },
+  address:          String,
   formattedAddress: String,
-  notes:       String,
-  photos:      [housePhotoSchema],
-  verifiedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  verifiedAt:  Date
+  notes:            String,
+  photos:           [housePhotoSchema],
+  verifiedBy:       { type: ObjectId, ref: 'User' },
+  verifiedAt:       Date
 }, { _id: false });
 
-const workerSchema = new mongoose.Schema({
-  company:    { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
-  fullName:   { type: String, required: [true, 'Full name is required'], trim: true },
-  phone:      { type: String, required: [true, 'Phone number is required'], trim: true },
-  address:    { type: String, required: [true, 'Address is required'], trim: true },
+// ── Employment history entry ──────────────────────────────────────────────────
+const employmentHistorySchema = new mongoose.Schema({
+  action: {
+    type: String,
+    enum: ['registered', 'activated', 'transferred', 'role_changed', 'suspended',
+           'sacked', 'reactivated', 'schedule_changed', 'deactivated'],
+    required: true
+  },
+  fromBranch:   String,
+  toBranch:     String,
+  fromRole:     String,
+  toRole:       String,
+  fromSchedule: String,
+  toSchedule:   String,
+  reason:       String,
+  notes:        String,
+  date:         { type: Date, default: Date.now },
+  performedBy:  { type: ObjectId, ref: 'User' }
+}, { _id: true });
 
-  // Structured address from Google Places
+const workerSchema = new mongoose.Schema({
+  company:  { type: ObjectId, ref: 'Company', required: true },
+  fullName: { type: String, required: [true, 'Full name is required'],    trim: true },
+  phone:    { type: String, required: [true, 'Phone number is required'], trim: true },
+  address:  { type: String, required: [true, 'Address is required'],      trim: true },
+
+  // Structured address with Plus Code
   addressLocation: {
     formatted:   String,
-    coordinates: { lat: Number, lng: Number }
+    coordinates: { lat: Number, lng: Number },
+    plusCode:    String
   },
 
   passportPhoto: { url: String, publicId: String },
 
-  // Digital or uploaded signature
   signature: {
     url:        String,
     publicId:   String,
     uploadedAt: Date
   },
 
-  branch:     { type: String, required: [true, 'Branch is required'], trim: true },
-  role:       { type: String, required: [true, 'Role is required'], trim: true },
+  // ── Authorized signature & company stamp (manager/supervisor sign-off) ────
+  authorisedSignature: {
+    url:           String,
+    publicId:      String,
+    authorisedBy:  String,   // name of signatory
+    authorisedAt:  Date
+  },
+  companyStamp: {
+    url:        String,
+    publicId:   String,
+    uploadedAt: Date
+  },
 
+  branch:   { type: String, required: [true, 'Branch is required'], trim: true },
+  branchId: { type: ObjectId, ref: 'Branch' },
+  role:     { type: String, required: [true, 'Role is required'],   trim: true },
+  schedule: { type: String, trim: true },
+  shiftId:  { type: ObjectId, ref: 'Shift' },
+
+  // ── Verification status flow ─────────────────────────────────────────────
   verificationStatus: {
     type:    String,
-    enum:    ['pending', 'partially_verified', 'fully_verified', 'verified'], // 'verified' kept for compat
-    default: 'pending'
+    enum:    [
+      'pending', 'partially_verified', 'fully_verified', 'verified',
+      'pending_verification', 'under_review', 'pending_approval', 'rejected'
+    ],
+    default: 'pending_verification'
   },
+
+  // Approval / rejection
+  rejectionReason:        { type: String, trim: true },
+  approvedBy:             { type: ObjectId, ref: 'User' },
+  approvedAt:             Date,
+  rejectedBy:             { type: ObjectId, ref: 'User' },
+  rejectedAt:             Date,
+  submittedForApprovalAt: Date,
+  submittedForApprovalBy: { type: ObjectId, ref: 'User' },
 
   verificationDocuments: [verificationDocSchema],
   houseVerification:     houseVerificationSchema,
 
-  addedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  // ── Employment status ────────────────────────────────────────────────────
+  employmentStatus: {
+    type:    String,
+    enum:    ['registered', 'active', 'suspended', 'sacked', 'inactive'],
+    default: 'registered'
+  },
+
+  resumptionDate: { type: Date },   // actual first day of work (used for payroll proration)
+  activatedAt:    Date,
+  activatedBy:    { type: ObjectId, ref: 'User' },
+
+  suspensionReason: { type: String, trim: true },
+  suspendedAt:      Date,
+  suspendedBy:      { type: ObjectId, ref: 'User' },
+
+  sackReason: { type: String, trim: true },
+  sackedAt:   Date,
+  sackedBy:   { type: ObjectId, ref: 'User' },
+
+  // ── Salary & bank ────────────────────────────────────────────────────────
+  salary: {
+    monthly:        { type: Number, default: 0 },
+    paymentStatus:  { type: String, enum: ['paid', 'unpaid', 'partial'], default: 'unpaid' },
+    payrollEnabled: { type: Boolean, default: false }
+  },
+  bankDetails: {
+    bankName:      { type: String, trim: true },
+    accountNumber: { type: String, trim: true },
+    accountName:   { type: String, trim: true }
+  },
+
+  // ── Employment history ───────────────────────────────────────────────────
+  employmentHistory: [employmentHistorySchema],
+
+  addedBy:      { type: ObjectId, ref: 'User' },
+  registeredAt: { type: Date }   // override for the displayed "Registered" date (editable by super admin)
 }, { timestamps: true });
 
 workerSchema.index({ company: 1 });
 workerSchema.index({ company: 1, verificationStatus: 1 });
+workerSchema.index({ company: 1, employmentStatus: 1 });
+workerSchema.index({ company: 1, branchId: 1 });
+workerSchema.index({ company: 1, shiftId: 1 });
 
 module.exports = mongoose.model('Worker', workerSchema);

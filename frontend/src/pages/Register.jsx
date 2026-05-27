@@ -11,7 +11,8 @@ const INIT = {
 
 export default function Register() {
   const [form, setForm]       = useState(INIT);
-  const [showPwd, setShowPwd] = useState(false);
+  const [showPwd,    setShowPwd   ] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const { register }          = useAuth();
   const notify                = useNotify();
@@ -118,8 +119,15 @@ export default function Register() {
                 </div>
                 <div>
                   <label className="label">Confirm Password *</label>
-                  <input type="password" className="input" placeholder="Repeat password"
-                    value={form.confirmPassword} onChange={set('confirmPassword')} required />
+                  <div className="relative">
+                    <input type={showConfirm ? 'text' : 'password'} className="input pr-10"
+                      placeholder="Repeat password" value={form.confirmPassword}
+                      onChange={set('confirmPassword')} required />
+                    <button type="button" onClick={() => setShowConfirm(!showConfirm)}
+                      className="absolute inset-y-0 right-3 text-gray-400 hover:text-gray-600 transition-colors">
+                      {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

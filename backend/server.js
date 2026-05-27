@@ -5,9 +5,14 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/database');
 
-const authRoutes = require('./routes/auth');
-const workerRoutes = require('./routes/workers');
+const authRoutes      = require('./routes/auth');
+const workerRoutes    = require('./routes/workers');
 const guarantorRoutes = require('./routes/guarantors');
+const staffRoutes     = require('./routes/staff');
+const branchRoutes    = require('./routes/branches');
+const shiftRoutes     = require('./routes/shifts');
+const payrollRoutes   = require('./routes/payroll');
+const shortageRoutes  = require('./routes/shortages');
 
 const app = express();
 
@@ -20,9 +25,14 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/api/auth', authRoutes);
-app.use('/api/workers', workerRoutes);
-app.use('/api/workers', guarantorRoutes);
+app.use('/api/auth',     authRoutes);
+app.use('/api/workers',  workerRoutes);
+app.use('/api/workers',  guarantorRoutes);
+app.use('/api/staff',    staffRoutes);
+app.use('/api/branches', branchRoutes);
+app.use('/api/shifts',   shiftRoutes);
+app.use('/api/payroll',  payrollRoutes);
+app.use('/api/shortages', shortageRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });

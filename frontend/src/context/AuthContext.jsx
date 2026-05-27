@@ -4,7 +4,7 @@ import api from '../utils/api';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null);
+  const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,8 +36,18 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // ── Permission helpers ──────────────────────────────────────────────────────
+  const isSuperAdmin = () =>
+    user && ['super_admin', 'admin'].includes(user.role);
+
+  const can = (permission) => {
+    if (!user) return false;
+    if (['super_admin', 'admin'].includes(user.role)) return true;
+    return !!user.permissions?.[permission];
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, isSuperAdmin, can }}>
       {children}
     </AuthContext.Provider>
   );

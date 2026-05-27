@@ -1,15 +1,21 @@
 const Worker    = require('../models/Worker');
 const Guarantor = require('../models/Guarantor');
+const Branch    = require('../models/Branch');
+const Shift     = require('../models/Shift');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middleware/upload');
 
 const VALID_DOC_TYPES = ['nin', 'voter_card', 'drivers_license', 'national_id', 'international_passport'];
 
 // ─── Auto-calculate verification status ──────────────────────────────────────
+// Only updates status if it's in the "working" range (not yet submitted/approved/rejected)
+const LOCKED_STATUSES = ['pending_approval', 'verified', 'rejected'];
+
 const recalcStatus = async (workerId) => {
   const worker = await Worker.findById(workerId);
   if (!worker) return;
-  const guarantorCount = await Guarantor.countDocuments({ worker: workerId });
+  if (LOCKED_STATUSES.includes(worker.verificationStatus)) return; // don't change once submitted
 
+  const guarantorCount = await Guarantor.countDocuments({ worker: workerId });
   const checks = [
     !!worker.passportPhoto?.url,
     !!worker.signature?.url,
@@ -21,11 +27,9 @@ const recalcStatus = async (workerId) => {
   ];
   const score = checks.filter(Boolean).length;
 
-  const status = score === checks.length
-    ? 'fully_verified'
-    : score > 0
-      ? 'partially_verified'
-      : 'pending';
+  const status = score === 0      ? 'pending_verification'
+               : score < checks.length ? 'partially_verified'
+               : 'partially_verified';   // fully done but not yet submitted
 
   if (worker.verificationStatus !== status) {
     await Worker.findByIdAndUpdate(workerId, { verificationStatus: status });
@@ -35,11 +39,12 @@ const recalcStatus = async (workerId) => {
 // ─── GET /api/workers/stats ──────────────────────────────────────────────────
 const getStats = async (req, res) => {
   const cid = req.user.company._id;
-  const [total, fullyVerified, partial, pending, guarantorWorkers] = await Promise.all([
+  const [total, verified, pendingApproval, partial, pending, guarantorWorkers] = await Promise.all([
     Worker.countDocuments({ company: cid }),
     Worker.countDocuments({ company: cid, verificationStatus: { $in: ['fully_verified', 'verified'] } }),
+    Worker.countDocuments({ company: cid, verificationStatus: 'pending_approval' }),
     Worker.countDocuments({ company: cid, verificationStatus: 'partially_verified' }),
-    Worker.countDocuments({ company: cid, verificationStatus: 'pending' }),
+    Worker.countDocuments({ company: cid, verificationStatus: { $in: ['pending', 'pending_verification'] } }),
     Guarantor.aggregate([
       { $match: { company: cid } },
       { $group: { _id: '$worker' } },
@@ -48,7 +53,7 @@ const getStats = async (req, res) => {
   ]);
   res.json({
     success: true,
-    data: { total, verified: fullyVerified, partial, pending, withGuarantors: guarantorWorkers[0]?.total || 0 }
+    data: { total, verified, pendingApproval, partial, pending, withGuarantors: guarantorWorkers[0]?.total || 0 }
   });
 };
 
@@ -86,11 +91,60 @@ const getWorkers = async (req, res) => {
   });
 };
 
+// ─── GET /api/workers/active-workers ─────────────────────────────────────────
+const getActiveWorkers = async (req, res) => {
+  const cid = req.user.company._id;
+  const { branchId, shiftId, role, status, search, page = 1, limit = 20 } = req.query;
+
+  const filter = { company: cid };
+
+  if (status) {
+    filter.employmentStatus = status;
+  } else {
+    filter.employmentStatus = { $in: ['active', 'suspended', 'sacked', 'inactive'] };
+  }
+
+  if (branchId) filter.branchId = branchId;
+  if (shiftId)  filter.shiftId  = shiftId;
+  if (role)     filter.role = { $regex: role, $options: 'i' };
+  if (search) {
+    filter.$or = [
+      { fullName: { $regex: search, $options: 'i' } },
+      { phone:    { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  const total   = await Worker.countDocuments(filter);
+  const workers = await Worker.find(filter)
+    .populate('branchId', 'name')
+    .populate('shiftId',  'name startTime endTime')
+    .populate('activatedBy', 'name')
+    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary')
+    .sort({ employmentStatus: 1, fullName: 1 })
+    .skip((page - 1) * limit)
+    .limit(Number(limit));
+
+  res.json({
+    success: true,
+    data: workers,
+    pagination: { page: Number(page), pages: Math.ceil(total / limit), total }
+  });
+};
+
 // ─── GET /api/workers/:id ────────────────────────────────────────────────────
 const getWorker = async (req, res) => {
   const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id })
-    .populate('addedBy', 'name')
-    .populate('houseVerification.verifiedBy', 'name');
+    .populate('addedBy',               'name')
+    .populate('houseVerification.verifiedBy', 'name')
+    .populate('branchId',              'name address phone')
+    .populate('shiftId',               'name startTime endTime days')
+    .populate('approvedBy',            'name')
+    .populate('rejectedBy',            'name')
+    .populate('submittedForApprovalBy','name')
+    .populate('activatedBy',           'name')
+    .populate('suspendedBy',           'name')
+    .populate('sackedBy',              'name')
+    .populate('employmentHistory.performedBy', 'name');
 
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
   res.json({ success: true, data: worker });
@@ -176,13 +230,14 @@ const updateAddressLocation = async (req, res) => {
   const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
 
-  const { formatted, lat, lng, address } = req.body;
+  const { formatted, lat, lng, address, plusCode } = req.body;
 
-  if (address)            worker.address = address;
+  if (address) worker.address = address;
   if (formatted || (lat && lng)) {
     worker.addressLocation = {
       formatted:   formatted || worker.addressLocation?.formatted,
-      coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : worker.addressLocation?.coordinates
+      coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : worker.addressLocation?.coordinates,
+      plusCode:    plusCode   || worker.addressLocation?.plusCode || ''
     };
   }
 
@@ -299,9 +354,367 @@ const deleteHousePhoto = async (req, res) => {
   res.json({ success: true, data: worker });
 };
 
+// ─── POST /api/workers/:id/submit-approval ────────────────────────────────────
+const submitForApproval = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  if (['verified', 'rejected'].includes(worker.verificationStatus)) {
+    return res.status(400).json({ success: false, message: `Worker is already ${worker.verificationStatus}` });
+  }
+
+  worker.verificationStatus        = 'pending_approval';
+  worker.submittedForApprovalAt    = new Date();
+  worker.submittedForApprovalBy    = req.user._id;
+  worker.rejectionReason           = undefined;
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/approve ───────────────────────────────────────────
+const approveWorker = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  worker.verificationStatus = 'verified';
+  worker.approvedBy         = req.user._id;
+  worker.approvedAt         = new Date();
+  worker.rejectionReason    = undefined;
+  worker.rejectedBy         = undefined;
+  worker.rejectedAt         = undefined;
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/reject ────────────────────────────────────────────
+const rejectWorker = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  const { reason } = req.body;
+  if (!reason?.trim()) {
+    return res.status(400).json({ success: false, message: 'Rejection reason is required' });
+  }
+
+  worker.verificationStatus = 'rejected';
+  worker.rejectedBy         = req.user._id;
+  worker.rejectedAt         = new Date();
+  worker.rejectionReason    = reason.trim();
+  worker.approvedBy         = undefined;
+  worker.approvedAt         = undefined;
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/activate ──────────────────────────────────────────
+const activateWorker = async (req, res) => {
+  const { branchId, shiftId, role, schedule, notes, resumptionDate } = req.body;
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  const prevBranch   = worker.branch;
+  const prevRole     = worker.role;
+  const prevSchedule = worker.schedule;
+
+  if (branchId) {
+    const branch = await Branch.findOne({ _id: branchId, company: req.user.company._id, isActive: true });
+    if (!branch) return res.status(400).json({ success: false, message: 'Branch not found or inactive' });
+    worker.branchId = branch._id;
+    worker.branch   = branch.name;
+  }
+  if (shiftId) {
+    const shift = await Shift.findOne({ _id: shiftId, company: req.user.company._id });
+    if (shift) {
+      worker.shiftId  = shift._id;
+      worker.schedule = shift.name;
+    }
+  } else if (schedule) {
+    worker.schedule = schedule.trim();
+    worker.shiftId  = undefined;
+  }
+  if (role) worker.role = role.trim();
+
+  worker.employmentStatus = 'active';
+  worker.activatedAt      = new Date();
+  worker.activatedBy      = req.user._id;
+  if (resumptionDate) worker.resumptionDate = new Date(resumptionDate);
+  else if (!worker.resumptionDate) worker.resumptionDate = new Date();
+
+  worker.employmentHistory.push({
+    action:       'activated',
+    fromBranch:   prevBranch,
+    toBranch:     worker.branch,
+    fromRole:     prevRole,
+    toRole:       worker.role,
+    fromSchedule: prevSchedule,
+    toSchedule:   worker.schedule,
+    notes,
+    date:         new Date(),
+    performedBy:  req.user._id
+  });
+
+  await worker.save();
+  await worker.populate('branchId', 'name');
+  await worker.populate('shiftId',  'name startTime endTime');
+  await worker.populate('activatedBy', 'name');
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/suspend ───────────────────────────────────────────
+const suspendWorker = async (req, res) => {
+  const { reason, notes, date } = req.body;
+  if (!reason?.trim()) return res.status(400).json({ success: false, message: 'Suspension reason is required' });
+
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  if (worker.employmentStatus === 'sacked') {
+    return res.status(400).json({ success: false, message: 'Cannot suspend a sacked worker' });
+  }
+
+  worker.employmentStatus  = 'suspended';
+  worker.suspensionReason  = reason.trim();
+  worker.suspendedAt       = date ? new Date(date) : new Date();
+  worker.suspendedBy       = req.user._id;
+
+  worker.employmentHistory.push({
+    action: 'suspended',
+    reason: reason.trim(), notes,
+    date:        worker.suspendedAt,
+    performedBy: req.user._id
+  });
+
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/sack ──────────────────────────────────────────────
+const sackWorker = async (req, res) => {
+  const { reason, notes, date } = req.body;
+  if (!reason?.trim()) return res.status(400).json({ success: false, message: 'Reason for sacking is required' });
+
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  worker.employmentStatus = 'sacked';
+  worker.sackReason       = reason.trim();
+  worker.sackedAt         = date ? new Date(date) : new Date();
+  worker.sackedBy         = req.user._id;
+
+  worker.employmentHistory.push({
+    action: 'sacked',
+    reason: reason.trim(), notes,
+    date:        worker.sackedAt,
+    performedBy: req.user._id
+  });
+
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/reactivate ────────────────────────────────────────
+const reactivateWorker = async (req, res) => {
+  const { notes } = req.body;
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  const prevStatus        = worker.employmentStatus;
+  worker.employmentStatus = 'active';
+  worker.activatedAt      = new Date();
+  worker.activatedBy      = req.user._id;
+
+  worker.employmentHistory.push({
+    action:      'reactivated',
+    reason:      `Reactivated from ${prevStatus}`,
+    notes,
+    date:        new Date(),
+    performedBy: req.user._id
+  });
+
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/transfer ──────────────────────────────────────────
+const transferWorker = async (req, res) => {
+  const { branchId, shiftId, role, schedule, reason, notes } = req.body;
+  if (!reason?.trim()) return res.status(400).json({ success: false, message: 'Transfer reason is required' });
+
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  const prevBranch   = worker.branch;
+  const prevRole     = worker.role;
+  const prevSchedule = worker.schedule;
+
+  if (branchId) {
+    const branch = await Branch.findOne({ _id: branchId, company: req.user.company._id, isActive: true });
+    if (!branch) return res.status(400).json({ success: false, message: 'Branch not found or inactive' });
+    worker.branchId = branch._id;
+    worker.branch   = branch.name;
+  }
+  if (shiftId) {
+    const shift = await Shift.findOne({ _id: shiftId, company: req.user.company._id });
+    if (shift) {
+      worker.shiftId  = shift._id;
+      worker.schedule = shift.name;
+    }
+  } else if (schedule) {
+    worker.schedule = schedule.trim();
+    worker.shiftId  = undefined;
+  }
+  if (role) worker.role = role.trim();
+
+  worker.employmentHistory.push({
+    action:       'transferred',
+    fromBranch:   prevBranch,
+    toBranch:     worker.branch,
+    fromRole:     prevRole,
+    toRole:       worker.role,
+    fromSchedule: prevSchedule,
+    toSchedule:   worker.schedule,
+    reason:       reason.trim(), notes,
+    date:         new Date(),
+    performedBy:  req.user._id
+  });
+
+  await worker.save();
+  await worker.populate('branchId', 'name');
+  await worker.populate('shiftId',  'name startTime endTime');
+  res.json({ success: true, data: worker });
+};
+
+// ─── PUT /api/workers/:id/salary ─────────────────────────────────────────────
+const updateSalary = async (req, res) => {
+  const { monthly, paymentStatus, payrollEnabled } = req.body;
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  if (!worker.salary) worker.salary = {};
+  if (monthly        !== undefined) worker.salary.monthly        = Number(monthly);
+  if (paymentStatus  !== undefined) worker.salary.paymentStatus  = paymentStatus;
+  if (payrollEnabled !== undefined) worker.salary.payrollEnabled = Boolean(payrollEnabled);
+  worker.markModified('salary');
+
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── PUT /api/workers/:id/bank ───────────────────────────────────────────────
+const updateBank = async (req, res) => {
+  const { bankName, accountNumber, accountName } = req.body;
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  worker.bankDetails = {
+    bankName:      bankName?.trim()      || '',
+    accountNumber: accountNumber?.trim() || '',
+    accountName:   accountName?.trim()   || ''
+  };
+  worker.markModified('bankDetails');
+
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── GET /api/workers/approval-queue ─────────────────────────────────────────
+const getApprovalQueue = async (req, res) => {
+  const workers = await Worker.find({
+    company: req.user.company._id,
+    verificationStatus: 'pending_approval'
+  })
+    .sort({ submittedForApprovalAt: 1 })
+    .populate('addedBy', 'name')
+    .populate('submittedForApprovalBy', 'name');
+
+  // Attach guarantor counts
+  const withGuarantors = await Promise.all(
+    workers.map(async (w) => {
+      const guarantorCount = await Guarantor.countDocuments({ worker: w._id });
+      return { ...w.toObject(), guarantorCount };
+    })
+  );
+
+  res.json({ success: true, data: withGuarantors });
+};
+
+// ─── PUT /api/workers/:id/registration-date  (super admin only) ──────────────
+const updateRegistrationDate = async (req, res) => {
+  const { registrationDate } = req.body;
+  if (!registrationDate) return res.status(400).json({ success: false, message: 'registrationDate is required' });
+
+  const date = new Date(registrationDate);
+  if (isNaN(date.getTime())) return res.status(400).json({ success: false, message: 'Invalid date' });
+
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  worker.registeredAt = date;
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── PUT /api/workers/:id/resumption ─────────────────────────────────────────
+const updateResumptionDate = async (req, res) => {
+  const { resumptionDate } = req.body;
+
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  // Allow clearing the date by passing null or empty string
+  worker.resumptionDate = resumptionDate ? new Date(resumptionDate) : undefined;
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/authorised-signature ──────────────────────────────
+const uploadAuthorisedSignature = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  if (!req.file) return res.status(400).json({ success: false, message: 'No signature file provided' });
+
+  if (worker.authorisedSignature?.publicId)
+    await deleteFromCloudinary(worker.authorisedSignature.publicId);
+
+  const result = await uploadToCloudinary(
+    req.file.buffer, `${req.user.company._id}/workers/authorised-signatures`, 'image'
+  );
+  worker.authorisedSignature = {
+    url:          result.secure_url,
+    publicId:     result.public_id,
+    authorisedBy: req.body.authorisedBy || req.user.name || '',
+    authorisedAt: new Date()
+  };
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
+// ─── POST /api/workers/:id/company-stamp ────────────────────────────────────
+const uploadCompanyStamp = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  if (!req.file) return res.status(400).json({ success: false, message: 'No stamp file provided' });
+
+  if (worker.companyStamp?.publicId)
+    await deleteFromCloudinary(worker.companyStamp.publicId);
+
+  const result = await uploadToCloudinary(
+    req.file.buffer, `${req.user.company._id}/workers/stamps`, 'image'
+  );
+  worker.companyStamp = { url: result.secure_url, publicId: result.public_id, uploadedAt: new Date() };
+  await worker.save();
+  res.json({ success: true, data: worker });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   uploadSignature, updateAddressLocation,
   uploadVerificationDoc, deleteVerificationDoc, updateVerificationStatus,
-  updateHouseVerification, deleteHousePhoto
+  updateHouseVerification, deleteHousePhoto,
+  submitForApproval, approveWorker, rejectWorker, getApprovalQueue,
+  updateRegistrationDate, updateResumptionDate,
+  uploadAuthorisedSignature, uploadCompanyStamp,
+  // Employment management
+  getActiveWorkers,
+  activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
+  updateSalary, updateBank
 };

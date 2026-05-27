@@ -1,84 +1,67 @@
 /**
- * MapPicker — simple click-to-pin map (no Places autocomplete).
- * Uses the shared GoogleMapsContext so LoadScript is not duplicated.
+ * MapPicker — simple click-to-pin Leaflet map (no API key needed).
  */
-import { useState, useCallback } from 'react';
-import { GoogleMap, Marker } from '@react-google-maps/api';
+import { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { MapPin } from 'lucide-react';
-import { useGoogleMaps } from '../context/GoogleMapsContext';
 
-const MAP_STYLE   = { width: '100%', height: '300px' };
-const NG_CENTER   = { lat: 6.5244, lng: 3.3792 };
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
-function ManualInput({ value, onChange }) {
-  return (
-    <div className="border border-dashed border-gray-300 rounded-xl p-4 bg-gray-50 space-y-3">
-      <div className="flex items-center gap-2 text-gray-500">
-        <MapPin size={15} />
-        <span className="text-sm font-medium">Enter coordinates manually</span>
-      </div>
-      <p className="text-xs text-amber-600">
-        Add <code className="bg-amber-100 px-1 rounded">VITE_GOOGLE_MAPS_API_KEY</code> to .env to enable the interactive map.
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Latitude</label>
-          <input type="number" step="any" className="input" placeholder="e.g. 6.5244"
-            value={value?.lat || ''}
-            onChange={e => onChange?.({ lat: parseFloat(e.target.value) || 0, lng: value?.lng || 0 })} />
-        </div>
-        <div>
-          <label className="label">Longitude</label>
-          <input type="number" step="any" className="input" placeholder="e.g. 3.3792"
-            value={value?.lng || ''}
-            onChange={e => onChange?.({ lat: value?.lat || 0, lng: parseFloat(e.target.value) || 0 })} />
-        </div>
-      </div>
-    </div>
-  );
+const NIGERIA_CENTER = [9.082, 8.6753];
+
+function FlyTo({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) map.flyTo(position, 16, { duration: 0.8 });
+  }, [position]);   // eslint-disable-line
+  return null;
 }
 
-function GoogleMapPicker({ value, onChange }) {
-  const { isLoaded } = useGoogleMaps();
-  const [marker, setMarker] = useState(value || null);
+function ClickHandler({ onClick }) {
+  useMapEvents({ click: (e) => onClick([e.latlng.lat, e.latlng.lng]) });
+  return null;
+}
 
-  const handleClick = useCallback((e) => {
-    const coords = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-    setMarker(coords);
-    onChange?.(coords);
-  }, [onChange]);
+export default function MapPicker({ value, onChange }) {
+  const initPos = value ? [value.lat, value.lng] : null;
+  const [marker, setMarker] = useState(initPos);
 
-  if (!isLoaded) return (
-    <div className="h-40 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200">
-      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-600" />
-    </div>
-  );
+  const handleClick = (pos) => {
+    setMarker(pos);
+    onChange?.({ lat: pos[0], lng: pos[1] });
+  };
 
   return (
-    <div className="rounded-xl overflow-hidden border border-gray-200">
-      <GoogleMap
-        mapContainerStyle={MAP_STYLE}
-        center={marker || NG_CENTER}
-        zoom={marker ? 15 : 12}
-        onClick={handleClick}
-        options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: true }}
-      >
-        {marker && <Marker position={marker} />}
-      </GoogleMap>
-      <p className={`text-xs text-center py-2 border-t ${
-        marker ? 'text-brand-600 bg-brand-50 border-brand-100' : 'text-gray-400 bg-gray-50 border-gray-100'
-      }`}>
+    <div className="space-y-2">
+      <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 280 }}>
+        <MapContainer
+          center={marker || NIGERIA_CENTER}
+          zoom={marker ? 16 : 6}
+          style={{ height: '100%', width: '100%' }}
+          scrollWheelZoom
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <ClickHandler onClick={handleClick} />
+          {marker && <FlyTo position={marker} />}
+          {marker && <Marker position={marker} />}
+        </MapContainer>
+      </div>
+      <p className={`text-xs flex items-center gap-1.5 ${marker ? 'text-brand-600' : 'text-gray-400'}`}>
+        <MapPin size={11} />
         {marker
-          ? `📍 ${marker.lat.toFixed(6)}, ${marker.lng.toFixed(6)} — click to change`
+          ? `Pinned: ${marker[0].toFixed(6)}, ${marker[1].toFixed(6)} — click to move`
           : 'Click anywhere on the map to pin the location'}
       </p>
     </div>
   );
-}
-
-export default function MapPicker({ value, onChange }) {
-  const { hasKey } = useGoogleMaps();
-  return hasKey
-    ? <GoogleMapPicker value={value} onChange={onChange} />
-    : <ManualInput     value={value} onChange={onChange} />;
 }

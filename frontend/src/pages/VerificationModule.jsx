@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import {
   UserCircle, MapPin, FileText, Users, Camera, CheckSquare,
   ChevronLeft, ChevronRight, Check, Upload, Eye, Trash2,
-  Plus, X, Save, AlertCircle, ShieldCheck
+  Plus, X, Save, AlertCircle, ShieldCheck, PenLine, Landmark
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -142,24 +142,51 @@ function WorkerIdentityStep({ worker, onUpdate, onNext, onPrev }) {
 // ─── Step 2: Address Verification ────────────────────────────────────────────
 function AddressStep({ worker, onUpdate, onNext, onPrev }) {
   const notify = useNotify();
-  const [location, setLocation] = useState(
+  const [location,    setLocation]    = useState(
     worker.addressLocation?.coordinates
       ? { formatted: worker.addressLocation.formatted, coordinates: worker.addressLocation.coordinates }
       : worker.address ? { formatted: worker.address, coordinates: null } : null
   );
-  const [saving, setSaving] = useState(false);
+  const [streetPhoto, setStreetPhoto] = useState(null);
+  const [housePhoto,  setHousePhoto]  = useState(null);
+  const [saving,      setSaving]      = useState(false);
 
   const save = async () => {
-    if (!location?.formatted) return notify('Please enter or search an address', 'warning');
+    if (!location?.formatted) return notify('Please search or pin the address', 'warning');
     setSaving(true);
     try {
+      // Save address location
       await api.put(`/workers/${worker._id}/address-location`, {
         formatted: location.formatted,
-        lat: location.coordinates?.lat,
-        lng: location.coordinates?.lng,
-        address:  location.formatted
+        lat:       location.coordinates?.lat,
+        lng:       location.coordinates?.lng,
+        address:   location.formatted,
+        plusCode:  location.plusCode || ''
       });
-      notify('Address saved ✓');
+
+      // Upload street / house photos to house verification
+      const photos = [];
+      if (streetPhoto) photos.push({ file: streetPhoto, type: 'street_view' });
+      if (housePhoto)  photos.push({ file: housePhoto,  type: 'house_front' });
+
+      if (photos.length) {
+        for (const { file, type } of photos) {
+          const fd = new FormData();
+          fd.append('photos', file);
+          fd.append('photoType', type);
+          if (location.coordinates) {
+            fd.append('lat', location.coordinates.lat);
+            fd.append('lng', location.coordinates.lng);
+            fd.append('formattedAddress', location.formatted);
+            fd.append('address', location.formatted);
+          }
+          await api.put(`/workers/${worker._id}/house`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        }
+      }
+
+      notify('Address & photos saved ✓');
+      setStreetPhoto(null);
+      setHousePhoto(null);
       onUpdate();
     } catch { notify('Failed to save address', 'error'); }
     finally { setSaving(false); }
@@ -167,7 +194,8 @@ function AddressStep({ worker, onUpdate, onNext, onPrev }) {
 
   return (
     <div className="space-y-4">
-      <SectionCard title="Residential Address" subtitle="Search the exact address or click the map to pin location">
+      {/* Address + Map */}
+      <SectionCard title="Residential Address" subtitle="Search the address, tap the map to pin, or use GPS">
         <AddressPicker
           label="Worker's Home Address"
           value={location}
@@ -175,15 +203,42 @@ function AddressStep({ worker, onUpdate, onNext, onPrev }) {
           placeholder="Search street, area, city in Nigeria…"
           required
         />
-        <button type="button" onClick={save} disabled={saving || !location?.formatted} className="btn-primary">
-          {saving ? 'Saving…' : <><Save size={14} /> Save Address</>}
-        </button>
         {worker.addressLocation?.coordinates && (
-          <p className="text-xs text-green-600 flex items-center gap-1">
-            <Check size={12} /> Address pinned: {worker.addressLocation.formatted}
+          <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
+            <Check size={12} /> Pinned: {worker.addressLocation.formatted}
           </p>
         )}
       </SectionCard>
+
+      {/* Street photo */}
+      <SectionCard title="Street / Environment Photo" subtitle="Take a photo of the street or surrounding area using rear camera">
+        <CameraCapture
+          label="Street View Photo"
+          facingMode="environment"
+          preview={worker.houseVerification?.photos?.find(p => p.photoType === 'street_view')?.url}
+          onChange={setStreetPhoto}
+          onClear={() => setStreetPhoto(null)}
+        />
+      </SectionCard>
+
+      {/* House photo */}
+      <SectionCard title="House Front Photo" subtitle="Take a clear photo of the front of the worker's house">
+        <CameraCapture
+          label="House Front Photo"
+          facingMode="environment"
+          preview={worker.houseVerification?.photos?.find(p => p.photoType === 'house_front')?.url}
+          onChange={setHousePhoto}
+          onClear={() => setHousePhoto(null)}
+        />
+      </SectionCard>
+
+      <button type="button" onClick={save} disabled={saving || !location?.formatted} className="btn-primary w-full justify-center py-3">
+        {saving
+          ? <span className="flex items-center gap-2"><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Saving…</span>
+          : <><Save size={14} /> Save Address & Photos</>
+        }
+      </button>
+
       <StepNav onPrev={onPrev} onNext={onNext} prevLabel="← Worker" nextLabel="Documents →" />
     </div>
   );
@@ -649,7 +704,13 @@ function HousePhotosStep({ worker, onUpdate, onNext, onPrev }) {
 // ─── Step 7: Summary ──────────────────────────────────────────────────────────
 function SummaryStep({ worker, guarantors, onUpdate, workerId }) {
   const notify = useNotify();
-  const [setting, setSetting] = useState(false);
+  const [submitting, setSubmitting]   = useState(false);
+  // Authorized signature & stamp
+  const [authSig,    setAuthSig     ] = useState(null);
+  const [stamp,      setStamp       ] = useState(null);
+  const [savingAuth, setSavingAuth  ] = useState(false);
+  const authSigRef  = useRef(null);
+  const stampRef    = useRef(null);
 
   const checks = [
     { label: 'Passport Photo',    done: !!worker.passportPhoto?.url },
@@ -662,23 +723,48 @@ function SummaryStep({ worker, guarantors, onUpdate, workerId }) {
   ];
 
   const doneCount = checks.filter(c => c.done).length;
-  const allDone   = doneCount === checks.length;
   const pct       = Math.round((doneCount / checks.length) * 100);
 
-  const setStatus = async (status) => {
-    setSetting(true);
+  const isLocked = ['pending_approval', 'verified', 'rejected'].includes(worker.verificationStatus);
+
+  const saveAuthorization = async () => {
+    if (!authSig && !stamp) return notify('Upload at least one item to save', 'warning');
+    setSavingAuth(true);
     try {
-      await api.put(`/workers/${workerId}/verification-status`, { status });
-      notify(`Status updated to ${status.replace('_', ' ')}`);
+      if (authSig) {
+        const fd = new FormData();
+        fd.append('signature', authSig);
+        await api.post(`/workers/${workerId}/authorised-signature`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setAuthSig(null);
+      }
+      if (stamp) {
+        const fd = new FormData();
+        fd.append('stamp', stamp);
+        await api.post(`/workers/${workerId}/company-stamp`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setStamp(null);
+      }
+      notify('Authorization saved ✓');
       onUpdate();
-    } catch { notify('Failed to update status', 'error'); }
-    finally { setSetting(false); }
+    } catch { notify('Failed to save authorization', 'error'); }
+    finally { setSavingAuth(false); }
+  };
+
+  const submitForApproval = async () => {
+    if (!confirm('Submit this worker for Super Admin approval?')) return;
+    setSubmitting(true);
+    try {
+      await api.post(`/workers/${workerId}/submit-approval`);
+      notify('Submitted for approval ✓ — awaiting Super Admin review');
+      onUpdate();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to submit', 'error');
+    } finally { setSubmitting(false); }
   };
 
   return (
     <div className="space-y-4">
       <SectionCard title="Verification Summary">
-        {/* Progress bar */}
+        {/* Progress */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium text-gray-700">{doneCount}/{checks.length} sections complete</span>
@@ -693,10 +779,10 @@ function SummaryStep({ worker, guarantors, onUpdate, workerId }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
           {checks.map(({ label, done }) => (
             <div key={label} className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-sm
-              ${done ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+              ${done ? 'bg-green-50 border-green-200 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
               {done
                 ? <Check size={14} className="text-green-600 shrink-0" />
-                : <AlertCircle size={14} className="text-amber-500 shrink-0" />
+                : <AlertCircle size={14} className="text-gray-400 shrink-0" />
               }
               {label}
             </div>
@@ -705,35 +791,147 @@ function SummaryStep({ worker, guarantors, onUpdate, workerId }) {
 
         {/* Current status */}
         <div className="flex items-center gap-3 pt-2">
-          <span className="text-sm font-medium text-gray-700">Current Status:</span>
+          <span className="text-sm font-medium text-gray-700">Status:</span>
           <VerificationBadge status={worker.verificationStatus} />
         </div>
-      </SectionCard>
 
-      {/* Status controls */}
-      <SectionCard title="Set Verification Status" subtitle="Manually override the automatic status">
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setStatus('pending')} disabled={setting}
-            className={`btn-secondary text-xs ${worker.verificationStatus === 'pending' ? 'border-amber-400 text-amber-700' : ''}`}>
-            Pending
-          </button>
-          <button onClick={() => setStatus('partially_verified')} disabled={setting}
-            className={`btn-secondary text-xs ${worker.verificationStatus === 'partially_verified' ? 'border-blue-400 text-blue-700' : ''}`}>
-            Partially Verified
-          </button>
-          <button onClick={() => setStatus('fully_verified')} disabled={setting || !allDone}
-            title={allDone ? '' : 'Complete all sections first'}
-            className={`btn-primary text-xs ${!allDone ? 'opacity-50 cursor-not-allowed' : ''}`}>
-            <ShieldCheck size={13} /> Mark Fully Verified
-          </button>
-        </div>
-        {!allDone && (
-          <p className="text-xs text-gray-400 flex items-center gap-1">
-            <AlertCircle size={11} />
-            Complete all {checks.length} sections to enable "Fully Verified"
-          </p>
+        {/* Rejection reason */}
+        {worker.verificationStatus === 'rejected' && worker.rejectionReason && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+            <p className="text-xs font-semibold text-red-700 mb-0.5">Rejection Reason:</p>
+            <p className="text-sm text-red-700">{worker.rejectionReason}</p>
+          </div>
         )}
       </SectionCard>
+
+      {/* ── Authorization: Signature & Stamp ────────────────────────────── */}
+      <SectionCard
+        title="Authorised Signature & Company Stamp"
+        subtitle="Upload the authorised signature and company stamp that will appear on this worker's printed document"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {/* Authorised Signature */}
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <PenLine size={13} className="text-gray-500" /> Authorised Signature
+            </label>
+            {(authSig || worker.authorisedSignature?.url) ? (
+              <div className="relative">
+                <img
+                  src={authSig ? URL.createObjectURL(authSig) : worker.authorisedSignature.url}
+                  className="w-full h-24 object-contain border border-gray-200 rounded-xl bg-white p-2"
+                  alt="Authorised signature" />
+                <button type="button" onClick={() => { setAuthSig(null); }}
+                  className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow">
+                  <X size={11} />
+                </button>
+                {worker.authorisedSignature?.authorisedBy && !authSig && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Signed by {worker.authorisedSignature.authorisedBy}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div onClick={() => authSigRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 h-24 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-colors">
+                <PenLine size={20} className="text-gray-300" />
+                <span className="text-xs text-gray-400">Upload signature image</span>
+              </div>
+            )}
+            <input ref={authSigRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { if (e.target.files[0]) setAuthSig(e.target.files[0]); e.target.value = ''; }} />
+          </div>
+
+          {/* Company Stamp */}
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <Landmark size={13} className="text-gray-500" /> Company Stamp
+            </label>
+            {(stamp || worker.companyStamp?.url) ? (
+              <div className="relative">
+                <img
+                  src={stamp ? URL.createObjectURL(stamp) : worker.companyStamp.url}
+                  className="w-full h-24 object-contain border border-gray-200 rounded-xl bg-white p-2"
+                  alt="Company stamp" />
+                <button type="button" onClick={() => { setStamp(null); }}
+                  className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow">
+                  <X size={11} />
+                </button>
+              </div>
+            ) : (
+              <div onClick={() => stampRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 h-24 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-colors">
+                <Landmark size={20} className="text-gray-300" />
+                <span className="text-xs text-gray-400">Upload stamp image</span>
+              </div>
+            )}
+            <input ref={stampRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { if (e.target.files[0]) setStamp(e.target.files[0]); e.target.value = ''; }} />
+          </div>
+        </div>
+
+        {(authSig || stamp) && (
+          <button type="button" onClick={saveAuthorization} disabled={savingAuth} className="btn-primary mt-2">
+            {savingAuth ? 'Saving…' : <><Save size={14} /> Save Authorization</>}
+          </button>
+        )}
+      </SectionCard>
+
+      {/* Submit for Approval */}
+      {!isLocked && (
+        <SectionCard
+          title="Submit for Approval"
+          subtitle="When all verification is complete, submit to your Super Admin for final approval"
+        >
+          <button
+            type="button"
+            onClick={submitForApproval}
+            disabled={submitting || doneCount === 0}
+            className="btn-primary w-full justify-center py-3 text-base"
+          >
+            {submitting
+              ? <span className="flex items-center gap-2">
+                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                  Submitting…
+                </span>
+              : <><ShieldCheck size={18} /> Submit for Super Admin Approval</>
+            }
+          </button>
+          <p className="text-xs text-gray-400 text-center">
+            The Super Admin will review all documents and either approve or reject this worker.
+          </p>
+        </SectionCard>
+      )}
+
+      {worker.verificationStatus === 'pending_approval' && (
+        <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl text-center">
+          <ShieldCheck size={24} className="text-purple-500 mx-auto mb-2" />
+          <p className="font-semibold text-purple-800">Submitted for Approval</p>
+          <p className="text-sm text-purple-600 mt-1">Waiting for Super Admin to review and approve.</p>
+        </div>
+      )}
+
+      {worker.verificationStatus === 'verified' && (
+        <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
+          <ShieldCheck size={24} className="text-green-500 mx-auto mb-2" />
+          <p className="font-semibold text-green-800">✅ Worker Verified!</p>
+          <p className="text-sm text-green-600 mt-1">Approved by Super Admin.</p>
+        </div>
+      )}
+
+      {/* Re-submit after rejection */}
+      {worker.verificationStatus === 'rejected' && (
+        <SectionCard title="Re-submit for Approval" subtitle="Fix the issues above and re-submit">
+          <button
+            type="button"
+            onClick={submitForApproval}
+            disabled={submitting}
+            className="btn-primary w-full justify-center py-3"
+          >
+            {submitting ? 'Submitting…' : <><ShieldCheck size={15} /> Re-Submit for Approval</>}
+          </button>
+        </SectionCard>
+      )}
 
       <StepNav showNext={false} prevLabel="← House Photos" />
     </div>
