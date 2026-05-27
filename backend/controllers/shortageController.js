@@ -1,6 +1,7 @@
 const Shortage = require('../models/Shortage');
 const Worker   = require('../models/Worker');
 const Branch   = require('../models/Branch');
+const Payroll  = require('../models/Payroll');
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -82,6 +83,45 @@ const approveShortage = async (req, res) => {
   shortage.reviewedBy  = req.user._id;
   shortage.reviewedAt  = new Date();
   await shortage.save();
+
+  // ── Auto-deduct from payroll if a draft exists for this period ──────────────
+  try {
+    const payroll = await Payroll.findOne({
+      company:  shortage.company,
+      branchId: shortage.branchId,
+      month:    shortage.month,
+      year:     shortage.year,
+      status:   'draft'
+    });
+
+    if (payroll) {
+      // Sum ALL approved shortages for this worker in this period
+      const allApproved = await Shortage.find({
+        company: shortage.company,
+        worker:  shortage.worker,
+        month:   shortage.month,
+        year:    shortage.year,
+        status:  'approved'
+      }).lean();
+
+      const totalShortage = allApproved.reduce((sum, s) => sum + s.amount, 0);
+
+      const newEntries = payroll.entries.map(e => {
+        const plain = e.toObject();
+        if (String(plain.worker) === String(shortage.worker)) {
+          plain.shortage = totalShortage;
+        }
+        return plain;
+      });
+
+      payroll.entries = newEntries;
+      await payroll.save();
+    }
+  } catch (err) {
+    console.error('Failed to sync shortage to payroll:', err.message);
+    // Don't fail the approval if payroll sync fails
+  }
+
   await shortage.populate('submittedBy reviewedBy', 'name');
   res.json({ success: true, data: shortage });
 };

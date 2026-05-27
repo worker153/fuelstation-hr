@@ -1,6 +1,7 @@
-const Payroll = require('../models/Payroll');
-const Worker  = require('../models/Worker');
-const Branch  = require('../models/Branch');
+const Payroll  = require('../models/Payroll');
+const Worker   = require('../models/Worker');
+const Branch   = require('../models/Branch');
+const Shortage = require('../models/Shortage');
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -116,6 +117,27 @@ const generatePayroll = async (req, res) => {
       paid:               false,
       notes:              ''
     };
+  });
+
+  // ── Pull approved shortages for this branch/period and apply to entries ──────
+  const approvedShortages = await Shortage.find({
+    company:  cid,
+    branchId: branchId,
+    month:    Number(month),
+    year:     Number(year),
+    status:   'approved'
+  }).lean();
+
+  const shortageByWorker = {};
+  approvedShortages.forEach(s => {
+    const wid = String(s.worker);
+    shortageByWorker[wid] = (shortageByWorker[wid] || 0) + s.amount;
+  });
+
+  entries.forEach(e => {
+    const shortageAmt = shortageByWorker[String(e.worker)] || 0;
+    e.shortage = shortageAmt;
+    e.netPay   = Math.max(0, e.calculatedSalary - e.absenceDeduction - shortageAmt + e.bonus);
   });
 
   // Sort by name within the branch

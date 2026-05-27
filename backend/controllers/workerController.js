@@ -62,6 +62,12 @@ const getWorkers = async (req, res) => {
   const { page = 1, limit = 20, search, status, branch } = req.query;
   const query = { company: req.user.company._id };
 
+  // Branch-scoped: supervisors (non-admin) only see their own branch
+  const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
+  if (!isAdmin && req.user.branchId) {
+    query.branchId = req.user.branchId;
+  }
+
   if (search) {
     query.$or = [
       { fullName: { $regex: search, $options: 'i' } },
@@ -98,13 +104,19 @@ const getActiveWorkers = async (req, res) => {
 
   const filter = { company: cid };
 
+  // Branch-scoped: supervisors only see their assigned branch
+  const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
+  if (!isAdmin && req.user.branchId) {
+    filter.branchId = req.user.branchId;
+  }
+
   if (status) {
     filter.employmentStatus = status;
   } else {
     filter.employmentStatus = { $in: ['active', 'suspended', 'sacked', 'inactive'] };
   }
 
-  if (branchId) filter.branchId = branchId;
+  if (branchId && (isAdmin || !req.user.branchId)) filter.branchId = branchId;
   if (shiftId)  filter.shiftId  = shiftId;
   if (role)     filter.role = { $regex: role, $options: 'i' };
   if (search) {
