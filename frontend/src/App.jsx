@@ -17,8 +17,10 @@ import Shifts             from './pages/Shifts';
 import ActiveWorkers      from './pages/ActiveWorkers';
 import WorkerPrint        from './pages/WorkerPrint';
 import Payroll            from './pages/Payroll';
-import Shortages          from './pages/Shortages';
-import WorkerShortage     from './pages/WorkerShortage';
+import Shortages           from './pages/Shortages';
+import WorkerShortage      from './pages/WorkerShortage';
+import AttendanceDevices   from './pages/AttendanceDevices';
+import AttendanceTerminal  from './pages/AttendanceTerminal';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -53,7 +55,8 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-            <Route path="/shortage" element={<WorkerShortage />} />
+            <Route path="/shortage"  element={<WorkerShortage />} />
+            <Route path="/terminal" element={<AttendanceTerminal />} />
 
             <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route path="/dashboard"     element={<Dashboard />} />
@@ -73,8 +76,9 @@ export default function App() {
               <Route path="/workers/:workerId/guarantors/:guarantorId/edit" element={<GuarantorForm edit />} />
 
               {/* Super Admin only */}
-              <Route path="/approval-queue" element={<AdminRoute><ApprovalQueue /></AdminRoute>} />
-              <Route path="/staff"          element={<AdminRoute><StaffManagement /></AdminRoute>} />
+              <Route path="/approval-queue"       element={<AdminRoute><ApprovalQueue /></AdminRoute>} />
+              <Route path="/staff"                element={<AdminRoute><StaffManagement /></AdminRoute>} />
+              <Route path="/attendance-devices"   element={<AdminRoute><AttendanceDevices /></AdminRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>

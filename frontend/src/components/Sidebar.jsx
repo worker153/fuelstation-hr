@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
-  Building2, Briefcase, Clock, ReceiptText, AlertTriangle
+  Building2, Briefcase, Clock, ReceiptText, AlertTriangle, Smartphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -22,8 +22,9 @@ export default function Sidebar({ onClose }) {
     { to: '/shifts',         icon: Clock,           label: 'Shifts',          show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
     { to: '/payroll',        icon: ReceiptText,     label: 'Payroll',         show: isSuperAdmin() || can('manageBranches') },
     { to: '/shortages',      icon: AlertTriangle,   label: 'Shortages',       show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
-    { to: '/approval-queue', icon: ShieldCheck,     label: 'Approval Queue',  show: isSuperAdmin() },
-    { to: '/staff',          icon: UserCog,         label: 'Staff',           show: isSuperAdmin() },
+    { to: '/approval-queue',     icon: ShieldCheck, label: 'Approval Queue',    show: isSuperAdmin() },
+    { to: '/staff',              icon: UserCog,     label: 'Staff',             show: isSuperAdmin() },
+    { to: '/attendance-devices', icon: Smartphone,  label: 'Attendance Devices',show: isSuperAdmin() },
   ].filter(item => item.show);
 
   return (

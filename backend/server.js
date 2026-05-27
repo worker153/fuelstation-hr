@@ -11,8 +11,10 @@ const guarantorRoutes = require('./routes/guarantors');
 const staffRoutes     = require('./routes/staff');
 const branchRoutes    = require('./routes/branches');
 const shiftRoutes     = require('./routes/shifts');
-const payrollRoutes   = require('./routes/payroll');
-const shortageRoutes  = require('./routes/shortages');
+const payrollRoutes    = require('./routes/payroll');
+const shortageRoutes   = require('./routes/shortages');
+const deviceRoutes     = require('./routes/devices');
+const attendanceRoutes = require('./routes/attendance');
 
 const app = express();
 
@@ -32,7 +34,9 @@ app.use('/api/staff',    staffRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/shifts',   shiftRoutes);
 app.use('/api/payroll',  payrollRoutes);
-app.use('/api/shortages', shortageRoutes);
+app.use('/api/shortages',  shortageRoutes);
+app.use('/api/devices',    deviceRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });

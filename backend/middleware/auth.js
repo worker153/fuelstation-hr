@@ -24,8 +24,13 @@ const protect = async (req, res, next) => {
 };
 
 const adminOnly = (req, res, next) => {
-  if (req.user?.role === 'admin') return next();
+  if (req.user?.role === 'admin' || req.user?.role === 'super_admin') return next();
   res.status(403).json({ success: false, message: 'Admin access required' });
 };
 
-module.exports = { protect, adminOnly };
+const superAdminOnly = (req, res, next) => {
+  if (req.user?.role === 'super_admin') return next();
+  res.status(403).json({ success: false, message: 'Super Admin access required' });
+};
+
+module.exports = { protect, adminOnly, superAdminOnly };
