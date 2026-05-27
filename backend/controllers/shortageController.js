@@ -273,7 +273,7 @@ const workerPinLookup = async (req, res) => {
 
   const worker = await Worker.findOne({ pin: String(pin).trim() })
     .populate('branchId', 'name')
-    .select('fullName role branch branchId shiftId employmentStatus passportPhoto')
+    .select('fullName role branch branchId shiftId employmentStatus passportPhoto company')
     .lean();
 
   if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN' });
