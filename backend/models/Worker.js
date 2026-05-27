@@ -162,6 +162,12 @@ const workerSchema = new mongoose.Schema({
   faceDescriptor:    { type: [Number], default: undefined },
   faceRegisteredAt:  { type: Date },
   faceRegisteredOn:  { type: String },   // device name where face was registered
+
+  // Rotation schedule — used by attendance to determine on/off days
+  rotationSchedule: {
+    pattern:   { type: String, default: 'none' },  // 'none' | '1_1' | '2_2' | '3_3'
+    startDate: { type: Date },                      // anchor: a known "on duty" day
+  },
 }, { timestamps: true });
 
 workerSchema.index({ company: 1 });

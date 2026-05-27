@@ -24,6 +24,23 @@ function fmtHours(inTs, outTs) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+// Determine whether a worker is on their scheduled duty day (frontend mirror of controller helper)
+function isWorkerOnDuty(worker, dateStr) {
+  const sched = worker.rotationSchedule;
+  if (!sched || !sched.pattern || sched.pattern === 'none' || !sched.startDate) return true;
+  const [onStr, offStr] = sched.pattern.split('_');
+  const onDays   = parseInt(onStr)  || 1;
+  const offDays  = parseInt(offStr) || 1;
+  const cycleLen = onDays + offDays;
+  const start    = new Date(sched.startDate);
+  const startUTC = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const check    = new Date(dateStr);
+  const checkUTC = Date.UTC(check.getUTCFullYear(), check.getUTCMonth(), check.getUTCDate());
+  const daysDiff   = Math.round((checkUTC - startUTC) / 86400000);
+  const posInCycle = ((daysDiff % cycleLen) + cycleLen) % cycleLen;
+  return posInCycle < onDays;
+}
+
 // Pick the attendance rule that applies to a given worker role (frontend mirror of controller helper)
 function getSettingsForRole(branch, workerRole) {
   const rules = branch?.attendanceRules;
@@ -61,10 +78,11 @@ function computeClockOutStatus(clockOutRecord, settings) {
 }
 
 const STATUS_CFG = {
-  on_time: { label: 'On Time', cls: 'bg-green-100 text-green-700',  row: '',                icon: CheckCircle },
-  late:    { label: 'Late',    cls: 'bg-amber-100 text-amber-700',  row: 'bg-amber-50/40',  icon: AlertTriangle },
-  absent:  { label: 'Absent',  cls: 'bg-red-100 text-red-700',      row: 'bg-red-50/40',    icon: UserX },
-  no_show: { label: 'No Show', cls: 'bg-red-100 text-red-700',      row: 'bg-red-50/60',    icon: UserX },
+  on_time:  { label: 'On Time',  cls: 'bg-green-100 text-green-700', row: '',               icon: CheckCircle },
+  late:     { label: 'Late',     cls: 'bg-amber-100 text-amber-700', row: 'bg-amber-50/40', icon: AlertTriangle },
+  absent:   { label: 'Absent',   cls: 'bg-red-100 text-red-700',     row: 'bg-red-50/40',   icon: UserX },
+  no_show:  { label: 'No Show',  cls: 'bg-red-100 text-red-700',     row: 'bg-red-50/60',   icon: UserX },
+  off_duty: { label: 'Off Duty', cls: 'bg-gray-100 text-gray-500',   row: 'bg-gray-50/50',  icon: UserX },
 };
 
 function StatusBadge({ status }) {
@@ -178,11 +196,15 @@ export default function Attendance() {
         const ci       = clockInMap[wid];
         const co       = clockOutMap[wid];
         const settings = getSettingsForRole(selectedBranch, w.role);
+        const onDuty   = isWorkerOnDuty(w, filterDate);
+        // If off duty and didn't clock in → off_duty; if off duty but came in → on_time (voluntary)
+        const status   = !onDuty && !ci ? 'off_duty' : computeStatus(ci, settings);
         return {
           _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
           clockIn: ci, clockOut: co,
-          status:   computeStatus(ci, settings),
+          status,
           coStatus: computeClockOutStatus(co, settings),
+          onDuty,
           settings,
         };
       });
@@ -227,9 +249,9 @@ export default function Attendance() {
     return [...visible].sort((a, b) => (order[a.status] ?? 4) - (order[b.status] ?? 4));
   }, [visible]);
 
-  // Summary counts
+  // Summary counts (off_duty workers are their own category, excluded from no_show)
   const summary = useMemo(() => {
-    const counts = { on_time: 0, late: 0, absent: 0, no_show: 0 };
+    const counts = { on_time: 0, late: 0, absent: 0, no_show: 0, off_duty: 0 };
     rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
     return counts;
   }, [rows]);
@@ -311,11 +333,13 @@ export default function Attendance() {
       {filterBranch && rows.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { key: 'on_time', label: 'On Time',  icon: CheckCircle,  cls: 'text-green-600', bg: 'bg-green-50 border-green-100' },
-            { key: 'late',    label: 'Late',     icon: Clock,        cls: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
-            { key: 'absent',  label: 'Absent',   icon: AlertTriangle,cls: 'text-red-600',   bg: 'bg-red-50 border-red-100' },
-            { key: 'no_show', label: 'No Show',  icon: UserX,        cls: 'text-red-700',   bg: 'bg-red-50 border-red-100' },
-          ].map(({ key, label, icon: Icon, cls, bg }) => (
+            { key: 'on_time',  label: 'On Time',  icon: CheckCircle,  cls: 'text-green-600', bg: 'bg-green-50 border-green-100' },
+            { key: 'late',     label: 'Late',     icon: Clock,        cls: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
+            { key: 'absent',   label: 'Absent',   icon: AlertTriangle,cls: 'text-red-600',   bg: 'bg-red-50 border-red-100' },
+            { key: 'no_show',  label: 'No Show',  icon: UserX,        cls: 'text-red-700',   bg: 'bg-red-50 border-red-100' },
+            { key: 'off_duty', label: 'Off Duty', icon: UserX,        cls: 'text-gray-500',  bg: 'bg-gray-50 border-gray-200' },
+          ].filter(c => c.key !== 'off_duty' || summary.off_duty > 0)
+          .map(({ key, label, icon: Icon, cls, bg }) => (
             <div key={key} className={`rounded-xl border p-3 ${bg}`}>
               <div className={`flex items-center gap-1.5 mb-1 ${cls}`}>
                 <Icon size={14} />
@@ -484,7 +508,7 @@ export default function Attendance() {
             <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50">
               <p className="text-xs text-gray-400">
                 {sorted.length} worker{sorted.length !== 1 ? 's' : ''} shown
-                {filterBranch && ` · ${summary.on_time + summary.late} present · ${summary.absent + summary.no_show} absent`}
+                {filterBranch && ` · ${summary.on_time + summary.late} present · ${summary.absent + summary.no_show} absent${summary.off_duty > 0 ? ` · ${summary.off_duty} off duty` : ''}`}
               </p>
             </div>
           </>

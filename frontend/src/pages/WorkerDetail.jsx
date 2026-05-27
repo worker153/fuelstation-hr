@@ -81,15 +81,20 @@ const HISTORY_ICONS = {
 function ActivateModal({ worker, branches, onClose, onDone }) {
   const notify = useNotify();
   const today  = new Date().toISOString().split('T')[0];
-  const [saving,       setSaving      ] = useState(false);
-  const [branchId,     setBranchId    ] = useState(worker.branchId?._id || worker.branchId || '');
-  const [shiftId,      setShiftId     ] = useState('');
-  const [role,         setRole        ] = useState(worker.role || '');
-  const [customRole,   setCustomRole  ] = useState('');
-  const [resumptionDate, setResumption] = useState(
+  const [saving,         setSaving        ] = useState(false);
+  const [branchId,       setBranchId      ] = useState(worker.branchId?._id || worker.branchId || '');
+  const [shiftId,        setShiftId       ] = useState('');
+  const [role,           setRole          ] = useState(worker.role || '');
+  const [customRole,     setCustomRole    ] = useState('');
+  const [resumptionDate, setResumption    ] = useState(
     worker.resumptionDate ? new Date(worker.resumptionDate).toISOString().split('T')[0] : today
   );
-  const [notes,        setNotes       ] = useState('');
+  const [rotPattern,     setRotPattern    ] = useState(worker.rotationSchedule?.pattern || 'none');
+  const [rotStartDate,   setRotStartDate  ] = useState(
+    worker.rotationSchedule?.startDate
+      ? new Date(worker.rotationSchedule.startDate).toISOString().split('T')[0] : ''
+  );
+  const [notes,          setNotes         ] = useState('');
 
   const finalRole = role === '__custom' ? customRole : role;
 
@@ -103,6 +108,9 @@ function ActivateModal({ worker, branches, onClose, onDone }) {
         shiftId:        shiftId        || undefined,
         role:           finalRole,
         resumptionDate: resumptionDate || undefined,
+        rotationSchedule: rotPattern !== 'none'
+          ? { pattern: rotPattern, startDate: rotStartDate || undefined }
+          : { pattern: 'none' },
         notes
       });
       notify(`${worker.fullName} activated ✓`);
@@ -147,9 +155,32 @@ function ActivateModal({ worker, branches, onClose, onDone }) {
           <label className="label flex items-center gap-1.5"><Calendar size={12} /> Resumption Date *</label>
           <input type="date" className="input" value={resumptionDate}
             onChange={e => setResumption(e.target.value)} required />
-          <p className="text-xs text-gray-400 mt-1">
-            Used to prorate salary if the worker joins mid-month
+          <p className="text-xs text-gray-400 mt-1">Used to prorate salary if the worker joins mid-month</p>
+        </div>
+        {/* Rotation Schedule */}
+        <div className="rounded-xl border border-gray-200 p-3 space-y-3 bg-gray-50">
+          <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+            🔄 Rotation Schedule
           </p>
+          <div>
+            <label className="label">Pattern</label>
+            <select className="input" value={rotPattern} onChange={e => setRotPattern(e.target.value)}>
+              <option value="none">No rotation (standard schedule)</option>
+              <option value="1_1">1 Day On / 1 Day Off</option>
+              <option value="2_2">2 Days On / 2 Days Off</option>
+              <option value="3_3">3 Days On / 3 Days Off</option>
+            </select>
+          </div>
+          {rotPattern !== 'none' && (
+            <div>
+              <label className="label">First On-Duty Day</label>
+              <input type="date" className="input" value={rotStartDate}
+                onChange={e => setRotStartDate(e.target.value)} />
+              <p className="text-xs text-gray-400 mt-1">
+                Pick a day you know this worker is "on duty" — the system uses this to calculate all future on/off days
+              </p>
+            </div>
+          )}
         </div>
         {/* Notes */}
         <div>
@@ -437,11 +468,18 @@ function EmploymentTab({ worker, branches, onRefresh }) {
 
   const [modal,        setModal       ] = useState(null);
   const [histOpen,     setHistOpen    ] = useState(true);
-  const [editResump,   setEditResump  ] = useState(false);
-  const [resumpDate,   setResumpDate  ] = useState(
+  const [editResump,    setEditResump   ] = useState(false);
+  const [resumpDate,    setResumpDate   ] = useState(
     worker.resumptionDate ? new Date(worker.resumptionDate).toISOString().split('T')[0] : ''
   );
-  const [savingResump, setSavingResump] = useState(false);
+  const [savingResump,  setSavingResump ] = useState(false);
+  const [editRotation,  setEditRotation ] = useState(false);
+  const [rotPat,        setRotPat       ] = useState(worker.rotationSchedule?.pattern || 'none');
+  const [rotStart,      setRotStart     ] = useState(
+    worker.rotationSchedule?.startDate
+      ? new Date(worker.rotationSchedule.startDate).toISOString().split('T')[0] : ''
+  );
+  const [savingRot,     setSavingRot    ] = useState(false);
 
   const done = () => { setModal(null); onRefresh(); };
 
@@ -456,6 +494,23 @@ function EmploymentTab({ worker, branches, onRefresh }) {
       notify(err.response?.data?.message || 'Failed to save', 'error');
     } finally { setSavingResump(false); }
   };
+
+  const saveRotationSchedule = async () => {
+    setSavingRot(true);
+    try {
+      await api.put(`/workers/${worker._id}/rotation-schedule`, {
+        pattern:   rotPat,
+        startDate: rotPat !== 'none' ? (rotStart || null) : null,
+      });
+      notify('Rotation schedule saved ✓');
+      setEditRotation(false);
+      onRefresh();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to save', 'error');
+    } finally { setSavingRot(false); }
+  };
+
+  const ROTATION_LABELS = { none:'No rotation', '1_1':'1 Day On / 1 Day Off', '2_2':'2 Days On / 2 Days Off', '3_3':'3 Days On / 3 Days Off' };
 
   return (
     <div className="space-y-5">
@@ -591,6 +646,65 @@ function EmploymentTab({ worker, branches, onRefresh }) {
                 Not set — {canEdit ? 'click Edit to add' : 'contact an admin to set this'}
               </p>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Rotation Schedule */}
+      <div className="rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Rotation Schedule</p>
+          {canEdit && !editRotation && (
+            <button onClick={() => setEditRotation(true)}
+              className="text-xs text-brand-600 hover:text-brand-800 flex items-center gap-1 font-medium">
+              <Edit2 size={11} /> Edit
+            </button>
+          )}
+        </div>
+        {editRotation ? (
+          <div className="space-y-3">
+            <select className="input" value={rotPat} onChange={e => setRotPat(e.target.value)}>
+              <option value="none">No rotation (standard schedule)</option>
+              <option value="1_1">1 Day On / 1 Day Off</option>
+              <option value="2_2">2 Days On / 2 Days Off</option>
+              <option value="3_3">3 Days On / 3 Days Off</option>
+            </select>
+            {rotPat !== 'none' && (
+              <div>
+                <label className="label text-xs">First On-Duty Day</label>
+                <input type="date" className="input" value={rotStart} onChange={e => setRotStart(e.target.value)} />
+                <p className="text-xs text-gray-400 mt-1">A date you know is an "on duty" day — anchors the whole rotation cycle</p>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <button onClick={saveRotationSchedule} disabled={savingRot}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700">
+                {savingRot ? <Loader size={12} className="animate-spin" /> : <><Save size={12} /> Save</>}
+              </button>
+              <button onClick={() => setEditRotation(false)} className="text-xs text-gray-500 hover:text-gray-800 px-2 py-2">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2">
+            <span className="text-lg mt-0.5">🔄</span>
+            <div>
+              <p className="text-sm font-medium text-gray-800">
+                {ROTATION_LABELS[worker.rotationSchedule?.pattern] || 'No rotation'}
+              </p>
+              {worker.rotationSchedule?.pattern && worker.rotationSchedule.pattern !== 'none' && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {worker.rotationSchedule.startDate
+                    ? <>Anchored from {new Date(worker.rotationSchedule.startDate).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</>
+                    : 'Start date not set — deductions may apply incorrectly'
+                  }
+                </p>
+              )}
+              {!worker.rotationSchedule?.pattern || worker.rotationSchedule.pattern === 'none' ? (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  All days treated as work days for attendance purposes
+                </p>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

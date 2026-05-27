@@ -5,6 +5,28 @@ const Branch           = require('../models/Branch');
 const cloudinary       = require('../config/cloudinary');
 const { createAttendanceShortage } = require('./shortageController');
 
+// Determine whether a worker is on their scheduled duty day.
+// Returns true if worker has no rotation, or if the given date falls on an "on" day.
+function isWorkerOnDuty(worker, date) {
+  const sched = worker.rotationSchedule;
+  if (!sched || !sched.pattern || sched.pattern === 'none' || !sched.startDate) return true;
+
+  const [onStr, offStr] = sched.pattern.split('_');
+  const onDays   = parseInt(onStr)  || 1;
+  const offDays  = parseInt(offStr) || 1;
+  const cycleLen = onDays + offDays;
+
+  // Use UTC to avoid timezone drift
+  const start    = new Date(sched.startDate);
+  const startUTC = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const check    = new Date(date);
+  const checkUTC = Date.UTC(check.getUTCFullYear(), check.getUTCMonth(), check.getUTCDate());
+
+  const daysDiff   = Math.round((checkUTC - startUTC) / 86400000);
+  const posInCycle = ((daysDiff % cycleLen) + cycleLen) % cycleLen;
+  return posInCycle < onDays;
+}
+
 // Pick the attendance rule that applies to a given worker role.
 // Prefers an exact role match (case-insensitive), falls back to 'default',
 // then falls back to legacy attendanceSettings.
@@ -146,45 +168,48 @@ const terminalClock = async (req, res) => {
   // ── Step 7: auto-deduction for late/absent clock-in ──────────────────────────
   if (type === 'clock_in') {
     try {
-      const branch   = await Branch.findById(device.branch).lean();
-      const settings = getSettingsForRole(branch, worker.role);
+      // Skip all deductions if today is this worker's scheduled off day
+      if (isWorkerOnDuty(worker, now)) {
+        const branch   = await Branch.findById(device.branch).lean();
+        const settings = getSettingsForRole(branch, worker.role);
 
-      if (settings && (settings.lateDeductionAmount > 0 || settings.absentDeductionAmount > 0)) {
-        const clockH    = now.getHours();
-        const clockM    = now.getMinutes();
-        const clockMins = clockH * 60 + clockM;
+        if (settings && (settings.lateDeductionAmount > 0 || settings.absentDeductionAmount > 0)) {
+          const clockH    = now.getHours();
+          const clockM    = now.getMinutes();
+          const clockMins = clockH * 60 + clockM;
 
-        const [dlH, dlM] = (settings.clockInDeadline || '07:00').split(':').map(Number);
-        const [atH, atM] = (settings.absentThreshold  || '09:00').split(':').map(Number);
-        const deadlineMins  = dlH * 60 + dlM;
-        const thresholdMins = atH * 60 + atM;
-        const timeStr = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
-        const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
+          const [dlH, dlM] = (settings.clockInDeadline || '07:00').split(':').map(Number);
+          const [atH, atM] = (settings.absentThreshold  || '09:00').split(':').map(Number);
+          const deadlineMins  = dlH * 60 + dlM;
+          const thresholdMins = atH * 60 + atM;
+          const timeStr = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
+          const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
 
-        if (clockMins >= thresholdMins && settings.absentDeductionAmount > 0) {
-          await createAttendanceShortage({
-            company:     device.company,
-            worker,
-            branchId:    device.branch,
-            branchName:  device.branchName,
-            amount:      settings.absentDeductionAmount,
-            source:      'absent',
-            reason:      'absent',
-            attendanceDate,
-            notes: `Absent — arrived at ${timeStr} (threshold: ${settings.absentThreshold})`,
-          });
-        } else if (clockMins > deadlineMins && settings.lateDeductionAmount > 0) {
-          await createAttendanceShortage({
-            company:     device.company,
-            worker,
-            branchId:    device.branch,
-            branchName:  device.branchName,
-            amount:      settings.lateDeductionAmount,
-            source:      'late_arrival',
-            reason:      'late_arrival',
-            attendanceDate,
-            notes: `Late arrival — clocked in at ${timeStr} (deadline: ${settings.clockInDeadline})`,
-          });
+          if (clockMins >= thresholdMins && settings.absentDeductionAmount > 0) {
+            await createAttendanceShortage({
+              company:     device.company,
+              worker,
+              branchId:    device.branch,
+              branchName:  device.branchName,
+              amount:      settings.absentDeductionAmount,
+              source:      'absent',
+              reason:      'absent',
+              attendanceDate,
+              notes: `Absent — arrived at ${timeStr} (threshold: ${settings.absentThreshold})`,
+            });
+          } else if (clockMins > deadlineMins && settings.lateDeductionAmount > 0) {
+            await createAttendanceShortage({
+              company:     device.company,
+              worker,
+              branchId:    device.branch,
+              branchName:  device.branchName,
+              amount:      settings.lateDeductionAmount,
+              source:      'late_arrival',
+              reason:      'late_arrival',
+              attendanceDate,
+              notes: `Late arrival — clocked in at ${timeStr} (deadline: ${settings.clockInDeadline})`,
+            });
+          }
         }
       }
     } catch (e) {
@@ -195,6 +220,7 @@ const terminalClock = async (req, res) => {
   // ── Step 8: auto-deduction for early clock-out ──────────────────────────────
   if (type === 'clock_out') {
     try {
+      if (isWorkerOnDuty(worker, now)) {
       const branch   = await Branch.findById(device.branch).lean();
       const settings = getSettingsForRole(branch, worker.role);
 
@@ -222,6 +248,7 @@ const terminalClock = async (req, res) => {
           });
         }
       }
+      } // end isWorkerOnDuty check
     } catch (e) {
       console.error('Early departure deduction error:', e.message);
     }
@@ -351,7 +378,10 @@ const processAbsences = async (req, res) => {
     .distinct('worker');
   const clockedSet = new Set(clockedIn.map(String));
 
-  const absentWorkers = workers.filter(w => !clockedSet.has(String(w._id)));
+  // Only consider workers who didn't clock in AND are scheduled to work today
+  const absentWorkers = workers.filter(w =>
+    !clockedSet.has(String(w._id)) && isWorkerOnDuty(w, localDate)
+  );
 
   let processed = 0;
   for (const worker of absentWorkers) {
@@ -374,13 +404,18 @@ const processAbsences = async (req, res) => {
     }
   }
 
+  const offDutyCount = workers.filter(w =>
+    !clockedSet.has(String(w._id)) && !isWorkerOnDuty(w, localDate)
+  ).length;
+
   res.json({
-    success:  true,
+    success:     true,
     processed,
-    total:    absentWorkers.length,
-    message:  processed > 0
-      ? `${processed} absence deduction(s) recorded for ${date}`
-      : `${absentWorkers.length} absent worker(s) found — no deductions configured for their roles`,
+    total:       absentWorkers.length,
+    offDuty:     offDutyCount,
+    message:     processed > 0
+      ? `${processed} absence deduction(s) recorded for ${date}${offDutyCount > 0 ? ` · ${offDutyCount} worker(s) skipped (off-duty day)` : ''}`
+      : `${absentWorkers.length} absent worker(s) found — no deductions configured${offDutyCount > 0 ? ` · ${offDutyCount} off-duty (skipped)` : ''}`,
   });
 };
 

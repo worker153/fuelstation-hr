@@ -14,7 +14,7 @@ const {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin,
+  updateWorkerPin, updateRotationSchedule,
   getWorkerPins, bulkGeneratePins,
   selfResetPin, searchByName,
 } = require('../controllers/workerController');
@@ -74,7 +74,8 @@ router.post('/:id/suspend',    requirePermission('editWorkers'), suspendWorker);
 router.post('/:id/sack',       requirePermission('editWorkers'), sackWorker);
 router.post('/:id/reactivate', requirePermission('editWorkers'), reactivateWorker);
 router.post('/:id/transfer',   requirePermission('editWorkers'), transferWorker);
-router.put('/:id/salary',      requirePermission('editWorkers'), updateSalary);
-router.put('/:id/bank',        requirePermission('editWorkers'), updateBank);
+router.put('/:id/salary',             requirePermission('editWorkers'), updateSalary);
+router.put('/:id/bank',               requirePermission('editWorkers'), updateBank);
+router.put('/:id/rotation-schedule',  adminOnly, updateRotationSchedule);
 
 module.exports = router;

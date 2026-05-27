@@ -142,7 +142,7 @@ const getActiveWorkers = async (req, res) => {
     .populate('branchId', 'name')
     .populate('shiftId',  'name startTime endTime')
     .populate('activatedBy', 'name')
-    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary')
+    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary rotationSchedule')
     .sort({ employmentStatus: 1, fullName: 1 })
     .skip((page - 1) * limit)
     .limit(Number(limit));
@@ -456,6 +456,12 @@ const activateWorker = async (req, res) => {
     worker.shiftId  = undefined;
   }
   if (role) worker.role = role.trim();
+  if (req.body.rotationSchedule) {
+    worker.rotationSchedule = {
+      pattern:   req.body.rotationSchedule.pattern   || 'none',
+      startDate: req.body.rotationSchedule.startDate || undefined,
+    };
+  }
 
   worker.employmentStatus = 'active';
   worker.activatedAt      = new Date();
@@ -586,6 +592,12 @@ const transferWorker = async (req, res) => {
     worker.shiftId  = undefined;
   }
   if (role) worker.role = role.trim();
+  if (req.body.rotationSchedule) {
+    worker.rotationSchedule = {
+      pattern:   req.body.rotationSchedule.pattern   || 'none',
+      startDate: req.body.rotationSchedule.startDate || undefined,
+    };
+  }
 
   worker.employmentHistory.push({
     action:       'transferred',
@@ -875,6 +887,31 @@ const updateWorkerPin = async (req, res) => {
   res.json({ success: true, message: 'PIN updated', data: { pin: worker.pin } });
 };
 
+// ─── PUT /api/workers/:id/rotation-schedule ──────────────────────────────────
+const updateRotationSchedule = async (req, res) => {
+  const { pattern, startDate } = req.body;
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  worker.rotationSchedule = {
+    pattern:   pattern   || 'none',
+    startDate: startDate ? new Date(startDate) : undefined,
+  };
+
+  worker.employmentHistory.push({
+    action:       'schedule_changed',
+    fromSchedule: worker.schedule,
+    toSchedule:   pattern !== 'none'
+      ? `${worker.schedule || ''} (rotation: ${pattern}, from ${startDate || '?'})`
+      : `${worker.schedule || ''} (no rotation)`,
+    date:         new Date(),
+    performedBy:  req.user._id
+  });
+
+  await worker.save();
+  res.json({ success: true, data: { rotationSchedule: worker.rotationSchedule } });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   getWorkerPins, bulkGeneratePins, selfResetPin, searchByName,
@@ -888,5 +925,5 @@ module.exports = {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin
+  updateWorkerPin, updateRotationSchedule,
 };
