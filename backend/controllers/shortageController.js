@@ -184,20 +184,29 @@ const getShortagesSummary = async (req, res) => {
 
 // ─── POST /api/shortages/worker  (public — worker enters PIN, auto-approved) ──
 const workerPinSubmit = async (req, res) => {
-  const { pin, amount, notes, date } = req.body;
+  const { pin, amount, notes, date, targetWorkerId } = req.body;
 
   if (!pin)    return res.status(400).json({ success: false, message: 'PIN is required' });
   if (!amount || Number(amount) <= 0)
     return res.status(400).json({ success: false, message: 'Enter a valid amount' });
 
-  // Find worker by PIN across all companies
-  const worker = await Worker.findOne({ pin: String(pin).trim() })
+  // Find submitter by PIN
+  const submitter = await Worker.findOne({ pin: String(pin).trim() })
     .populate('branchId', 'name')
     .lean();
 
-  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN — worker not found' });
-  if (worker.employmentStatus !== 'active')
+  if (!submitter) return res.status(404).json({ success: false, message: 'Invalid PIN — worker not found' });
+  if (submitter.employmentStatus !== 'active')
     return res.status(400).json({ success: false, message: 'Only active workers can submit shortages' });
+
+  // Target worker: either a specific worker (supervisor submitting for subordinate) or self
+  let worker = submitter;
+  if (targetWorkerId && String(targetWorkerId) !== String(submitter._id)) {
+    const target = await Worker.findOne({ _id: targetWorkerId, company: submitter.company })
+      .populate('branchId', 'name').lean();
+    if (!target) return res.status(404).json({ success: false, message: 'Target worker not found' });
+    worker = target;
+  }
 
   const now    = new Date();
   const month  = now.getMonth() + 1;
@@ -264,20 +273,49 @@ const workerPinLookup = async (req, res) => {
 
   const worker = await Worker.findOne({ pin: String(pin).trim() })
     .populate('branchId', 'name')
-    .select('fullName role branch branchId employmentStatus passportPhoto')
+    .select('fullName role branch branchId shiftId employmentStatus passportPhoto')
     .lean();
 
   if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN' });
   if (worker.employmentStatus !== 'active')
     return res.status(400).json({ success: false, message: 'This worker account is not active' });
 
-  res.json({ success: true, data: {
-    _id: worker._id,
+  const result = {
+    _id:        worker._id,
     fullName:   worker.fullName,
     role:       worker.role,
     branchName: worker.branchId?.name || worker.branch,
-    photo:      worker.passportPhoto?.url
-  }});
+    branchId:   worker.branchId?._id  || worker.branchId,
+    shiftId:    worker.shiftId,
+    photo:      worker.passportPhoto?.url,
+    isSupervisor: worker.role?.toLowerCase() === 'supervisor'
+  };
+
+  // If supervisor — also return active workers in their branch/shift
+  if (result.isSupervisor && result.branchId) {
+    const filter = {
+      company:          worker.company,
+      branchId:         result.branchId,
+      employmentStatus: 'active'
+    };
+    if (result.shiftId) filter.shiftId = result.shiftId;
+
+    const shiftWorkers = await Worker.find(filter)
+      .select('fullName role passportPhoto shiftId')
+      .populate('shiftId', 'name')
+      .sort({ fullName: 1 })
+      .lean();
+
+    result.workers = shiftWorkers.map(w => ({
+      _id:      w._id,
+      fullName: w.fullName,
+      role:     w.role,
+      shift:    w.shiftId?.name,
+      photo:    w.passportPhoto?.url
+    }));
+  }
+
+  res.json({ success: true, data: result });
 };
 
 module.exports = {
