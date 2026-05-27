@@ -185,7 +185,7 @@ export default function Shortages() {
   const [loading,    setLoading   ] = useState(true);
   const [showSubmit, setShowSubmit] = useState(false);
   const [rejectItem, setRejectItem] = useState(null);
-  const [filterStatus, setFilterStatus] = useState(isAdmin ? 'pending' : 'all');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [filterMonth,  setFilterMonth ] = useState('');
   const [filterYear,   setFilterYear  ] = useState(now.getFullYear());
 
@@ -242,7 +242,7 @@ export default function Shortages() {
             )}
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {isAdmin ? 'Review and approve shortage submissions from supervisors' : 'Submit and track shortage reports'}
+            {isAdmin ? 'All shortage submissions — from supervisors and worker self-service (PIN)' : 'Submit and track shortage reports'}
           </p>
         </div>
         {canSubmit && (
@@ -360,7 +360,10 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
           <span className="text-sm font-bold text-red-600">{fmt(shortage.amount)}</span>
           <span className="text-xs text-gray-400">{MONTHS[(shortage.month||1)-1]} {shortage.year}</span>
           {shortage.date && <span className="text-xs text-gray-400">{new Date(shortage.date).toLocaleDateString('en-NG')}</span>}
-          {shortage.submittedBy?.name && <span className="text-xs text-gray-400">by {shortage.submittedBy.name}</span>}
+          {shortage.submittedBy?.name
+            ? <span className="text-xs text-gray-400">by {shortage.submittedBy.name}</span>
+            : <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full">🔑 PIN</span>
+          }
         </div>
         {shortage.notes && <p className="text-xs text-gray-500 mt-1 italic">"{shortage.notes}"</p>}
       </div>
@@ -407,8 +410,14 @@ function ShortageRow({ shortage, isAdmin, onApprove, onReject, onDelete }) {
         {shortage.status === 'rejected' && shortage.rejectionReason && (
           <p className="text-xs text-red-500 mt-0.5">Reason: {shortage.rejectionReason}</p>
         )}
-        <p className="text-xs text-gray-400 mt-0.5">
-          Submitted by {shortage.submittedBy?.name || '—'} ·{' '}
+        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+          {shortage.submittedBy?.name
+            ? <>Submitted by {shortage.submittedBy.name}</>
+            : <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">
+                🔑 Self-service (PIN)
+              </span>
+          }
+          {' · '}
           {new Date(shortage.createdAt).toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' })}
           {shortage.reviewedBy?.name && ` · Reviewed by ${shortage.reviewedBy.name}`}
         </p>
