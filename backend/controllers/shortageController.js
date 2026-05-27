@@ -298,7 +298,8 @@ const workerPinLookup = async (req, res) => {
       branchId:         result.branchId,
       employmentStatus: 'active'
     };
-    if (result.shiftId) filter.shiftId = result.shiftId;
+    // NOTE: intentionally NOT filtering by shiftId — supervisors see all
+    // active workers in their branch regardless of shift assignment.
 
     const shiftWorkers = await Worker.find(filter)
       .select('fullName role passportPhoto shiftId')
