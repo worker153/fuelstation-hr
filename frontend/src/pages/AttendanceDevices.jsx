@@ -523,17 +523,19 @@ export default function AttendanceDevices() {
 
   const load = useCallback(async () => {
     setLoading(true);
+
+    // Load branches independently so a device API error never blocks the dropdown
+    api.get('/branches')
+      .then(r => setBranches(r.data.data || []))
+      .catch(() => {});
+
     try {
       const params = new URLSearchParams();
       if (filterBranch) params.set('branchId', filterBranch);
       if (filterStatus) params.set('status',   filterStatus);
 
-      const [dRes, bRes] = await Promise.all([
-        api.get(`/devices?${params}`),
-        api.get('/branches'),
-      ]);
-      setDevices(dRes.data.data);
-      setBranches(bRes.data.data || []);
+      const dRes = await api.get(`/devices?${params}`);
+      setDevices(dRes.data.data || []);
     } catch { notify('Failed to load devices', 'error'); }
     finally { setLoading(false); }
   }, [filterBranch, filterStatus]);
