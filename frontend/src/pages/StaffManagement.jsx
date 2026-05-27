@@ -25,6 +25,7 @@ const ALL_PERMISSIONS = [
   { key: 'manageBranches',   label: 'Manage Branches',    desc: 'Can create & edit branches' },
   { key: 'manageStaff',      label: 'Manage Staff',       desc: 'Can view staff list' },
   { key: 'approveWorkers',   label: 'Approve Workers',    desc: 'Can approve verifications' },
+  { key: 'submitShortages',  label: 'Submit Shortages',   desc: 'Can report worker shortages for approval' },
 ];
 
 const ROLE_MAP = Object.fromEntries(ROLES.map(r => [r.value, r]));
