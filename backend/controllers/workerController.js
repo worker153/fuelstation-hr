@@ -39,12 +39,21 @@ const recalcStatus = async (workerId) => {
 // ─── GET /api/workers/stats ──────────────────────────────────────────────────
 const getStats = async (req, res) => {
   const cid = req.user.company._id;
+
+  // Branch/shift-scoped for non-admin users
+  const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
+  const base = { company: cid };
+  if (!isAdmin) {
+    if (req.user.branchId) base.branchId = req.user.branchId;
+    if (req.user.can('viewOwnShift') && req.user.shiftId) base.shiftId = req.user.shiftId;
+  }
+
   const [total, verified, pendingApproval, partial, pending, guarantorWorkers] = await Promise.all([
-    Worker.countDocuments({ company: cid }),
-    Worker.countDocuments({ company: cid, verificationStatus: { $in: ['fully_verified', 'verified'] } }),
-    Worker.countDocuments({ company: cid, verificationStatus: 'pending_approval' }),
-    Worker.countDocuments({ company: cid, verificationStatus: 'partially_verified' }),
-    Worker.countDocuments({ company: cid, verificationStatus: { $in: ['pending', 'pending_verification'] } }),
+    Worker.countDocuments(base),
+    Worker.countDocuments({ ...base, verificationStatus: { $in: ['fully_verified', 'verified'] } }),
+    Worker.countDocuments({ ...base, verificationStatus: 'pending_approval' }),
+    Worker.countDocuments({ ...base, verificationStatus: 'partially_verified' }),
+    Worker.countDocuments({ ...base, verificationStatus: { $in: ['pending', 'pending_verification'] } }),
     Guarantor.aggregate([
       { $match: { company: cid } },
       { $group: { _id: '$worker' } },
