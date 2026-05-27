@@ -176,6 +176,41 @@ const terminalClock = async (req, res) => {
     }
   }
 
+  // ── Step 8: auto-deduction for early clock-out ──────────────────────────────
+  if (type === 'clock_out') {
+    try {
+      const branch   = await Branch.findById(device.branch).lean();
+      const settings = branch?.attendanceSettings;
+
+      if (settings?.shiftEnd && settings.earlyDepartureDeductionAmount > 0) {
+        const clockH    = now.getHours();
+        const clockM    = now.getMinutes();
+        const clockMins = clockH * 60 + clockM;
+
+        const [seH, seM] = (settings.shiftEnd).split(':').map(Number);
+        const shiftEndMins = seH * 60 + seM;
+
+        if (clockMins < shiftEndMins) {
+          const timeStr        = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
+          const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
+          await createAttendanceShortage({
+            company:    device.company,
+            worker,
+            branchId:   device.branch,
+            branchName: device.branchName,
+            amount:     settings.earlyDepartureDeductionAmount,
+            source:     'early_departure',
+            reason:     'early_departure',
+            attendanceDate,
+            notes: `Early departure — clocked out at ${timeStr} (scheduled: ${settings.shiftEnd})`,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Early departure deduction error:', e.message);
+    }
+  }
+
   res.status(201).json({
     success: true,
     message: `${type === 'clock_in' ? 'Clocked in' : 'Clocked out'} — ${worker.fullName}`,

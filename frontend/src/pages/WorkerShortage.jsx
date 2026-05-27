@@ -291,6 +291,7 @@ export default function WorkerShortage() {
                     <option value="fuel_shortage">Fuel Shortage</option>
                     <option value="equipment_damage">Equipment Damage</option>
                     <option value="customer_complaint">Customer Complaint</option>
+                    <option value="early_departure">Early Departure</option>
                     <option value="other">Other</option>
                   </select>
                 </div>

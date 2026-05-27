@@ -22,12 +22,13 @@ const shortageSchema = new mongoose.Schema({
   reason: {
     type: String,
     enum: ['cash_shortage','fuel_shortage','equipment_damage',
-           'customer_complaint','late_arrival','absent','no_clockin','other'],
+           'customer_complaint','late_arrival','absent','no_clockin',
+           'early_departure','other'],
     default: 'other',
   },
   source: {
     type: String,
-    enum: ['manual','late_arrival','absent','no_clockin'],
+    enum: ['manual','late_arrival','absent','no_clockin','early_departure'],
     default: 'manual',
   },
   attendanceDate: { type: Date },

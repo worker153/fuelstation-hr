@@ -20,15 +20,17 @@ const REASON_OPTIONS = [
   { value: 'customer_complaint', label: 'Customer Complaint' },
   { value: 'late_arrival',       label: 'Late Arrival'       },
   { value: 'absent',             label: 'Absent'             },
+  { value: 'early_departure',    label: 'Early Departure'    },
   { value: 'other',              label: 'Other'              },
 ];
 
 const REASON_LABELS = Object.fromEntries(REASON_OPTIONS.map(r => [r.value, r.label]));
 
 const SOURCE_CFG = {
-  late_arrival: { icon: '🕐', label: 'Auto · Late',    cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  absent:       { icon: '❌', label: 'Auto · Absent',  cls: 'bg-red-50 text-red-700 border border-red-200' },
-  no_clockin:   { icon: '👻', label: 'Auto · No Show', cls: 'bg-red-50 text-red-700 border border-red-200' },
+  late_arrival:    { icon: '🕐', label: 'Auto · Late',        cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  absent:          { icon: '❌', label: 'Auto · Absent',      cls: 'bg-red-50 text-red-700 border border-red-200' },
+  no_clockin:      { icon: '👻', label: 'Auto · No Show',     cls: 'bg-red-50 text-red-700 border border-red-200' },
+  early_departure: { icon: '🚪', label: 'Auto · Early Exit',  cls: 'bg-orange-50 text-orange-700 border border-orange-200' },
 };
 
 const SourceBadge = ({ source }) => {

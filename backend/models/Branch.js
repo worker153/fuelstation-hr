@@ -20,11 +20,13 @@ const branchSchema = new mongoose.Schema({
   createdBy:{ type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
   attendanceSettings: {
-    clockInDeadline:       { type: String, default: '07:00' },
-    absentThreshold:       { type: String, default: '09:00' },
-    lateDeductionAmount:   { type: Number, default: 0 },
-    absentDeductionAmount: { type: Number, default: 0 },
-    workDays:              { type: [Number], default: [1,2,3,4,5,6] },
+    clockInDeadline:              { type: String, default: '07:00' },  // late threshold (HH:MM UTC)
+    absentThreshold:              { type: String, default: '09:00' },  // absent threshold (HH:MM UTC)
+    shiftEnd:                     { type: String, default: '' },       // scheduled clock-out (HH:MM UTC)
+    lateDeductionAmount:          { type: Number, default: 0 },
+    absentDeductionAmount:        { type: Number, default: 0 },
+    earlyDepartureDeductionAmount:{ type: Number, default: 0 },
+    workDays:                     { type: [Number], default: [1,2,3,4,5,6] },
   },
 }, { timestamps: true });
 

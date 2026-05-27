@@ -57,11 +57,13 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
     attendanceSettings: {
-      clockInDeadline:       branch?.attendanceSettings?.clockInDeadline       || '06:00',
-      absentThreshold:       branch?.attendanceSettings?.absentThreshold       || '08:00',
-      lateDeductionAmount:   branch?.attendanceSettings?.lateDeductionAmount   || 0,
-      absentDeductionAmount: branch?.attendanceSettings?.absentDeductionAmount || 0,
-      workDays:              branch?.attendanceSettings?.workDays              || [1,2,3,4,5,6],
+      clockInDeadline:               branch?.attendanceSettings?.clockInDeadline               || '06:00',
+      absentThreshold:               branch?.attendanceSettings?.absentThreshold               || '08:00',
+      shiftEnd:                      branch?.attendanceSettings?.shiftEnd                      || '',
+      lateDeductionAmount:           branch?.attendanceSettings?.lateDeductionAmount           || 0,
+      absentDeductionAmount:         branch?.attendanceSettings?.absentDeductionAmount         || 0,
+      earlyDepartureDeductionAmount: branch?.attendanceSettings?.earlyDepartureDeductionAmount || 0,
+      workDays:                      branch?.attendanceSettings?.workDays                      || [1,2,3,4,5,6],
     },
   });
   const [showAttendance, setShowAttendance] = useState(false);
@@ -302,23 +304,33 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
             </button>
             {showAttendance && (
               <div className="px-4 py-4 space-y-4 border-t border-gray-100">
+                {/* Shift times */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">Clock-in Deadline</label>
+                    <label className="label">Clock-In Time</label>
                     <input type="time" className="input"
                       value={form.attendanceSettings.clockInDeadline}
                       onChange={e => setAs('clockInDeadline', e.target.value)} />
                     <p className="text-xs text-gray-400 mt-1">Late if clocked in after this</p>
                   </div>
                   <div>
-                    <label className="label">Absent Threshold</label>
+                    <label className="label">Clock-Out Time</label>
                     <input type="time" className="input"
-                      value={form.attendanceSettings.absentThreshold}
-                      onChange={e => setAs('absentThreshold', e.target.value)} />
-                    <p className="text-xs text-gray-400 mt-1">Absent even if they do clock in</p>
+                      value={form.attendanceSettings.shiftEnd}
+                      onChange={e => setAs('shiftEnd', e.target.value)} />
+                    <p className="text-xs text-gray-400 mt-1">Early departure if clocked out before</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                {/* Absent threshold */}
+                <div>
+                  <label className="label">Absent Threshold</label>
+                  <input type="time" className="input"
+                    value={form.attendanceSettings.absentThreshold}
+                    onChange={e => setAs('absentThreshold', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Clock-in after this time = Absent (even if physically present)</p>
+                </div>
+                {/* Deduction amounts */}
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="label">Late Deduction (₦)</label>
                     <input type="number" min="0" className="input"
@@ -330,6 +342,12 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
                     <input type="number" min="0" className="input"
                       value={form.attendanceSettings.absentDeductionAmount}
                       onChange={e => setAs('absentDeductionAmount', Number(e.target.value))} />
+                  </div>
+                  <div>
+                    <label className="label">Early Exit Deduction (₦)</label>
+                    <input type="number" min="0" className="input"
+                      value={form.attendanceSettings.earlyDepartureDeductionAmount}
+                      onChange={e => setAs('earlyDepartureDeductionAmount', Number(e.target.value))} />
                   </div>
                 </div>
                 <div>
@@ -503,14 +521,25 @@ function BranchCard({ branch, canManage, onEdit, onToggle }) {
         </div>
 
         {/* Attendance settings summary */}
-        {(branch.attendanceSettings?.lateDeductionAmount > 0 ||
+        {(branch.attendanceSettings?.clockInDeadline ||
+          branch.attendanceSettings?.shiftEnd ||
+          branch.attendanceSettings?.lateDeductionAmount > 0 ||
           branch.attendanceSettings?.absentDeductionAmount > 0) && (
-          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg">
-            <Clock size={11} className="shrink-0" />
-            <span>
-              Deadline {branch.attendanceSettings.clockInDeadline}
-              {' · '}Late ₦{Number(branch.attendanceSettings.lateDeductionAmount).toLocaleString()}
-              {' · '}Absent ₦{Number(branch.attendanceSettings.absentDeductionAmount).toLocaleString()}
+          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg">
+            <Clock size={11} className="shrink-0 mt-0.5" />
+            <span className="space-y-0.5">
+              <span className="block font-medium">
+                🕐 {branch.attendanceSettings.clockInDeadline || '—'}
+                {branch.attendanceSettings.shiftEnd
+                  ? ` – ${branch.attendanceSettings.shiftEnd}`
+                  : ''}
+              </span>
+              <span className="block text-amber-600">
+                Late ₦{Number(branch.attendanceSettings.lateDeductionAmount || 0).toLocaleString()}
+                {' · '}Absent ₦{Number(branch.attendanceSettings.absentDeductionAmount || 0).toLocaleString()}
+                {branch.attendanceSettings.earlyDepartureDeductionAmount > 0 &&
+                  ` · Early exit ₦${Number(branch.attendanceSettings.earlyDepartureDeductionAmount).toLocaleString()}`}
+              </span>
             </span>
           </div>
         )}

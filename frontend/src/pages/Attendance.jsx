@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Clock, Building2, Search, RefreshCw, Loader,
   LogIn, LogOut, UserX, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, Users
+  ChevronLeft, ChevronRight, Users, Timer
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -35,6 +35,15 @@ function computeStatus(clockInRecord, settings) {
   if (mins >= atH * 60 + atM) return 'absent';
   if (mins > dlH * 60 + dlM)  return 'late';
   return 'on_time';
+}
+
+// Compare clock-out timestamp against scheduled shift end — returns 'early' | 'on_time' | null
+function computeClockOutStatus(clockOutRecord, settings) {
+  if (!clockOutRecord || !settings?.shiftEnd) return null;
+  const t = new Date(clockOutRecord.timestamp);
+  const mins = t.getHours() * 60 + t.getMinutes();
+  const [seH, seM] = settings.shiftEnd.split(':').map(Number);
+  return mins < seH * 60 + seM ? 'early' : 'on_time';
 }
 
 const STATUS_CFG = {
@@ -153,12 +162,13 @@ export default function Attendance() {
     if (filterBranch && allWorkers.length > 0) {
       // Show all workers for branch with attendance overlay
       return allWorkers.map(w => {
-        const wid    = String(w._id);
-        const ci     = clockInMap[wid];
-        const co     = clockOutMap[wid];
-        const status = computeStatus(ci, settings);
+        const wid       = String(w._id);
+        const ci        = clockInMap[wid];
+        const co        = clockOutMap[wid];
+        const status    = computeStatus(ci, settings);
+        const coStatus  = computeClockOutStatus(co, settings);
         return { _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
-                 clockIn: ci, clockOut: co, status };
+                 clockIn: ci, clockOut: co, status, coStatus };
       });
     }
 
@@ -176,7 +186,8 @@ export default function Attendance() {
           role: r.workerRole,
           branch: r.branchName,
           clockIn: ci, clockOut: co,
-          status: computeStatus(ci, settings),
+          status:   computeStatus(ci, settings),
+          coStatus: computeClockOutStatus(co, settings),
         });
       }
     });
@@ -298,6 +309,33 @@ export default function Attendance() {
         </div>
       )}
 
+      {/* Shift schedule banner */}
+      {filterBranch && selectedBranch?.attendanceSettings?.clockInDeadline && (
+        <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-4 text-sm">
+          <div className="flex items-center gap-2 text-brand-700">
+            <Clock size={14} className="shrink-0" />
+            <span className="font-semibold">Scheduled shift:</span>
+          </div>
+          <div className="flex items-center gap-4 text-brand-800">
+            <span className="flex items-center gap-1.5">
+              <LogIn size={13} className="text-green-600" />
+              Clock In by <strong>{selectedBranch.attendanceSettings.clockInDeadline}</strong>
+            </span>
+            {selectedBranch.attendanceSettings.shiftEnd && (
+              <span className="flex items-center gap-1.5">
+                <LogOut size={13} className="text-red-500" />
+                Clock Out by <strong>{selectedBranch.attendanceSettings.shiftEnd}</strong>
+              </span>
+            )}
+            {selectedBranch.attendanceSettings.absentThreshold && (
+              <span className="text-xs text-brand-500">
+                (Absent after {selectedBranch.attendanceSettings.absentThreshold})
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Settings note if branch selected but no settings configured */}
       {filterBranch && selectedBranch &&
        !selectedBranch.attendanceSettings?.clockInDeadline &&
@@ -370,14 +408,19 @@ export default function Attendance() {
                     {/* Clock Out */}
                     <div className="flex sm:block items-center gap-2">
                       <span className="sm:hidden text-xs text-gray-400 w-20 shrink-0">Clock Out:</span>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-col gap-0.5">
                         {row.clockOut ? (
-                          <>
+                          <div className="flex items-center gap-1.5">
                             <LogOut size={12} className="text-red-400 shrink-0" />
                             <span className="text-sm text-gray-700 font-mono">{fmtTime(row.clockOut.timestamp)}</span>
-                          </>
+                          </div>
                         ) : (
                           <span className="text-sm text-gray-300">—</span>
+                        )}
+                        {row.coStatus === 'early' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 w-fit">
+                            <Timer size={9} /> Early Exit
+                          </span>
                         )}
                       </div>
                     </div>
