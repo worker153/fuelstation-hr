@@ -241,8 +241,76 @@ const terminalWorkerSearch = async (req, res) => {
   });
 };
 
+// ── GET /api/devices/terminal/worker-by-pin?pin=xxxx&token=xxx ───────────────
+// Worker enters 4-digit PIN → return their info + whether face is already registered
+const terminalWorkerByPin = async (req, res) => {
+  const { token, pin } = req.query;
+  if (!token) return res.status(400).json({ success: false, message: 'Token required' });
+  if (!pin)   return res.status(400).json({ success: false, message: 'PIN required' });
+
+  const device = await AttendanceDevice.findOne({ deviceToken: token, status: 'approved' }).lean();
+  if (!device) return res.status(403).json({ success: false, message: 'Device not authorized' });
+
+  const Worker = require('../models/Worker');
+  const worker = await Worker.findOne({
+    pin:              String(pin).trim(),
+    company:          device.company,
+    employmentStatus: 'active',
+  }).lean();
+
+  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN — worker not found' });
+
+  // Confirm worker belongs to this branch (optional: remove for multi-branch workers)
+  // if (String(worker.branchId) !== String(device.branch))
+  //   return res.status(403).json({ success: false, message: 'Worker is not assigned to this branch' });
+
+  res.json({
+    success: true,
+    data: {
+      _id:            worker._id,
+      fullName:       worker.fullName,
+      role:           worker.role,
+      photo:          worker.passportPhoto?.url,
+      branchName:     worker.branch,
+      // Return face descriptor ONLY if worker has one (for live comparison)
+      faceDescriptor:    worker.faceDescriptor?.length ? worker.faceDescriptor : null,
+      faceRegisteredAt:  worker.faceRegisteredAt,
+      hasFace:           !!(worker.faceDescriptor?.length),
+    }
+  });
+};
+
+// ── POST /api/devices/terminal/register-face ──────────────────────────────────
+// Worker's first login — save face descriptor to their record
+const terminalRegisterFace = async (req, res) => {
+  const { token, workerId, faceDescriptor } = req.body;
+  if (!token || !workerId || !faceDescriptor)
+    return res.status(400).json({ success: false, message: 'token, workerId and faceDescriptor are required' });
+  if (!Array.isArray(faceDescriptor) || faceDescriptor.length !== 128)
+    return res.status(400).json({ success: false, message: 'faceDescriptor must be an array of 128 numbers' });
+
+  const device = await AttendanceDevice.findOne({ deviceToken: token, status: 'approved' }).lean();
+  if (!device) return res.status(403).json({ success: false, message: 'Device not authorized' });
+
+  const Worker = require('../models/Worker');
+  const worker = await Worker.findOne({ _id: workerId, company: device.company });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  worker.faceDescriptor   = faceDescriptor;
+  worker.faceRegisteredAt = new Date();
+  worker.faceRegisteredOn = device.name;
+  await worker.save();
+
+  res.json({
+    success: true,
+    message: `Face registered for ${worker.fullName}`,
+    data: { faceRegisteredAt: worker.faceRegisteredAt }
+  });
+};
+
 module.exports = {
   getDevices, createDevice, getDevice, updateDevice,
   approveDevice, deactivateDevice, blockDevice, resetToken, deleteDevice,
   terminalRegister, terminalInfo, terminalWorkerSearch,
+  terminalWorkerByPin, terminalRegisterFace,
 };
