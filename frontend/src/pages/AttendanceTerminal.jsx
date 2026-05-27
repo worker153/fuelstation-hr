@@ -223,9 +223,21 @@ function useFaceCamera() {
         video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }
       });
       streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+      // Attach now if video is already mounted; if not, components attach via attachStream()
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+      }
       return true;
     } catch { return false; }
+  }, []);
+
+  // Call this after your scanning stage renders the <video> element
+  const attachStream = useCallback(() => {
+    if (videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -244,7 +256,7 @@ function useFaceCamera() {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  return { videoRef, overlayRef, captureRef, loopRef, streamRef, startCamera, stopCamera, captureFrame };
+  return { videoRef, overlayRef, captureRef, loopRef, streamRef, startCamera, stopCamera, captureFrame, attachStream };
 }
 
 // ── Model loader (singleton — loads once) ─────────────────────────────────────
@@ -263,7 +275,7 @@ async function loadModels(onProgress) {
 
 // ── Face REGISTER step (first time only) ──────────────────────────────────────
 function FaceRegister({ worker, token, onDone, onBack }) {
-  const { videoRef, overlayRef, captureRef, loopRef, startCamera, stopCamera, captureFrame } = useFaceCamera();
+  const { videoRef, overlayRef, captureRef, loopRef, startCamera, stopCamera, captureFrame, attachStream } = useFaceCamera();
   const [stage,    setStage   ] = useState('loading');  // loading | ready | scanning | captured | saving | error
   const [progress, setProgress] = useState(0);
   const [faceOk,   setFaceOk  ] = useState(false);
@@ -283,6 +295,11 @@ function FaceRegister({ worker, token, onDone, onBack }) {
     })();
     return () => { cancelled = true; stopCamera(); };
   }, [startCamera, stopCamera]);
+
+  // Re-attach stream once <video> is in the DOM (fixes black screen on mobile)
+  useEffect(() => {
+    if (stage === 'scanning') attachStream();
+  }, [stage, attachStream]);
 
   // Detection loop — wait for clear face before capturing
   useEffect(() => {
@@ -353,8 +370,9 @@ function FaceRegister({ worker, token, onDone, onBack }) {
 
   const retake = async () => {
     capturedDesc.current = null; stableRef.current = 0;
-    setFaceOk(false); setStage('scanning');
+    setFaceOk(false);
     await startCamera();
+    setStage('scanning'); // set AFTER startCamera so attachStream effect fires with fresh stream
   };
 
   return (
@@ -455,7 +473,7 @@ function FaceRegister({ worker, token, onDone, onBack }) {
 
 // ── Face VERIFY step (returning workers) ──────────────────────────────────────
 function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
-  const { videoRef, overlayRef, captureRef, loopRef, startCamera, stopCamera } = useFaceCamera();
+  const { videoRef, overlayRef, captureRef, loopRef, startCamera, stopCamera, attachStream } = useFaceCamera();
   const [stage,     setStage    ] = useState('loading');  // loading | scanning | matched | fail
   const [progress,  setProgress ] = useState(0);
   const [liveScore, setLiveScore] = useState(null);
@@ -474,6 +492,11 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
     })();
     return () => { cancelled = true; stopCamera(); };
   }, [startCamera, stopCamera]);
+
+  // Re-attach stream once <video> is in the DOM (fixes black screen on mobile)
+  useEffect(() => {
+    if (stage === 'scanning') attachStream();
+  }, [stage, attachStream]);
 
   // Convert stored array → Float32Array for faceapi
   const refDesc = useRef(storedDescriptor ? new Float32Array(storedDescriptor) : null);
