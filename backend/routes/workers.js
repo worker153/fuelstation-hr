@@ -1,8 +1,8 @@
 const express = require('express');
 const router  = express.Router();
-const { protect }  = require('../middleware/auth');
+const { protect, adminOnly } = require('../middleware/auth');
 const { upload }   = require('../middleware/upload');
-const { superAdminOnly, requirePermission } = require('../middleware/permissions');
+const { requirePermission } = require('../middleware/permissions');
 const {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   uploadSignature, updateAddressLocation,
@@ -29,8 +29,8 @@ router.use(protect);
 router.get('/stats',           getStats);
 router.get('/approval-queue',  getApprovalQueue);
 router.get('/active-workers',  getActiveWorkers);
-router.get('/pins',            superAdminOnly, getWorkerPins);
-router.post('/bulk-generate-pins', superAdminOnly, bulkGeneratePins);
+router.get('/pins',            adminOnly, getWorkerPins);
+router.post('/bulk-generate-pins', adminOnly, bulkGeneratePins);
 
 // ── Collection ────────────────────────────────────────────────────────────────
 router.route('/')
@@ -45,8 +45,8 @@ router.route('/:id')
 
 // ── Signature ─────────────────────────────────────────────────────────────────
 router.post('/:id/signature',             upload.single('signature'), uploadSignature);
-router.put('/:id/registration-date',      superAdminOnly, updateRegistrationDate);
-router.put('/:id/pin',                    superAdminOnly, updateWorkerPin);
+router.put('/:id/registration-date',      adminOnly, updateRegistrationDate);
+router.put('/:id/pin',                    adminOnly, updateWorkerPin);
 router.put('/:id/resumption',             updateResumptionDate);
 router.post('/:id/authorised-signature',  upload.single('signature'), uploadAuthorisedSignature);
 router.post('/:id/company-stamp',         upload.single('stamp'),     uploadCompanyStamp);
@@ -65,8 +65,8 @@ router.delete('/:id/house/photos/:photoId',deleteHousePhoto);
 
 // ── Approval workflow ─────────────────────────────────────────────────────────
 router.post('/:id/submit-approval', submitForApproval);
-router.post('/:id/approve',         superAdminOnly, approveWorker);
-router.post('/:id/reject',          superAdminOnly, rejectWorker);
+router.post('/:id/approve',         adminOnly, approveWorker);
+router.post('/:id/reject',          adminOnly, rejectWorker);
 
 // ── Employment management ─────────────────────────────────────────────────────
 router.post('/:id/activate',   requirePermission('editWorkers'), activateWorker);

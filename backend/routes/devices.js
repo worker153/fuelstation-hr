@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { protect, superAdminOnly } = require('../middleware/auth');
+const { protect, adminOnly } = require('../middleware/auth');
 const {
   getDevices, createDevice, getDevice, updateDevice,
   approveDevice, deactivateDevice, blockDevice, resetToken, deleteDevice,
@@ -14,8 +14,8 @@ router.get('/terminal/workers',        terminalWorkerSearch);
 router.get('/terminal/worker-by-pin',  terminalWorkerByPin);
 router.post('/terminal/register-face', terminalRegisterFace);
 
-// ── Protected routes (Super Admin only) ───────────────────────────────────────
-router.use(protect, superAdminOnly);
+// ── Protected routes (Super Admin + Admin) ────────────────────────────────────
+router.use(protect, adminOnly);
 
 router.route('/')
   .get(getDevices)
