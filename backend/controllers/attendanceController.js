@@ -81,6 +81,30 @@ const terminalClock = async (req, res) => {
   if (worker.employmentStatus !== 'active')
     return res.status(400).json({ success: false, message: 'Worker account is not active' });
 
+  // ── 2.5. Duplicate check — one clock-in and one clock-out per worker per day ──
+  const now     = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+
+  const existing = await Attendance.findOne({
+    company: device.company,
+    worker:  worker._id,
+    date:    dateStr,
+    type,
+  }).lean();
+
+  if (existing) {
+    const timeStr = new Date(existing.timestamp).toLocaleTimeString('en-NG', {
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+    return res.status(400).json({
+      success:     false,
+      alreadyDone: true,
+      message:     type === 'clock_in'
+        ? `Already clocked in today at ${timeStr}`
+        : `Already clocked out today at ${timeStr}`,
+    });
+  }
+
   const failReasons = [];
   let gpsVerified  = false;
   let gpsDistance  = null;
@@ -130,9 +154,6 @@ const terminalClock = async (req, res) => {
   const status = (gpsVerified && selfie.url && faceVerified && failReasons.length === 0)
     ? 'verified'
     : failReasons.length > 0 ? 'partial' : 'verified';
-
-  const now     = new Date();
-  const dateStr = now.toISOString().split('T')[0];
 
   // ── 6. Save attendance record ────────────────────────────────────────────────
   const record = await Attendance.create({

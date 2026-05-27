@@ -796,8 +796,14 @@ export default function AttendanceTerminal() {
       setResult(data);
       setStep('done');
     } catch (err) {
-      setFailMsg(err.response?.data?.message || 'Submission failed');
-      setStep('fail');
+      const errData = err.response?.data || {};
+      if (errData.alreadyDone) {
+        setFailMsg(errData.message);
+        setStep('already_done');
+      } else {
+        setFailMsg(errData.message || 'Submission failed');
+        setStep('fail');
+      }
     }
   };
 
@@ -961,6 +967,28 @@ export default function AttendanceTerminal() {
         <Loader size={48} className="animate-spin text-white/50 mx-auto" />
         <p className="text-white font-semibold text-lg">Saving attendance…</p>
         <p className="text-white/40 text-sm">Verifying GPS · Uploading selfie</p>
+      </div>
+    </Shell>
+  );
+
+  // ─ Already Done ───────────────────────────────────────────────────────────────
+  if (step === 'already_done') return (
+    <Shell deviceInfo={deviceInfo}>
+      <div className="space-y-5 text-center">
+        <div className="w-20 h-20 bg-amber-500/20 border-2 border-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+          <span className="text-4xl">✅</span>
+        </div>
+        <div>
+          <p className="text-white font-bold text-2xl mb-1">Already Recorded</p>
+          <p className="text-amber-300 font-medium">{worker?.fullName}</p>
+        </div>
+        <p className="text-amber-200 bg-amber-900/30 border border-amber-700 px-5 py-3 rounded-2xl text-sm leading-relaxed">
+          {failMsg}
+        </p>
+        <p className="text-white/40 text-xs">You can only {attendType === 'clock_in' ? 'clock in' : 'clock out'} once per day</p>
+        <button onClick={reset} className="w-full py-3 rounded-xl bg-white/10 border border-white/20 text-white font-medium hover:bg-white/20">
+          ← Back
+        </button>
       </div>
     </Shell>
   );
