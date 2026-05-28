@@ -6,8 +6,9 @@ import FileUpload from '../components/FileUpload';
 import { useNotify } from '../context/NotificationContext';
 
 const ROLES = [
-  'Pump Attendant', 'Station Manager', 'Cashier', 'Supervisor',
-  'Security Guard', 'Mechanic', 'Electrical Technician', 'Office Staff', 'Cleaner', 'Other'
+  'Pump Attendant', 'Supervisor', 'Outside Supervisor', 'Station Manager',
+  'Cashier', 'Security Guard', 'Mechanic', 'Electrical Technician',
+  'Office Staff', 'Cleaner', 'Other'
 ];
 
 const INIT = { fullName: '', phone: '', address: '', branch: '', role: '' };

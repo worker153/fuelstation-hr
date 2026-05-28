@@ -169,6 +169,7 @@ function ActivateModal({ worker, branches, onClose, onDone }) {
               <option value="1_1">1 Day On / 1 Day Off</option>
               <option value="2_2">2 Days On / 2 Days Off</option>
               <option value="3_3">3 Days On / 3 Days Off</option>
+              <option value="5_2">5 Days On / 2 Days Off (weekly)</option>
             </select>
           </div>
           {rotPattern !== 'none' && (
@@ -510,7 +511,7 @@ function EmploymentTab({ worker, branches, onRefresh }) {
     } finally { setSavingRot(false); }
   };
 
-  const ROTATION_LABELS = { none:'No rotation', '1_1':'1 Day On / 1 Day Off', '2_2':'2 Days On / 2 Days Off', '3_3':'3 Days On / 3 Days Off' };
+  const ROTATION_LABELS = { none:'No rotation', '1_1':'1 Day On / 1 Day Off', '2_2':'2 Days On / 2 Days Off', '3_3':'3 Days On / 3 Days Off', '5_2':'5 Days On / 2 Days Off' };
 
   return (
     <div className="space-y-5">
@@ -668,6 +669,7 @@ function EmploymentTab({ worker, branches, onRefresh }) {
               <option value="1_1">1 Day On / 1 Day Off</option>
               <option value="2_2">2 Days On / 2 Days Off</option>
               <option value="3_3">3 Days On / 3 Days Off</option>
+              <option value="5_2">5 Days On / 2 Days Off (weekly)</option>
             </select>
             {rotPat !== 'none' && (
               <div>

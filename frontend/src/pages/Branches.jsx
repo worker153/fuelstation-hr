@@ -41,7 +41,7 @@ async function reverseGeocode(lat, lng) {
 }
 
 // ─── Attendance Rule Card ─────────────────────────────────────────────────────
-const PRESET_ROLES = ['Supervisor', 'Security', 'Pump Attendant', 'Manager', 'Cashier'];
+const PRESET_ROLES = ['Supervisor', 'Outside Supervisor', 'Security', 'Pump Attendant', 'Manager', 'Cashier'];
 
 function RuleCard({ rule, isDefault, onChange, onRemove }) {
   return (

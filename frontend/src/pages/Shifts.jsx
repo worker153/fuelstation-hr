@@ -13,13 +13,14 @@ const ALL_DAYS  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'
 const SHORT_DAY = { Monday:'Mon', Tuesday:'Tue', Wednesday:'Wed', Thursday:'Thu', Friday:'Fri', Saturday:'Sat', Sunday:'Sun' };
 
 const ROTATION_PRESETS = [
-  { value: '1_1',    label: '1 Day In / 1 Day Out',   desc: 'Work 1 day, off 1 day — alternating' },
-  { value: '2_2',    label: '2 Days In / 2 Days Out', desc: 'Work 2 days, off 2 days' },
-  { value: '3_3',    label: '3 Days In / 3 Days Out', desc: 'Work 3 days, off 3 days' },
-  { value: '2_1',    label: '2 Days In / 1 Day Out',  desc: 'Work 2 days, off 1 day' },
-  { value: '3_1',    label: '3 Days In / 1 Day Out',  desc: 'Work 3 days, off 1 day' },
-  { value: '1_week', label: '1 Week In / 1 Week Out', desc: 'Work full week, off full week' },
-  { value: 'custom', label: 'Custom Pattern',          desc: 'Define your own rotation' },
+  { value: '1_1',    label: '1 Day In / 1 Day Out',        desc: 'Work 1 day, off 1 day — alternating' },
+  { value: '2_2',    label: '2 Days In / 2 Days Out',      desc: 'Work 2 days, off 2 days' },
+  { value: '3_3',    label: '3 Days In / 3 Days Out',      desc: 'Work 3 days, off 3 days' },
+  { value: '5_2',    label: '5 Days In / 2 Days Off',      desc: 'Work 5 days, off 2 days — weekly schedule' },
+  { value: '2_1',    label: '2 Days In / 1 Day Out',       desc: 'Work 2 days, off 1 day' },
+  { value: '3_1',    label: '3 Days In / 1 Day Out',       desc: 'Work 3 days, off 1 day' },
+  { value: '1_week', label: '1 Week In / 1 Week Out',      desc: 'Work full week, off full week' },
+  { value: 'custom', label: 'Custom Pattern',               desc: 'Define your own rotation' },
 ];
 
 function fmtTime(t) {
