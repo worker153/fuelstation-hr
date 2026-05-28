@@ -62,15 +62,21 @@ const createAttendanceShortage = async ({
 const syncPayroll = async ({ company, workerId, branchId, month, year }) => {
   const payroll = await Payroll.findOne({ company, branchId, month, year, status: 'draft' });
   if (!payroll) return;
+
+  // Sum ALL approved shortages for this worker this month (no branchId filter —
+  // penalties and auto-deductions are linked to the same worker regardless of
+  // minor ObjectId representation differences).
   const allApproved = await Shortage.find({
-    company, worker: workerId, branchId, month, year, status: 'approved',
+    company, worker: workerId, month, year, status: 'approved',
   }).lean();
   const total = allApproved.reduce((s, x) => s + x.amount, 0);
+
   payroll.entries = payroll.entries.map(e => {
     const plain = e.toObject ? e.toObject() : e;
     if (String(plain.worker) === String(workerId)) plain.shortage = total;
     return plain;
   });
+  payroll.markModified('entries');   // force Mongoose to detect the change
   await payroll.save();
 };
 
@@ -312,34 +318,44 @@ const workerPinSubmit = async (req, res) => {
     reviewedAt:  now
   });
 
-  // ── Auto-deduct from draft payroll if exists ──────────────────────────────
+  // ── Auto-penalty ─────────────────────────────────────────────────────────
+  const parsedAmount = Number(amount);
+  console.log(`[PIN shortage] worker=${worker.fullName} amount=${parsedAmount} branchId=${worker.branchId?._id || worker.branchId}`);
   try {
-    const payroll = await Payroll.findOne({
+    const penaltyAmount = parsedAmount >= 5000 ? 5000 : 2000;
+    console.log(`[PIN penalty] creating ₦${penaltyAmount} penalty for ${worker.fullName}`);
+    await Shortage.create({
+      company:           worker.company,
+      branchId:          worker.branchId?._id || worker.branchId,
+      branchName:        worker.branchId?.name || worker.branch || '',
+      worker:            worker._id,
+      workerName:        worker.fullName,
+      workerRole:        worker.role,
+      month,
+      year,
+      date:              date ? new Date(date) : now,
+      amount:            penaltyAmount,
+      notes:             `Auto-penalty — shortage of ₦${parsedAmount.toLocaleString()} (${parsedAmount >= 5000 ? '≥ ₦5,000' : '< ₦5,000'})`,
+      reason:            'other',
+      source:            'penalty',
+      status:            'approved',
+      reviewedAt:        now,
+      relatedShortageId: shortage._id,
+    });
+    console.log(`[PIN penalty] ✓ penalty saved for ${worker.fullName}`);
+  } catch (e) { console.error('[PIN penalty] ERROR:', e.message); }
+
+  // ── Sync payroll ──────────────────────────────────────────────────────────
+  try {
+    await syncPayroll({
       company:  worker.company,
+      workerId: worker._id,
       branchId: worker.branchId?._id || worker.branchId,
       month, year,
-      status:   'draft'
     });
-
-    if (payroll) {
-      const allApproved = await Shortage.find({
-        company: worker.company,
-        worker:  worker._id,
-        month, year,
-        status:  'approved'
-      }).lean();
-
-      const totalShortage = allApproved.reduce((sum, s) => sum + s.amount, 0);
-
-      payroll.entries = payroll.entries.map(e => {
-        const plain = e.toObject();
-        if (String(plain.worker) === String(worker._id)) plain.shortage = totalShortage;
-        return plain;
-      });
-      await payroll.save();
-    }
+    console.log(`[PIN payroll-sync] ✓ done for ${worker.fullName}`);
   } catch (err) {
-    console.error('Payroll sync error:', err.message);
+    console.error('[PIN payroll-sync] ERROR:', err.message);
   }
 
   res.status(201).json({

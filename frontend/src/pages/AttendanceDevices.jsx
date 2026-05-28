@@ -98,7 +98,7 @@ function RegisterModal({ branches, onClose, onCreated }) {
           <div>
             <label className="label">Branch *</label>
             <select className="input" value={branchId} onChange={e => setBranchId(e.target.value)} required>
-              <option value="">— Select branch —</option>
+              <option value="">{branches.length === 0 ? 'Loading branches…' : '— Select branch —'}</option>
               {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
             </select>
           </div>
@@ -521,14 +521,15 @@ export default function AttendanceDevices() {
   const [filterBranch,  setFilterBranch ] = useState('');
   const [filterStatus,  setFilterStatus ] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-
-    // Load branches independently so a device API error never blocks the dropdown
+  // Load branches once on mount — independent of device filters
+  useEffect(() => {
     api.get('/branches')
       .then(r => setBranches(r.data.data || []))
       .catch(() => {});
+  }, []);
 
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filterBranch) params.set('branchId', filterBranch);
