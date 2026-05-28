@@ -31,6 +31,7 @@ const SOURCE_CFG = {
   absent:          { icon: '❌', label: 'Auto · Absent',      cls: 'bg-red-50 text-red-700 border border-red-200' },
   no_clockin:      { icon: '👻', label: 'Auto · No Show',     cls: 'bg-red-50 text-red-700 border border-red-200' },
   early_departure: { icon: '🚪', label: 'Auto · Early Exit',  cls: 'bg-orange-50 text-orange-700 border border-orange-200' },
+  penalty:         { icon: '⚡', label: 'Auto · Penalty',     cls: 'bg-purple-50 text-purple-700 border border-purple-200' },
 };
 
 const SourceBadge = ({ source }) => {

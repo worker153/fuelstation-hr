@@ -28,10 +28,11 @@ const shortageSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['manual','late_arrival','absent','no_clockin','early_departure'],
+    enum: ['manual','late_arrival','absent','no_clockin','early_departure','penalty'],
     default: 'manual',
   },
-  attendanceDate: { type: Date },
+  attendanceDate:    { type: Date },
+  relatedShortageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shortage' }, // for penalty: links back to original
 
   status: {
     type: String,
@@ -47,6 +48,7 @@ const shortageSchema = new mongoose.Schema({
 
 shortageSchema.index({ company: 1, status: 1 });
 shortageSchema.index({ company: 1, worker: 1, source: 1, attendanceDate: 1 });
+shortageSchema.index({ relatedShortageId: 1 }, { sparse: true }); // penalty lookup
 shortageSchema.index({ company: 1, worker: 1, month: 1, year: 1 });
 shortageSchema.index({ company: 1, branchId: 1, month: 1, year: 1 });
 

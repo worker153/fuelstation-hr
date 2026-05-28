@@ -138,6 +138,36 @@ const approveShortage = async (req, res) => {
   shortage.reviewedAt  = new Date();
   await shortage.save();
 
+  // ── Auto-penalty: apply extra deduction on top of the approved shortage amount ─
+  // Rule: shortage >= ₦5,000 → ₦5,000 penalty; shortage < ₦5,000 → ₦2,000 penalty
+  // Only applies to manual shortages (not attendance deductions or penalties themselves)
+  if (shortage.source === 'manual') {
+    try {
+      const alreadyHasPenalty = await Shortage.findOne({ relatedShortageId: shortage._id }).lean();
+      if (!alreadyHasPenalty) {
+        const penaltyAmount = shortage.amount >= 5000 ? 5000 : 2000;
+        await Shortage.create({
+          company:          shortage.company,
+          branchId:         shortage.branchId,
+          branchName:       shortage.branchName,
+          worker:           shortage.worker,
+          workerName:       shortage.workerName,
+          workerRole:       shortage.workerRole,
+          month:            shortage.month,
+          year:             shortage.year,
+          date:             shortage.date || new Date(),
+          amount:           penaltyAmount,
+          notes:            `Auto-penalty — shortage of ₦${shortage.amount.toLocaleString()} was ${shortage.amount >= 5000 ? '≥ ₦5,000' : '< ₦5,000'}`,
+          reason:           'other',
+          source:           'penalty',
+          status:           'approved',
+          reviewedAt:       new Date(),
+          relatedShortageId: shortage._id,
+        });
+      }
+    } catch (e) { console.error('Penalty creation error:', e.message); }
+  }
+
   // ── Auto-deduct from payroll if a draft exists for this period ──────────────
   try {
     const payroll = await Payroll.findOne({
