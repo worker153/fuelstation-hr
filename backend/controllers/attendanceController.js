@@ -189,14 +189,25 @@ const terminalClock = async (req, res) => {
   // ── Step 7: auto-deduction for late/absent clock-in ──────────────────────────
   if (type === 'clock_in') {
     try {
+      console.log(`[AUTO-DEDUCT] worker=${worker.fullName} role=${worker.role} clockInRequired=${worker.clockInRequired}`);
       // Skip all deductions for salary/flexible workers who don't need to clock in
-      if (worker.clockInRequired === false) { /* exempt — no deductions */ }
+      if (worker.clockInRequired === false) {
+        console.log(`[AUTO-DEDUCT] exempt worker — skipping`);
+      }
       // Skip all deductions if today is this worker's scheduled off day
-      else if (isWorkerOnDuty(worker, now)) {
+      else if (!isWorkerOnDuty(worker, now)) {
+        console.log(`[AUTO-DEDUCT] off-duty day — skipping`);
+      }
+      else {
         const branch   = await Branch.findById(device.branch).lean();
         const settings = getSettingsForRole(branch, worker.role);
+        console.log(`[AUTO-DEDUCT] branch=${branch?.name} settings=${JSON.stringify(settings)}`);
 
-        if (settings && (settings.lateDeductionAmount > 0 || settings.absentDeductionAmount > 0)) {
+        if (!settings) {
+          console.log(`[AUTO-DEDUCT] no settings found — skipping`);
+        } else if (!(settings.lateDeductionAmount > 0) && !(settings.absentDeductionAmount > 0)) {
+          console.log(`[AUTO-DEDUCT] both deduction amounts are 0 — skipping. late=${settings.lateDeductionAmount} absent=${settings.absentDeductionAmount}`);
+        } else {
           // Convert server UTC time to Nigeria WAT (UTC+1) for threshold comparisons
           const watNow    = new Date(now.getTime() + 60 * 60 * 1000);
           const clockH    = watNow.getUTCHours();
@@ -204,12 +215,14 @@ const terminalClock = async (req, res) => {
           const clockMins = clockH * 60 + clockM;
           const timeStr = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
           const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
+          console.log(`[AUTO-DEDUCT] WAT time=${timeStr} (${clockMins}mins) deadline=${settings.clockInDeadline} absentThreshold=${settings.absentThreshold}`);
 
           // Check absent threshold independently (no fallback — only fires when explicitly configured)
           let deducted = false;
           if (settings.absentThreshold && settings.absentDeductionAmount > 0) {
             const [atH, atM] = settings.absentThreshold.split(':').map(Number);
             if (clockMins >= atH * 60 + atM) {
+              console.log(`[AUTO-DEDUCT] ABSENT — clockMins ${clockMins} >= threshold ${atH*60+atM}, amount=${settings.absentDeductionAmount}`);
               await createAttendanceShortage({
                 company:     device.company,
                 worker,
@@ -228,6 +241,7 @@ const terminalClock = async (req, res) => {
           if (!deducted && settings.clockInDeadline && settings.lateDeductionAmount > 0) {
             const [dlH, dlM] = settings.clockInDeadline.split(':').map(Number);
             if (clockMins > dlH * 60 + dlM) {
+              console.log(`[AUTO-DEDUCT] LATE — clockMins ${clockMins} > deadline ${dlH*60+dlM}, amount=${settings.lateDeductionAmount}`);
               await createAttendanceShortage({
                 company:     device.company,
                 worker,
@@ -239,12 +253,14 @@ const terminalClock = async (req, res) => {
                 attendanceDate,
                 notes: `Late arrival — clocked in at ${timeStr} (deadline: ${settings.clockInDeadline})`,
               });
+            } else {
+              console.log(`[AUTO-DEDUCT] on time — clockMins ${clockMins} <= deadline ${dlH*60+dlM}`);
             }
           }
         }
       }
     } catch (e) {
-      console.error('Auto-deduction error:', e.message);
+      console.error('[AUTO-DEDUCT] ERROR:', e.message, e.stack);
     }
   }
 
