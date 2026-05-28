@@ -571,4 +571,47 @@ const getMonthlySummary = async (req, res) => {
   res.json({ success: true, data });
 };
 
-module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary };
+// ─── GET /api/attendance/debug-settings  (admin — check what rules apply for a branch) ──
+const debugSettings = async (req, res) => {
+  const { branchId } = req.query;
+  if (!branchId) return res.status(400).json({ success: false, message: 'branchId required' });
+
+  const cid    = req.user.company._id;
+  const branch = await Branch.findOne({ _id: branchId, company: cid }).lean();
+  if (!branch)  return res.status(404).json({ success: false, message: 'Branch not found' });
+
+  const now     = new Date();
+  const watNow  = new Date(now.getTime() + 60 * 60 * 1000);
+  const clockH  = watNow.getUTCHours();
+  const clockM  = watNow.getUTCMinutes();
+
+  // Show what settings apply for each distinct role in this branch's workers
+  const workers = await Worker.find({ company: cid, branchId, employmentStatus: 'active' })
+    .select('fullName role clockInRequired rotationSchedule').lean();
+
+  const roleMap = {};
+  workers.forEach(w => {
+    if (!roleMap[w.role]) roleMap[w.role] = getSettingsForRole(branch, w.role);
+  });
+
+  res.json({
+    success: true,
+    data: {
+      branchName:      branch.name,
+      serverUTC:       now.toISOString(),
+      nigeriaWAT:      `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`,
+      attendanceRules: branch.attendanceRules,
+      attendanceSettings: branch.attendanceSettings,
+      roleSettings:    roleMap,
+      workers: workers.map(w => ({
+        name: w.fullName,
+        role: w.role,
+        clockInRequired: w.clockInRequired,
+        onDutyToday: isWorkerOnDuty(w, now),
+        settings: getSettingsForRole(branch, w.role),
+      })),
+    }
+  });
+};
+
+module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings };
