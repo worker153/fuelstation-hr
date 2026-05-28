@@ -12,7 +12,9 @@ const formatUser = (user, company) => ({
   role:        user.role,
   permissions: user.permissions || {},
   isActive:    user.isActive,
-  company:     { id: company._id, name: company.name }
+  company:     { id: company._id, name: company.name },
+  branchId:    user.branchId  ? String(user.branchId._id  || user.branchId)  : null,
+  shiftId:     user.shiftId   ? String(user.shiftId._id   || user.shiftId)   : null,
 });
 
 // POST /api/auth/register  — creates company + Super Admin

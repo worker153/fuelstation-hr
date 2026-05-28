@@ -235,9 +235,14 @@ export default function Shortages() {
       if (filterMonth)  params.set('month', filterMonth);
       if (filterYear)   params.set('year',  filterYear);
 
+      // Build worker query — pass supervisor's branch/shift explicitly as extra guard
+      const wParams = new URLSearchParams();
+      if (!isAdmin && user?.branchId) wParams.set('branchId', user.branchId);
+      if (!isAdmin && user?.shiftId)  wParams.set('shiftId',  user.shiftId);
+
       const [sRes, wRes] = await Promise.all([
         api.get(`/shortages?${params}`),
-        canSubmit ? api.get('/workers/active-workers') : Promise.resolve({ data: { data: [] } })
+        canSubmit ? api.get(`/workers/active-workers?${wParams}`) : Promise.resolve({ data: { data: [] } })
       ]);
       setShortages(sRes.data.data);
       setWorkers(wRes.data.data || []);

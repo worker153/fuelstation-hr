@@ -44,8 +44,10 @@ const getStats = async (req, res) => {
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
   const base = { company: cid };
   if (!isAdmin) {
-    if (req.user.branchId) base.branchId = req.user.branchId;
-    if (req.user.shiftId)  base.shiftId  = req.user.shiftId;
+    const _bid = req.user.branchId?._id || req.user.branchId || null;
+    const _sid = req.user.shiftId?._id  || req.user.shiftId  || null;
+    if (_bid) base.branchId = _bid;
+    if (_sid) base.shiftId  = _sid;
   }
 
   const [
@@ -112,9 +114,11 @@ const getWorkers = async (req, res) => {
 
   // Branch/shift-scoped: supervisors only see their branch + shift (if assigned)
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
+  const _userBranchId = req.user.branchId?._id || req.user.branchId || null;
+  const _userShiftId  = req.user.shiftId?._id  || req.user.shiftId  || null;
   if (!isAdmin) {
-    if (req.user.branchId) query.branchId = req.user.branchId;
-    if (req.user.shiftId)  query.shiftId  = req.user.shiftId;
+    if (_userBranchId) query.branchId = _userBranchId;
+    if (_userShiftId)  query.shiftId  = _userShiftId;
   }
 
   if (search) {
@@ -155,11 +159,12 @@ const getActiveWorkers = async (req, res) => {
 
   // Branch/shift-scoped: supervisors only see their assigned branch + shift
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
+  // Extract IDs safely (branchId/shiftId may be populated objects after middleware change)
+  const userBranchId = req.user.branchId?._id || req.user.branchId || null;
+  const userShiftId  = req.user.shiftId?._id  || req.user.shiftId  || null;
   if (!isAdmin) {
-    if (req.user.branchId) filter.branchId = req.user.branchId;
-    // Auto-scope to shift if supervisor has a shiftId assigned
-    // (viewOwnShift permission is no longer required — having a shiftId is enough)
-    if (req.user.shiftId) filter.shiftId = req.user.shiftId;
+    if (userBranchId) filter.branchId = userBranchId;
+    if (userShiftId)  filter.shiftId  = userShiftId;
   }
 
   if (status) {
@@ -169,7 +174,7 @@ const getActiveWorkers = async (req, res) => {
   }
 
   if (branchId && isAdmin) filter.branchId = branchId;
-  if (shiftId && (isAdmin || !req.user.shiftId)) filter.shiftId = shiftId; // query param only overrides if no personal shift assigned
+  if (shiftId && (isAdmin || !userShiftId)) filter.shiftId = shiftId;
   if (role)     filter.role = { $regex: role, $options: 'i' };
   if (search) {
     filter.$or = [
