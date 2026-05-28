@@ -384,7 +384,7 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
             ? <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full">Auto-deduction</span>
             : shortage.submittedBy?.name
               ? <span className="text-xs text-gray-400">by {shortage.submittedBy.name}</span>
-              : <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full">🔑 PIN</span>
+              : <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full">🔑 {shortage.pinSubmittedByName ? `${shortage.pinSubmittedByName} (PIN)` : 'Self-service (PIN)'}</span>
           }
         </div>
         {shortage.notes && <p className="text-xs text-gray-500 mt-1 italic">"{shortage.notes}"</p>}
@@ -436,7 +436,7 @@ function ShortageRow({ shortage, isAdmin, onDelete }) {
             : shortage.submittedBy?.name
               ? <>Submitted by {shortage.submittedBy.name}</>
               : <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">
-                  🔑 Self-service (PIN)
+                  🔑 {shortage.pinSubmittedByName ? `${shortage.pinSubmittedByName} (PIN)` : 'Self-service (PIN)'}
                 </span>
           }
           {' · '}

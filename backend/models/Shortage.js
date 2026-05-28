@@ -40,8 +40,9 @@ const shortageSchema = new mongoose.Schema({
     default: 'pending'
   },
 
-  submittedBy:      { type: ObjectId, ref: 'User' },
-  reviewedBy:       { type: ObjectId, ref: 'User' },
+  submittedBy:        { type: ObjectId, ref: 'User' },
+  pinSubmittedByName: { type: String, trim: true },  // name of worker who entered PIN (self-service)
+  reviewedBy:         { type: ObjectId, ref: 'User' },
   reviewedAt:       Date,
   rejectionReason:  { type: String, trim: true }
 }, { timestamps: true });

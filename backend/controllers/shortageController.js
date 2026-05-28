@@ -312,10 +312,11 @@ const workerPinSubmit = async (req, res) => {
     amount:      Number(amount),
     notes:       notes?.trim() || '',
     reason:      reason || 'cash_shortage',
-    source:      'manual',
-    submittedBy: null,   // self-service — no staff user
-    status:      'approved',  // auto-approved
-    reviewedAt:  now
+    source:             'manual',
+    submittedBy:        null,                 // self-service — no staff user
+    pinSubmittedByName: submitter.fullName,   // name of the person who typed the PIN
+    status:             'approved',
+    reviewedAt:         now
   });
 
   // ── Auto-penalty ─────────────────────────────────────────────────────────
