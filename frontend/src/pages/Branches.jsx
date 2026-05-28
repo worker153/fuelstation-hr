@@ -154,8 +154,8 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     const s = branch?.attendanceSettings;
     return [{
       role:                         'default',
-      clockInDeadline:              s?.clockInDeadline              || '06:00',
-      absentThreshold:              s?.absentThreshold              || '08:00',
+      clockInDeadline:              s?.clockInDeadline              || '',
+      absentThreshold:              s?.absentThreshold              || '',
       shiftEnd:                     s?.shiftEnd                     || '',
       lateDeductionAmount:          s?.lateDeductionAmount          || 0,
       absentDeductionAmount:        s?.absentDeductionAmount        || 0,
@@ -185,7 +185,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
   const addRule = () => setForm(f => ({
     ...f,
     attendanceRules: [...f.attendanceRules, {
-      role: '', clockInDeadline: '06:00', absentThreshold: '08:00', shiftEnd: '',
+      role: '', clockInDeadline: '', absentThreshold: '', shiftEnd: '',
       lateDeductionAmount: 0, absentDeductionAmount: 0, earlyDepartureDeductionAmount: 0,
     }],
   }));
@@ -454,9 +454,8 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
                   <Plus size={14} /> Add Role-Specific Rule
                 </button>
 
-                <p className="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
-                  ⚠️ Times use server clock (UTC). Nigeria (WAT = UTC+1) → enter 1 hour earlier,
-                  e.g. 6:30 AM → <strong>05:30</strong>. Set ₦ amounts to 0 to track without deducting.
+                <p className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+                  💡 Enter times in Nigerian time (e.g. 8:00 AM means 08:00). Set ₦ amounts to 0 to track without deducting.
                 </p>
               </div>
             )}

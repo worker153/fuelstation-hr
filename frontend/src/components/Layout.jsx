@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Leaf } from 'lucide-react';
 import Sidebar from './Sidebar';
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#f0f4f0' }}>
+
       {/* Desktop sidebar */}
       <div className="hidden lg:flex lg:shrink-0">
         <Sidebar />
@@ -17,32 +18,38 @@ export default function Layout() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setSidebarOpen(false)}
           />
-          <div className="relative z-10">
+          <div className="relative z-10 shadow-2xl">
             <Sidebar onClose={() => setSidebarOpen(false)} />
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="absolute top-4 right-4 text-white"
+            className="absolute top-4 right-4 w-9 h-9 bg-white/10 rounded-full flex items-center justify-center text-white"
           >
-            <X size={24} />
+            <X size={18} />
           </button>
         </div>
       )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+
         {/* Mobile top bar */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="text-gray-600 hover:text-gray-900"
+            className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-600 hover:bg-gray-100 transition-colors"
           >
-            <Menu size={22} />
+            <Menu size={20} />
           </button>
-          <span className="font-semibold text-gray-900">FuelStation HR</span>
+          <div className="flex items-center gap-2">
+            <div className="bg-brand-700 rounded-lg p-1.5">
+              <Leaf size={14} className="text-white" />
+            </div>
+            <span className="font-bold text-gray-900 text-sm">FuelStation HR</span>
+          </div>
         </header>
 
         {/* Scrollable page content */}

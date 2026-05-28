@@ -58,13 +58,19 @@ function getSettingsForRole(branch, workerRole) {
 // Compare clock-in timestamp against branch settings — returns status string
 function computeStatus(clockInRecord, settings) {
   if (!clockInRecord) return 'no_show';
-  if (!settings?.clockInDeadline) return 'on_time';
-  const t = new Date(clockInRecord.timestamp);
+  const t    = new Date(clockInRecord.timestamp);
   const mins = t.getHours() * 60 + t.getMinutes();
-  const [atH, atM] = (settings.absentThreshold || '09:00').split(':').map(Number);
-  const [dlH, dlM] = (settings.clockInDeadline  || '07:00').split(':').map(Number);
-  if (mins >= atH * 60 + atM) return 'absent';
-  if (mins > dlH * 60 + dlM)  return 'late';
+
+  // Check absent threshold independently — works even if clockInDeadline is unset
+  if (settings?.absentThreshold) {
+    const [atH, atM] = settings.absentThreshold.split(':').map(Number);
+    if (mins >= atH * 60 + atM) return 'absent';
+  }
+  // Check late threshold independently — works even if absentThreshold is unset
+  if (settings?.clockInDeadline) {
+    const [dlH, dlM] = settings.clockInDeadline.split(':').map(Number);
+    if (mins > dlH * 60 + dlM) return 'late';
+  }
   return 'on_time';
 }
 

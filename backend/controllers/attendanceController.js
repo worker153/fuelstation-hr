@@ -195,41 +195,49 @@ const terminalClock = async (req, res) => {
         const settings = getSettingsForRole(branch, worker.role);
 
         if (settings && (settings.lateDeductionAmount > 0 || settings.absentDeductionAmount > 0)) {
-          const clockH    = now.getHours();
-          const clockM    = now.getMinutes();
+          // Convert server UTC time to Nigeria WAT (UTC+1) for threshold comparisons
+          const watNow    = new Date(now.getTime() + 60 * 60 * 1000);
+          const clockH    = watNow.getUTCHours();
+          const clockM    = watNow.getUTCMinutes();
           const clockMins = clockH * 60 + clockM;
-
-          const [dlH, dlM] = (settings.clockInDeadline || '07:00').split(':').map(Number);
-          const [atH, atM] = (settings.absentThreshold  || '09:00').split(':').map(Number);
-          const deadlineMins  = dlH * 60 + dlM;
-          const thresholdMins = atH * 60 + atM;
           const timeStr = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
           const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
 
-          if (clockMins >= thresholdMins && settings.absentDeductionAmount > 0) {
-            await createAttendanceShortage({
-              company:     device.company,
-              worker,
-              branchId:    device.branch,
-              branchName:  device.branchName,
-              amount:      settings.absentDeductionAmount,
-              source:      'absent',
-              reason:      'absent',
-              attendanceDate,
-              notes: `Absent — arrived at ${timeStr} (threshold: ${settings.absentThreshold})`,
-            });
-          } else if (clockMins > deadlineMins && settings.lateDeductionAmount > 0) {
-            await createAttendanceShortage({
-              company:     device.company,
-              worker,
-              branchId:    device.branch,
-              branchName:  device.branchName,
-              amount:      settings.lateDeductionAmount,
-              source:      'late_arrival',
-              reason:      'late_arrival',
-              attendanceDate,
-              notes: `Late arrival — clocked in at ${timeStr} (deadline: ${settings.clockInDeadline})`,
-            });
+          // Check absent threshold independently (no fallback — only fires when explicitly configured)
+          let deducted = false;
+          if (settings.absentThreshold && settings.absentDeductionAmount > 0) {
+            const [atH, atM] = settings.absentThreshold.split(':').map(Number);
+            if (clockMins >= atH * 60 + atM) {
+              await createAttendanceShortage({
+                company:     device.company,
+                worker,
+                branchId:    device.branch,
+                branchName:  device.branchName,
+                amount:      settings.absentDeductionAmount,
+                source:      'absent',
+                reason:      'absent',
+                attendanceDate,
+                notes: `Absent — arrived at ${timeStr} (threshold: ${settings.absentThreshold})`,
+              });
+              deducted = true;
+            }
+          }
+          // Check late threshold independently — skip if already deducted as absent
+          if (!deducted && settings.clockInDeadline && settings.lateDeductionAmount > 0) {
+            const [dlH, dlM] = settings.clockInDeadline.split(':').map(Number);
+            if (clockMins > dlH * 60 + dlM) {
+              await createAttendanceShortage({
+                company:     device.company,
+                worker,
+                branchId:    device.branch,
+                branchName:  device.branchName,
+                amount:      settings.lateDeductionAmount,
+                source:      'late_arrival',
+                reason:      'late_arrival',
+                attendanceDate,
+                notes: `Late arrival — clocked in at ${timeStr} (deadline: ${settings.clockInDeadline})`,
+              });
+            }
           }
         }
       }
@@ -246,8 +254,10 @@ const terminalClock = async (req, res) => {
       const settings = getSettingsForRole(branch, worker.role);
 
       if (settings?.shiftEnd && settings.earlyDepartureDeductionAmount > 0) {
-        const clockH    = now.getHours();
-        const clockM    = now.getMinutes();
+        // Convert server UTC time to Nigeria WAT (UTC+1) for threshold comparisons
+        const watNow    = new Date(now.getTime() + 60 * 60 * 1000);
+        const clockH    = watNow.getUTCHours();
+        const clockM    = watNow.getUTCMinutes();
         const clockMins = clockH * 60 + clockM;
 
         const [seH, seM] = (settings.shiftEnd).split(':').map(Number);
