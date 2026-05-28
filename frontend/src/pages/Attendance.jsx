@@ -411,6 +411,16 @@ export default function Attendance() {
         );
       })()}
 
+      {/* Warning: no branch selected — statuses are meaningless */}
+      {!filterBranch && records.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>
+            <strong>Select a branch above</strong> to see accurate Late / Absent / On Time statuses. Without a branch selected, no attendance rules are applied and every worker shows "On Time" by default.
+          </span>
+        </div>
+      )}
+
       {/* Settings note if branch selected but no settings configured */}
       {filterBranch && selectedBranch && (() => {
         // Check both new attendanceRules and legacy attendanceSettings
@@ -516,7 +526,10 @@ export default function Attendance() {
                     {/* Status */}
                     <div className="flex sm:block items-center gap-2">
                       <span className="sm:hidden text-xs text-gray-400 w-20 shrink-0">Status:</span>
-                      <StatusBadge status={row.status} />
+                      {filterBranch
+                        ? <StatusBadge status={row.status} />
+                        : <span className="text-xs text-gray-400">— select branch</span>
+                      }
                     </div>
 
                     {/* Branch */}
