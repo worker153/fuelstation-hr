@@ -94,20 +94,23 @@ function RuleCard({ rule, isDefault, onChange, onRemove }) {
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Late ₦</p>
           <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.lateDeductionAmount || 0}
-            onChange={e => onChange('lateDeductionAmount', Number(e.target.value))} />
+            value={rule.lateDeductionAmount ?? ''}
+            placeholder="0"
+            onChange={e => onChange('lateDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Absent ₦</p>
           <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.absentDeductionAmount || 0}
-            onChange={e => onChange('absentDeductionAmount', Number(e.target.value))} />
+            value={rule.absentDeductionAmount ?? ''}
+            placeholder="0"
+            onChange={e => onChange('absentDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Early Exit ₦</p>
           <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.earlyDepartureDeductionAmount || 0}
-            onChange={e => onChange('earlyDepartureDeductionAmount', Number(e.target.value))} />
+            value={rule.earlyDepartureDeductionAmount ?? ''}
+            placeholder="0"
+            onChange={e => onChange('earlyDepartureDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
         </div>
       </div>
 
