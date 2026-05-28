@@ -1,94 +1,103 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Users, CheckCircle, Clock, ShieldCheck,
-  AlertCircle, Plus, ChevronRight, TrendingUp,
+  Users, CheckCircle, Clock, ShieldCheck, AlertCircle,
+  Plus, ChevronRight, TrendingUp, Briefcase, Activity,
+  UserCheck, UserX, Building2, ArrowUpRight,
 } from 'lucide-react';
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from 'recharts';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import VerificationBadge from '../components/VerificationBadge';
 
-const STAT_CFG = [
-  {
-    key:   'total',
-    label: 'Total Workers',
-    icon:  Users,
-    from:  '#3b82f6',
-    to:    '#1d4ed8',
-    light: '#eff6ff',
-    text:  '#1e40af',
-  },
-  {
-    key:   'verified',
-    label: 'Verified',
-    icon:  CheckCircle,
-    from:  '#22c55e',
-    to:    '#15803d',
-    light: '#f0fdf4',
-    text:  '#166534',
-  },
-  {
-    key:   'pending',
-    label: 'In Progress',
-    icon:  Clock,
-    from:  '#f59e0b',
-    to:    '#d97706',
-    light: '#fffbeb',
-    text:  '#92400e',
-  },
-  {
-    key:   'pendingApproval',
-    label: 'Pending Approval',
-    icon:  AlertCircle,
-    from:  '#a855f7',
-    to:    '#7c3aed',
-    light: '#faf5ff',
-    text:  '#5b21b6',
-  },
-];
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const GREEN  = '#16a34a';
+const GREEN2 = '#15803d';
+const BLUE   = '#3b82f6';
+const AMBER  = '#f59e0b';
+const PURPLE = '#a855f7';
+const RED    = '#ef4444';
+const SLATE  = '#64748b';
 
-function StatCard({ cfg, value }) {
-  const Icon = cfg.icon;
-  return (
+// ─── Stat card ────────────────────────────────────────────────────────────────
+function StatCard({ icon: Icon, label, value, from, to, light, text, href, sub }) {
+  const inner = (
     <div
-      className="relative overflow-hidden rounded-2xl p-5 shadow-sm"
-      style={{ backgroundColor: cfg.light, border: `1px solid ${cfg.light}` }}
+      className="relative overflow-hidden rounded-2xl p-5 shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md"
+      style={{ backgroundColor: light, border: `1.5px solid ${light}` }}
     >
-      {/* Background decoration */}
-      <div
-        className="absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-10"
-        style={{ background: `radial-gradient(circle, ${cfg.from}, ${cfg.to})` }}
-      />
-      <div className="relative z-10">
+      <div className="absolute -top-5 -right-5 w-20 h-20 rounded-full opacity-[0.12]"
+        style={{ background: `radial-gradient(circle, ${from}, ${to})` }} />
+      <div className="relative z-10 flex items-start justify-between">
         <div
-          className="inline-flex items-center justify-center w-10 h-10 rounded-xl mb-4 shadow-sm"
-          style={{ background: `linear-gradient(135deg, ${cfg.from}, ${cfg.to})` }}
+          className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm shrink-0"
+          style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
         >
-          <Icon size={19} className="text-white" />
+          <Icon size={18} className="text-white" />
         </div>
-        <p className="text-3xl font-bold mb-1" style={{ color: cfg.text }}>
-          {value ?? '—'}
-        </p>
-        <p className="text-sm font-medium" style={{ color: cfg.text, opacity: 0.7 }}>
-          {cfg.label}
-        </p>
+        {href && <ArrowUpRight size={14} style={{ color: text, opacity: 0.4 }} />}
       </div>
+      <p className="text-3xl font-extrabold mt-3 mb-0.5 tabular-nums" style={{ color: text }}>
+        {value ?? '—'}
+      </p>
+      <p className="text-xs font-semibold" style={{ color: text, opacity: 0.65 }}>{label}</p>
+      {sub && <p className="text-[11px] mt-1" style={{ color: text, opacity: 0.45 }}>{sub}</p>}
+    </div>
+  );
+  return href ? <Link to={href}>{inner}</Link> : inner;
+}
+
+// ─── Section header ───────────────────────────────────────────────────────────
+function SectionHead({ title, sub, action }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div>
+        <h2 className="font-bold text-gray-900 text-base">{title}</h2>
+        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      </div>
+      {action}
     </div>
   );
 }
 
+// ─── Custom pie tooltip ───────────────────────────────────────────────────────
+function PieTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const { name, value } = payload[0];
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2 text-xs font-medium text-gray-700">
+      {name}: <span className="font-bold text-gray-900">{value}</span>
+    </div>
+  );
+}
+
+// ─── Custom bar tooltip ───────────────────────────────────────────────────────
+function BarTip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2 text-xs font-medium text-gray-700">
+      {label}: <span className="font-bold text-gray-900">{payload[0].value}</span> workers
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { user, isSuperAdmin }  = useAuth();
-  const [stats, setStats]       = useState(null);
-  const [recent, setRecent]     = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const { user, isSuperAdmin } = useAuth();
+  const [stats,   setStats ]   = useState(null);
+  const [recent,  setRecent]   = useState([]);
+  const [loading, setLoading]  = useState(true);
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const wave     = hour < 12 ? '☀️' : hour < 17 ? '👋' : '🌙';
   const firstName = user?.name?.split(' ')[0];
 
   useEffect(() => {
-    const load = async () => {
+    (async () => {
       try {
         const [s, w] = await Promise.all([
           api.get('/workers/stats'),
@@ -98,153 +107,353 @@ export default function Dashboard() {
         setRecent(w.data.data);
       } catch { /* silent */ }
       finally { setLoading(false); }
-    };
-    load();
+    })();
   }, []);
 
+  // ── Verification pie data ────────────────────────────────────────────────────
+  const verifyPie = useMemo(() => {
+    if (!stats) return [];
+    return [
+      { name: 'Verified',    value: stats.verified         || 0, color: GREEN  },
+      { name: 'Submitted',   value: stats.pendingApproval  || 0, color: PURPLE },
+      { name: 'In Progress', value: stats.partial          || 0, color: AMBER  },
+      { name: 'Not Started', value: stats.pending          || 0, color: '#e2e8f0' },
+    ].filter(d => d.value > 0);
+  }, [stats]);
+
+  // ── Employment pie data ──────────────────────────────────────────────────────
+  const empPie = useMemo(() => {
+    if (!stats) return [];
+    return [
+      { name: 'Active',     value: stats.active     || 0, color: GREEN  },
+      { name: 'Registered', value: stats.registered || 0, color: BLUE   },
+      { name: 'Suspended',  value: stats.suspended  || 0, color: AMBER  },
+      { name: 'Sacked',     value: stats.sacked     || 0, color: RED    },
+    ].filter(d => d.value > 0);
+  }, [stats]);
+
+  // ── Branch bar data ──────────────────────────────────────────────────────────
+  const branchBars = useMemo(() => {
+    if (!stats?.byBranch?.length) return [];
+    return stats.byBranch.map(b => ({
+      name: b.name.replace(/^SAGE\s+/i, '').replace(/\s+rd$/i, ' Rd'),
+      count: b.count,
+    }));
+  }, [stats]);
+
+  // ── Role bar data ────────────────────────────────────────────────────────────
+  const roleBars = useMemo(() => stats?.byRole || [], [stats]);
+
+  const statCards = stats ? [
+    { icon: Users,      label: 'Total Workers',    value: stats.total,           from: BLUE,   to: '#1d4ed8', light: '#eff6ff', text: '#1e40af', href: '/workers' },
+    { icon: UserCheck,  label: 'Active Workers',   value: stats.active,          from: GREEN,  to: GREEN2,    light: '#f0fdf4', text: '#166534', href: '/active-workers' },
+    { icon: ShieldCheck,label: 'Verified',         value: stats.verified,        from: '#0ea5e9', to: '#0284c7', light: '#f0f9ff', text: '#075985' },
+    { icon: AlertCircle,label: 'Pending Approval', value: stats.pendingApproval, from: PURPLE, to: '#7c3aed', light: '#faf5ff', text: '#5b21b6', href: isSuperAdmin() ? '/approval-queue' : undefined },
+  ] : [];
+
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
 
-      {/* ── Hero banner ── */}
+      {/* ── Hero ────────────────────────────────────────────────────────────── */}
       <div
-        className="relative overflow-hidden rounded-2xl px-7 py-8 shadow-md"
-        style={{ background: 'linear-gradient(135deg, #14532d 0%, #166534 50%, #15803d 100%)' }}
+        className="relative overflow-hidden rounded-2xl px-7 py-8 shadow-lg"
+        style={{ background: 'linear-gradient(135deg, #052e16 0%, #14532d 45%, #166534 100%)' }}
       >
-        {/* Decorative circles */}
-        <div className="absolute -top-10 -right-10 w-56 h-56 rounded-full opacity-10"
+        {/* Blobs */}
+        <div className="absolute -top-12 -right-12 w-64 h-64 rounded-full opacity-[0.07]"
           style={{ background: 'radial-gradient(circle, #4ade80, transparent)' }} />
-        <div className="absolute -bottom-16 right-32 w-48 h-48 rounded-full opacity-8"
+        <div className="absolute bottom-0 left-1/3 w-48 h-48 rounded-full opacity-[0.05]"
           style={{ background: 'radial-gradient(circle, #86efac, transparent)' }} />
+        <div className="absolute top-4 right-1/4 w-32 h-32 rounded-full opacity-[0.06]"
+          style={{ background: 'radial-gradient(circle, #bbf7d0, transparent)' }} />
 
-        <div className="relative z-10 flex items-center justify-between">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp size={15} className="text-green-300" />
-              <span className="text-green-300 text-xs font-semibold uppercase tracking-wider">
-                {user?.company?.name}
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-green-300 text-xs font-bold uppercase tracking-widest">
+                {user?.company?.name || 'Dashboard'}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-              {greeting}, {firstName}! 👋
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white mb-1.5 leading-tight">
+              {greeting}, {firstName}! {wave}
             </h1>
-            <p className="text-green-200 text-sm">
-              Here's your workforce overview for today.
+            <p className="text-green-300/80 text-sm">
+              {loading ? 'Loading your workforce overview…' : (
+                stats
+                  ? `${stats.total} workers · ${stats.active} active · ${stats.verified} verified`
+                  : 'Here\'s your workforce overview for today.'
+              )}
             </p>
           </div>
-          <Link to="/workers/new"
-            className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 bg-white/15 hover:bg-white/25
-                       text-white text-sm font-semibold rounded-xl transition-all duration-150 backdrop-blur shrink-0">
-            <Plus size={16} />
-            Add Worker
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link to="/attendance"
+              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5
+                         bg-white/10 hover:bg-white/20 text-white text-sm font-semibold
+                         rounded-xl transition-all duration-150 backdrop-blur border border-white/10">
+              <Activity size={15} />
+              Attendance
+            </Link>
+            <Link to="/workers/new"
+              className="inline-flex items-center gap-2 px-4 py-2.5
+                         bg-white text-green-800 text-sm font-bold
+                         rounded-xl hover:bg-green-50 transition-all duration-150 shadow">
+              <Plus size={15} />
+              Add Worker
+            </Link>
+          </div>
         </div>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* ── Stat cards ──────────────────────────────────────────────────────── */}
       {loading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="card p-5 animate-pulse">
+            <div key={i} className="card p-5 animate-pulse rounded-2xl">
               <div className="w-10 h-10 rounded-xl bg-gray-100 mb-4" />
               <div className="h-8 w-14 bg-gray-100 rounded mb-2" />
-              <div className="h-4 w-24 bg-gray-100 rounded" />
+              <div className="h-3 w-24 bg-gray-100 rounded" />
             </div>
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {STAT_CFG.map(cfg => (
-            <StatCard key={cfg.key} cfg={cfg} value={stats?.[cfg.key] ?? 0} />
-          ))}
+          {statCards.map((c, i) => <StatCard key={i} {...c} />)}
         </div>
       )}
 
-      {/* ── Pending approval CTA ── */}
+      {/* ── Pending approval alert ──────────────────────────────────────────── */}
       {!loading && isSuperAdmin() && (stats?.pendingApproval ?? 0) > 0 && (
-        <Link
-          to="/approval-queue"
+        <Link to="/approval-queue"
           className="flex items-center gap-4 p-4 rounded-2xl border border-purple-200
                      bg-gradient-to-r from-purple-50 to-violet-50
-                     hover:from-purple-100 hover:to-violet-100 transition-all shadow-sm"
-        >
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                     hover:from-purple-100 hover:to-violet-100 transition-all shadow-sm">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: 'linear-gradient(135deg,#a855f7,#7c3aed)' }}>
-            <ShieldCheck size={20} className="text-white" />
+            <ShieldCheck size={18} className="text-white" />
           </div>
           <div className="flex-1">
-            <p className="font-semibold text-purple-900">
+            <p className="font-bold text-purple-900 text-sm">
               {stats.pendingApproval} worker{stats.pendingApproval !== 1 ? 's' : ''} awaiting your approval
             </p>
-            <p className="text-sm text-purple-500 mt-0.5">
+            <p className="text-xs text-purple-500 mt-0.5">
               Review and approve verification submissions
             </p>
           </div>
-          <ChevronRight size={18} className="text-purple-300 shrink-0" />
+          <ChevronRight size={16} className="text-purple-300 shrink-0" />
         </Link>
       )}
 
-      {/* ── Recent workers ── */}
+      {/* ── Charts row ──────────────────────────────────────────────────────── */}
+      {!loading && stats && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* Verification status — donut */}
+          <div className="card p-5">
+            <SectionHead title="Verification Status" sub="Worker document & ID progress" />
+            {verifyPie.length === 0 ? (
+              <p className="text-xs text-gray-400 py-8 text-center">No data yet</p>
+            ) : (
+              <div className="flex items-center gap-4">
+                <ResponsiveContainer width={160} height={160}>
+                  <PieChart>
+                    <Pie
+                      data={verifyPie}
+                      cx="50%" cy="50%"
+                      innerRadius={48} outerRadius={72}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {verifyPie.map((d, i) => (
+                        <Cell key={i} fill={d.color} strokeWidth={0} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<PieTip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1 space-y-2.5">
+                  {verifyPie.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
+                        <span className="text-xs text-gray-600">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-900">{d.value}</span>
+                        <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${(d.value / stats.total) * 100}%`, background: d.color }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Employment status — donut */}
+          <div className="card p-5">
+            <SectionHead title="Employment Status" sub="Active vs registered vs other" />
+            {empPie.length === 0 ? (
+              <p className="text-xs text-gray-400 py-8 text-center">No data yet</p>
+            ) : (
+              <div className="flex items-center gap-4">
+                <ResponsiveContainer width={160} height={160}>
+                  <PieChart>
+                    <Pie
+                      data={empPie}
+                      cx="50%" cy="50%"
+                      innerRadius={48} outerRadius={72}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {empPie.map((d, i) => (
+                        <Cell key={i} fill={d.color} strokeWidth={0} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<PieTip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1 space-y-2.5">
+                  {empPie.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
+                        <span className="text-xs text-gray-600">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-900">{d.value}</span>
+                        <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${(d.value / stats.total) * 100}%`, background: d.color }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Workers by branch — bar */}
+          {branchBars.length > 0 && (
+            <div className="card p-5">
+              <SectionHead
+                title="Workers by Branch"
+                sub="Headcount per location"
+                action={
+                  <Link to="/branches" className="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-0.5">
+                    <Building2 size={12} /> Manage
+                  </Link>
+                }
+              />
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={branchBars} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip content={<BarTip />} cursor={{ fill: '#f8fafc' }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                    {branchBars.map((_, i) => (
+                      <Cell key={i} fill={[GREEN, BLUE, AMBER, PURPLE, '#06b6d4', '#ec4899'][i % 6]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Workers by role — bar */}
+          {roleBars.length > 0 && (
+            <div className="card p-5">
+              <SectionHead
+                title="Workers by Role"
+                sub="Top roles in your workforce"
+                action={
+                  <Link to="/active-workers" className="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-0.5">
+                    <Briefcase size={12} /> View all
+                  </Link>
+                }
+              />
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={roleBars} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis
+                    type="category" dataKey="name" width={110}
+                    tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false}
+                  />
+                  <Tooltip content={<BarTip />} cursor={{ fill: '#f8fafc' }} />
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                    {roleBars.map((_, i) => (
+                      <Cell key={i} fill={[GREEN, BLUE, AMBER, PURPLE, '#06b6d4', '#ec4899'][i % 6]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Recent Workers ──────────────────────────────────────────────────── */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
           <div>
             <h2 className="font-bold text-gray-900">Recent Workers</h2>
             <p className="text-xs text-gray-400 mt-0.5">Latest registrations</p>
           </div>
-          <Link to="/workers"
-            className="text-sm text-brand-600 hover:text-brand-700 font-semibold hover:underline">
-            View all →
+          <Link to="/workers" className="text-sm text-brand-600 hover:text-brand-700 font-bold flex items-center gap-1">
+            View all <ArrowUpRight size={13} />
           </Link>
         </div>
 
         {loading ? (
           <div className="divide-y divide-gray-50">
-            {[...Array(3)].map((_, i) => (
+            {[...Array(4)].map((_, i) => (
               <div key={i} className="px-6 py-4 flex items-center gap-4 animate-pulse">
                 <div className="w-10 h-10 rounded-full bg-gray-100 shrink-0" />
                 <div className="flex-1 space-y-2">
                   <div className="h-4 w-40 bg-gray-100 rounded" />
                   <div className="h-3 w-28 bg-gray-100 rounded" />
                 </div>
+                <div className="h-5 w-16 bg-gray-100 rounded-full" />
               </div>
             ))}
           </div>
         ) : recent.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
-              <Users size={28} className="text-gray-300" />
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: 'linear-gradient(135deg,#f0fdf4,#dcfce7)' }}>
+              <Users size={28} className="text-green-400" />
             </div>
-            <p className="text-gray-500 font-medium mb-1">No workers registered yet</p>
-            <p className="text-gray-400 text-sm mb-6">Start by adding your first team member</p>
+            <p className="text-gray-500 font-semibold mb-1">No workers registered yet</p>
+            <p className="text-gray-400 text-sm mb-5">Start by adding your first team member</p>
             <Link to="/workers/new" className="btn-primary">
-              <Plus size={16} /> Register First Worker
+              <Plus size={15} /> Register First Worker
             </Link>
           </div>
         ) : (
           <ul className="divide-y divide-gray-50">
             {recent.map(w => (
               <li key={w._id}>
-                <Link
-                  to={`/workers/${w._id}`}
-                  className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50/80 transition-colors"
-                >
+                <Link to={`/workers/${w._id}`}
+                  className="flex items-center gap-4 px-6 py-3.5 hover:bg-gray-50/70 transition-colors">
                   {w.passportPhoto?.url
-                    ? <img
-                        src={w.passportPhoto.url}
-                        className="w-10 h-10 rounded-full object-cover shrink-0 border-2 border-gray-100"
-                        alt=""
-                      />
-                    : <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0
-                                      text-brand-700 border-2 border-brand-100"
-                        style={{ background: 'linear-gradient(135deg,#dcfce7,#bbf7d0)' }}>
+                    ? <img src={w.passportPhoto.url}
+                        className="w-10 h-10 rounded-full object-cover shrink-0 border-2 border-white shadow-sm"
+                        alt="" />
+                    : <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 text-white shadow-sm"
+                        style={{ background: `linear-gradient(135deg, ${GREEN}, ${GREEN2})` }}>
                         {w.fullName[0]}
                       </div>
                   }
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{w.fullName}</p>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{w.role} — {w.branch}</p>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">{w.role} · {w.branch}</p>
                   </div>
                   <VerificationBadge status={w.verificationStatus} />
-                  <ChevronRight size={16} className="text-gray-300 shrink-0 ml-1" />
+                  <ChevronRight size={15} className="text-gray-300 shrink-0 ml-1" />
                 </Link>
               </li>
             ))}
@@ -252,12 +461,23 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Mobile add button */}
-      <div className="sm:hidden pb-4">
-        <Link to="/workers/new" className="btn-primary w-full justify-center py-3">
-          <Plus size={16} /> Register New Worker
-        </Link>
+      {/* ── Quick links ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pb-4">
+        {[
+          { to: '/payroll',    icon: '💰', label: 'Payroll'    },
+          { to: '/shortages',  icon: '⚠️',  label: 'Shortages'  },
+          { to: '/attendance', icon: '📋', label: 'Attendance' },
+          { to: '/shifts',     icon: '🔄', label: 'Shifts'     },
+        ].map(q => (
+          <Link key={q.to} to={q.to}
+            className="card flex items-center gap-3 px-4 py-3.5 hover:shadow-md transition-all hover:-translate-y-0.5">
+            <span className="text-xl">{q.icon}</span>
+            <span className="text-sm font-semibold text-gray-700">{q.label}</span>
+            <ChevronRight size={14} className="text-gray-300 ml-auto shrink-0" />
+          </Link>
+        ))}
       </div>
+
     </div>
   );
 }

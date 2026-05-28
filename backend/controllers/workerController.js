@@ -48,7 +48,10 @@ const getStats = async (req, res) => {
     if (req.user.can('viewOwnShift') && req.user.shiftId) base.shiftId = req.user.shiftId;
   }
 
-  const [total, verified, pendingApproval, partial, pending, guarantorWorkers] = await Promise.all([
+  const [
+    total, verified, pendingApproval, partial, pending, guarantorWorkers,
+    employmentAgg, branchAgg, roleAgg
+  ] = await Promise.all([
     Worker.countDocuments(base),
     Worker.countDocuments({ ...base, verificationStatus: { $in: ['fully_verified', 'verified'] } }),
     Worker.countDocuments({ ...base, verificationStatus: 'pending_approval' }),
@@ -58,11 +61,47 @@ const getStats = async (req, res) => {
       { $match: { company: cid } },
       { $group: { _id: '$worker' } },
       { $count: 'total' }
-    ])
+    ]),
+    // Workers by employment status
+    Worker.aggregate([
+      { $match: base },
+      { $group: { _id: '$employmentStatus', count: { $sum: 1 } } }
+    ]),
+    // Workers by branch (top 6)
+    Worker.aggregate([
+      { $match: base },
+      { $group: { _id: '$branch', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 6 }
+    ]),
+    // Workers by role (top 6)
+    Worker.aggregate([
+      { $match: base },
+      { $group: { _id: '$role', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 6 }
+    ]),
   ]);
+
+  // Shape employment map
+  const empMap = {};
+  employmentAgg.forEach(e => { empMap[e._id || 'registered'] = e.count; });
+
+  const byBranch = branchAgg.map(b => ({ name: b._id || 'Unknown', count: b.count }));
+  const byRole   = roleAgg.map(r => ({ name: r._id || 'Unknown', count: r.count }));
+
   res.json({
     success: true,
-    data: { total, verified, pendingApproval, partial, pending, withGuarantors: guarantorWorkers[0]?.total || 0 }
+    data: {
+      total, verified, pendingApproval, partial, pending,
+      withGuarantors: guarantorWorkers[0]?.total || 0,
+      active:    empMap.active    || 0,
+      suspended: empMap.suspended || 0,
+      sacked:    empMap.sacked    || 0,
+      registered: empMap.registered || 0,
+      byBranch,
+      byRole,
+    }
   });
 };
 
