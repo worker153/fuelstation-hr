@@ -80,6 +80,16 @@ function RuleCard({ rule, isDefault, onChange, onRemove }) {
           <input type="time" className="input py-1.5 text-sm"
             value={rule.shiftEnd || ''}
             onChange={e => onChange('shiftEnd', e.target.value)} />
+          {/* Next-day toggle — for 24-hour shifts like Security */}
+          <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!rule.shiftEndNextDay}
+              onChange={e => onChange('shiftEndNextDay', e.target.checked)}
+              className="rounded accent-brand-600 w-3.5 h-3.5"
+            />
+            <span className="text-[11px] text-gray-500 font-medium">Next day (+1)</span>
+          </label>
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Absent After</p>
@@ -171,6 +181,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
       absentDeductionAmount:        s?.absentDeductionAmount        || 0,
       earlyDepartureDeductionAmount:s?.earlyDepartureDeductionAmount|| 0,
       noClockInDeductionAmount:     s?.noClockInDeductionAmount     || 0,
+      shiftEndNextDay:              s?.shiftEndNextDay              || false,
       workDays:                     s?.workDays                     || [1,2,3,4,5,6],
     }];
   };
@@ -197,7 +208,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     ...f,
     attendanceRules: [...f.attendanceRules, {
       role: '', clockInDeadline: '', absentThreshold: '', shiftEnd: '',
-      lateDeductionAmount: 0, absentDeductionAmount: 0, earlyDepartureDeductionAmount: 0, noClockInDeductionAmount: 0,
+      lateDeductionAmount: 0, absentDeductionAmount: 0, earlyDepartureDeductionAmount: 0, noClockInDeductionAmount: 0, shiftEndNextDay: false,
     }],
   }));
 

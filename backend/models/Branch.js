@@ -36,6 +36,7 @@ const branchSchema = new mongoose.Schema({
     clockInDeadline:              { type: String, default: '' },
     absentThreshold:              { type: String, default: '' },
     shiftEnd:                     { type: String, default: '' },
+    shiftEndNextDay:              { type: Boolean, default: false }, // true = clock-out is next calendar day (24h shift)
     lateDeductionAmount:          { type: Number, default: 0 },
     absentDeductionAmount:        { type: Number, default: 0 },
     earlyDepartureDeductionAmount:{ type: Number, default: 0 },

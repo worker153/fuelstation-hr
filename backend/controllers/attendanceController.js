@@ -259,13 +259,47 @@ const terminalClock = async (req, res) => {
         const clockH    = watNow.getUTCHours();
         const clockM    = watNow.getUTCMinutes();
         const clockMins = clockH * 60 + clockM;
+        const timeStr   = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
 
-        const [seH, seM] = (settings.shiftEnd).split(':').map(Number);
+        const [seH, seM]   = settings.shiftEnd.split(':').map(Number);
         const shiftEndMins = seH * 60 + seM;
 
-        if (clockMins < shiftEndMins) {
-          const timeStr        = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
-          const attendanceDate = new Date(dateStr + 'T00:00:00.000Z');
+        let isEarly        = false;
+        let earlyNotes     = '';
+        let attendanceDate = new Date(dateStr + 'T00:00:00.000Z'); // default: today
+
+        if (settings.shiftEndNextDay) {
+          // 24-hour shift: clock-out should be on the NEXT calendar day
+          // Check if there is a clock-in from yesterday for this worker
+          const watYest    = new Date(watNow.getTime() - 24 * 60 * 60 * 1000);
+          const yesterdayStr = `${watYest.getUTCFullYear()}-${String(watYest.getUTCMonth()+1).padStart(2,'0')}-${String(watYest.getUTCDate()).padStart(2,'0')}`;
+
+          const prevClockIn = await Attendance.findOne({
+            company: device.company, worker: worker._id,
+            date: yesterdayStr, type: 'clock_in',
+          }).lean();
+
+          if (prevClockIn) {
+            // Clocking out on the correct next day — just check if before scheduled end time
+            attendanceDate = new Date(yesterdayStr + 'T00:00:00.000Z');
+            if (clockMins < shiftEndMins) {
+              isEarly    = true;
+              earlyNotes = `Early departure — clocked out at ${timeStr} (scheduled: ${settings.shiftEnd} next day)`;
+            }
+          } else {
+            // Clocked out on the same day they clocked in — way too early for a 24h shift
+            isEarly    = true;
+            earlyNotes = `Early departure — clocked out at ${timeStr} same day (24h shift, scheduled out: ${settings.shiftEnd} next day)`;
+          }
+        } else {
+          // Normal same-day shift
+          if (clockMins < shiftEndMins) {
+            isEarly    = true;
+            earlyNotes = `Early departure — clocked out at ${timeStr} (scheduled: ${settings.shiftEnd})`;
+          }
+        }
+
+        if (isEarly) {
           await createAttendanceShortage({
             company:    device.company,
             worker,
@@ -275,7 +309,7 @@ const terminalClock = async (req, res) => {
             source:     'early_departure',
             reason:     'early_departure',
             attendanceDate,
-            notes: `Early departure — clocked out at ${timeStr} (scheduled: ${settings.shiftEnd})`,
+            notes:      earlyNotes,
           });
         }
       }
