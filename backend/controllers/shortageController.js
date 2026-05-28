@@ -39,17 +39,19 @@ const createAttendanceShortage = async ({
   try {
     const payroll = await Payroll.findOne({ company, branchId, month, year, status: 'draft' });
     if (payroll) {
+      // No branchId filter on the shortage sum — avoids ObjectId mismatch issues
       const allApproved = await Shortage.find({
-        company, worker: worker._id, branchId, month, year, status: 'approved',
+        company, worker: worker._id, month, year, status: 'approved',
       }).lean();
       const total = allApproved.reduce((s, x) => s + x.amount, 0);
       const entry = payroll.entries.find(e => String(e.worker) === String(worker._id));
       if (entry) {
         payroll.entries = payroll.entries.map(e => {
-          const plain = e.toObject();
+          const plain = e.toObject ? e.toObject() : e;
           if (String(plain.worker) === String(worker._id)) plain.shortage = total;
           return plain;
         });
+        payroll.markModified('entries');   // force Mongoose to detect the change
         await payroll.save();
       }
     }
