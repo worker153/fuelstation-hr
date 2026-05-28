@@ -58,18 +58,21 @@ function getSettingsForRole(branch, workerRole) {
 // Compare clock-in timestamp against branch settings — returns status string
 function computeStatus(clockInRecord, settings) {
   if (!clockInRecord) return 'no_show';
+  // No settings at all — can't classify
+  if (!settings) return 'on_time';
+
   const t    = new Date(clockInRecord.timestamp);
   const mins = t.getHours() * 60 + t.getMinutes();
 
-  // Check absent threshold independently — works even if clockInDeadline is unset
-  if (settings?.absentThreshold) {
+  // Check absent threshold
+  if (settings.absentThreshold) {
     const [atH, atM] = settings.absentThreshold.split(':').map(Number);
-    if (mins >= atH * 60 + atM) return 'absent';
+    if (!isNaN(atH) && mins >= atH * 60 + atM) return 'absent';
   }
-  // Check late threshold independently — works even if absentThreshold is unset
-  if (settings?.clockInDeadline) {
+  // Check late threshold
+  if (settings.clockInDeadline) {
     const [dlH, dlM] = settings.clockInDeadline.split(':').map(Number);
-    if (mins > dlH * 60 + dlM) return 'late';
+    if (!isNaN(dlH) && mins > dlH * 60 + dlM) return 'late';
   }
   return 'on_time';
 }
@@ -409,14 +412,21 @@ export default function Attendance() {
       })()}
 
       {/* Settings note if branch selected but no settings configured */}
-      {filterBranch && selectedBranch &&
-       !selectedBranch.attendanceSettings?.clockInDeadline &&
-       !selectedBranch.attendanceSettings?.lateDeductionAmount && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
-          <AlertTriangle size={15} />
-          No attendance rules configured for this branch. Go to <strong>Branches</strong> → Edit → Attendance Rules to set clock-in deadline and deduction amounts.
-        </div>
-      )}
+      {filterBranch && selectedBranch && (() => {
+        // Check both new attendanceRules and legacy attendanceSettings
+        const hasRules = selectedBranch.attendanceRules?.some(r => r.clockInDeadline || r.lateDeductionAmount > 0);
+        const hasLegacy = selectedBranch.attendanceSettings?.clockInDeadline || selectedBranch.attendanceSettings?.lateDeductionAmount > 0;
+        if (hasRules || hasLegacy) return null;
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>
+              ⚠️ <strong>No attendance rules configured for this branch.</strong> Status will always show "On Time" and no auto-deductions will fire.<br />
+              Go to <strong>Branches</strong> → Edit branch → <strong>Attendance Rules</strong> → set Clock-In Time, Clock-Out Time, and deduction amounts.
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
