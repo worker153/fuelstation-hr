@@ -25,8 +25,8 @@ export function EmploymentBadge({ status }) {
 }
 
 const ROLE_OPTIONS = [
-  'Pump Attendant', 'Supervisor', 'Cashier', 'Manager', 'Security',
-  'Maintenance', 'Accountant', 'Driver', 'Cleaner'
+  'Pump Attendant', 'Supervisor', 'Outside Supervisor', 'Cashier', 'Manager',
+  'Security', 'Maintenance', 'Accountant', 'Driver', 'Cleaner'
 ];
 
 const STATUS_OPTIONS = [
@@ -75,7 +75,7 @@ export default function ActiveWorkers() {
     } finally {
       setLoading(false);
     }
-  }, [search, branchId, role, status, page]);
+  }, [search, branchId, shiftId, role, status, page]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [search, branchId, shiftId, role, status]);
