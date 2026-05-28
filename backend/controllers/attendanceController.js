@@ -489,4 +489,70 @@ const processAbsences = async (req, res) => {
   });
 };
 
-module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences };
+// ─── GET /api/attendance/monthly-summary  ─────────────────────────────────────
+// Returns per-worker attendance stats for a given branch/month/year:
+// days present, late count, absent count, no-show count, early-exit count, total deductions
+const Shortage = require('../models/Shortage');
+
+const getMonthlySummary = async (req, res) => {
+  const { branchId, month, year } = req.query;
+  if (!month || !year) return res.status(400).json({ success: false, message: 'month and year required' });
+
+  const cid = req.user.company._id;
+  const mo  = Number(month);
+  const yr  = Number(year);
+
+  // ── Days present: distinct clock-in dates per worker ────────────────────────
+  const datePrefix = `${yr}-${String(mo).padStart(2, '0')}-`;
+  const attFilter  = { company: cid, type: 'clock_in', date: { $regex: `^${datePrefix}` } };
+  if (branchId) attFilter.branch = require('mongoose').Types.ObjectId.createFromHexString
+    ? require('mongoose').Types.ObjectId.createFromHexString(branchId)
+    : require('mongoose').Types.ObjectId(branchId);
+
+  const attRecords = await Attendance.find(attFilter).select('worker workerName workerRole date').lean();
+
+  // ── Attendance-source shortages: count per source per worker ─────────────────
+  const shortageFilter = {
+    company: cid,
+    month: mo, year: yr,
+    source: { $in: ['late_arrival', 'absent', 'no_clockin', 'early_departure'] },
+    status: 'approved',
+  };
+  if (branchId) shortageFilter.branchId = branchId;
+
+  const shortages = await Shortage.find(shortageFilter).select('worker workerName workerRole source amount').lean();
+
+  // ── Merge into per-worker summary ────────────────────────────────────────────
+  const map = {};
+
+  const getOrCreate = (wid, name, role) => {
+    if (!map[wid]) map[wid] = { workerName: name || '', role: role || '', daysPresent: 0, late: 0, absent: 0, noShow: 0, earlyExit: 0, totalDeduction: 0, _dates: new Set() };
+    if (name && !map[wid].workerName) map[wid].workerName = name;
+    if (role && !map[wid].role)       map[wid].role       = role;
+    return map[wid];
+  };
+
+  attRecords.forEach(r => {
+    const e = getOrCreate(String(r.worker), r.workerName, r.workerRole);
+    e._dates.add(r.date);
+  });
+
+  shortages.forEach(s => {
+    const e = getOrCreate(String(s.worker), s.workerName, s.workerRole);
+    if (s.source === 'late_arrival')    e.late++;
+    if (s.source === 'absent')          e.absent++;
+    if (s.source === 'no_clockin')      e.noShow++;
+    if (s.source === 'early_departure') e.earlyExit++;
+    e.totalDeduction += s.amount;
+  });
+
+  // Finalise days present from the Set of unique dates
+  const data = Object.entries(map).map(([wid, e]) => {
+    const { _dates, ...rest } = e;
+    return { workerId: wid, ...rest, daysPresent: _dates.size };
+  }).sort((a, b) => a.workerName.localeCompare(b.workerName));
+
+  res.json({ success: true, data });
+};
+
+module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary };

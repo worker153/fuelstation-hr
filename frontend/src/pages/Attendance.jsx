@@ -2,8 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Clock, Building2, Search, RefreshCw, Loader,
   LogIn, LogOut, UserX, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, Users, Timer
+  ChevronLeft, ChevronRight, Users, Timer, BarChart2, TrendingDown
 } from 'lucide-react';
+
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+const fmt = n => `₦${Number(n||0).toLocaleString()}`;
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
@@ -149,14 +153,23 @@ export default function Attendance() {
   const { isSuperAdmin, can } = useAuth();
   const isAdmin = isSuperAdmin() || can('manageBranches');
 
+  const [tab,          setTab         ] = useState('daily');   // 'daily' | 'monthly'
   const [filterDate,   setFilterDate  ] = useState(today());
   const [filterBranch, setFilterBranch] = useState('');
   const [search,       setSearch      ] = useState('');
   const [branches,     setBranches    ] = useState([]);
-  const [records,      setRecords     ] = useState([]);   // raw Attendance docs for the day
-  const [allWorkers,   setAllWorkers  ] = useState([]);   // active workers for selected branch
+  const [records,      setRecords     ] = useState([]);
+  const [allWorkers,   setAllWorkers  ] = useState([]);
   const [loading,      setLoading     ] = useState(false);
   const [processing,   setProcessing  ] = useState(false);
+
+  // Monthly summary state
+  const nowDate = new Date();
+  const [monthlyBranch, setMonthlyBranch] = useState('');
+  const [monthlyMonth,  setMonthlyMonth ] = useState(nowDate.getMonth() + 1);
+  const [monthlyYear,   setMonthlyYear  ] = useState(nowDate.getFullYear());
+  const [monthlySummary,setMonthlySummary] = useState([]);
+  const [monthlyLoading,setMonthlyLoading] = useState(false);
 
   // Load branches on mount
   useEffect(() => {
@@ -274,6 +287,20 @@ export default function Attendance() {
     return counts;
   }, [rows]);
 
+  const loadMonthlySummary = useCallback(async () => {
+    if (!monthlyBranch) return;
+    setMonthlyLoading(true);
+    try {
+      const { data } = await api.get('/attendance/monthly-summary', {
+        params: { branchId: monthlyBranch, month: monthlyMonth, year: monthlyYear }
+      });
+      setMonthlySummary(data.data || []);
+    } catch { notify('Failed to load monthly summary', 'error'); }
+    finally { setMonthlyLoading(false); }
+  }, [monthlyBranch, monthlyMonth, monthlyYear]);
+
+  useEffect(() => { if (tab === 'monthly') loadMonthlySummary(); }, [tab, loadMonthlySummary]);
+
   const handleProcessAbsences = async () => {
     if (!filterBranch) return notify('Select a branch to process absences', 'error');
     if (!window.confirm(`Process no-show absences for ${selectedBranch?.name} on ${filterDate}?\n\nThis will create deduction records for workers who did not clock in.`)) return;
@@ -303,6 +330,147 @@ export default function Attendance() {
           Refresh
         </button>
       </div>
+
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+        <button onClick={() => setTab('daily')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === 'daily' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+          <Clock size={13} /> Daily Records
+        </button>
+        <button onClick={() => setTab('monthly')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === 'monthly' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+          <BarChart2 size={13} /> Monthly Summary
+        </button>
+      </div>
+
+      {/* ═══ MONTHLY SUMMARY VIEW ═══════════════════════════════════════════════ */}
+      {tab === 'monthly' && (
+        <div className="space-y-4">
+          {/* Monthly filters */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-wrap gap-3 items-end">
+            <div className="min-w-[180px]">
+              <p className="text-xs font-medium text-gray-500 mb-1.5">Branch</p>
+              <select className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-400"
+                value={monthlyBranch} onChange={e => setMonthlyBranch(e.target.value)}>
+                <option value="">— Select branch —</option>
+                {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1.5">Month</p>
+              <select className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
+                value={monthlyMonth} onChange={e => setMonthlyMonth(Number(e.target.value))}>
+                {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1.5">Year</p>
+              <input type="number" className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                value={monthlyYear} onChange={e => setMonthlyYear(Number(e.target.value))} min="2020" max="2100" />
+            </div>
+            <button onClick={loadMonthlySummary} disabled={!monthlyBranch || monthlyLoading}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
+              {monthlyLoading ? <Loader size={13} className="animate-spin" /> : <BarChart2 size={13} />}
+              Load Summary
+            </button>
+          </div>
+
+          {/* Monthly table */}
+          {!monthlyBranch ? (
+            <div className="bg-white rounded-2xl border border-gray-200 py-14 text-center text-gray-400 text-sm">
+              Select a branch to view the monthly summary
+            </div>
+          ) : monthlyLoading ? (
+            <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
+              <Loader size={20} className="animate-spin" /><span className="text-sm">Loading…</span>
+            </div>
+          ) : monthlySummary.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-200 py-14 text-center text-gray-400 text-sm">
+              No attendance records for {MONTHS[monthlyMonth-1]} {monthlyYear}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                <BarChart2 size={15} className="text-brand-600" />
+                <p className="font-semibold text-gray-800 text-sm">
+                  {MONTHS[monthlyMonth-1]} {monthlyYear} — {branches.find(b=>b._id===monthlyBranch)?.name}
+                </p>
+                <span className="ml-auto text-xs text-gray-400">{monthlySummary.length} staff</span>
+              </div>
+
+              {/* Header */}
+              <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1.5fr] gap-3 px-5 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <span>Worker</span>
+                <span className="text-center">Days Present</span>
+                <span className="text-center text-amber-600">Late</span>
+                <span className="text-center text-red-600">Absent</span>
+                <span className="text-center text-red-700">No Show</span>
+                <span className="text-center text-orange-600">Early Exit</span>
+                <span className="text-right text-red-600">Total Deducted</span>
+              </div>
+
+              <div className="divide-y divide-gray-50">
+                {monthlySummary.map(w => (
+                  <div key={w.workerId}
+                    className={`grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1.5fr] gap-2 sm:gap-3 px-5 py-3 hover:bg-gray-50/50 ${w.totalDeduction > 0 ? '' : ''}`}>
+                    {/* Worker */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0">
+                        {w.workerName?.[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">{w.workerName}</p>
+                        <p className="text-xs text-gray-400">{w.role}</p>
+                      </div>
+                    </div>
+                    {/* Stats */}
+                    <div className="flex sm:justify-center items-center gap-2">
+                      <span className="sm:hidden text-xs text-gray-400 w-28 shrink-0">Days Present:</span>
+                      <span className="text-sm font-medium text-green-700">{w.daysPresent}</span>
+                    </div>
+                    <div className="flex sm:justify-center items-center gap-2">
+                      <span className="sm:hidden text-xs text-gray-400 w-28 shrink-0">Late:</span>
+                      <span className={`text-sm font-medium ${w.late > 0 ? 'text-amber-600' : 'text-gray-300'}`}>{w.late}</span>
+                    </div>
+                    <div className="flex sm:justify-center items-center gap-2">
+                      <span className="sm:hidden text-xs text-gray-400 w-28 shrink-0">Absent:</span>
+                      <span className={`text-sm font-medium ${w.absent > 0 ? 'text-red-600' : 'text-gray-300'}`}>{w.absent}</span>
+                    </div>
+                    <div className="flex sm:justify-center items-center gap-2">
+                      <span className="sm:hidden text-xs text-gray-400 w-28 shrink-0">No Show:</span>
+                      <span className={`text-sm font-medium ${w.noShow > 0 ? 'text-red-700' : 'text-gray-300'}`}>{w.noShow}</span>
+                    </div>
+                    <div className="flex sm:justify-center items-center gap-2">
+                      <span className="sm:hidden text-xs text-gray-400 w-28 shrink-0">Early Exit:</span>
+                      <span className={`text-sm font-medium ${w.earlyExit > 0 ? 'text-orange-600' : 'text-gray-300'}`}>{w.earlyExit}</span>
+                    </div>
+                    <div className="flex sm:justify-end items-center gap-2">
+                      <span className="sm:hidden text-xs text-gray-400 w-28 shrink-0">Total Deducted:</span>
+                      <span className={`text-sm font-bold ${w.totalDeduction > 0 ? 'text-red-600' : 'text-gray-300'}`}>
+                        {w.totalDeduction > 0 ? <span className="flex items-center gap-1"><TrendingDown size={12} /> {fmt(w.totalDeduction)}</span> : '₦0'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Totals footer */}
+              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1.5fr] gap-3 text-xs font-semibold text-gray-600">
+                <span>TOTAL</span>
+                <span className="text-center text-green-700">{monthlySummary.reduce((s,w)=>s+w.daysPresent,0)}</span>
+                <span className="text-center text-amber-600">{monthlySummary.reduce((s,w)=>s+w.late,0)}</span>
+                <span className="text-center text-red-600">{monthlySummary.reduce((s,w)=>s+w.absent,0)}</span>
+                <span className="text-center text-red-700">{monthlySummary.reduce((s,w)=>s+w.noShow,0)}</span>
+                <span className="text-center text-orange-600">{monthlySummary.reduce((s,w)=>s+w.earlyExit,0)}</span>
+                <span className="text-right text-red-600">{fmt(monthlySummary.reduce((s,w)=>s+w.totalDeduction,0))}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ DAILY RECORDS VIEW ═════════════════════════════════════════════════ */}
+      {tab === 'daily' && <>
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-wrap gap-3 items-end">
@@ -552,6 +720,7 @@ export default function Attendance() {
           </>
         )}
       </div>
+      </> /* end tab === 'daily' */}
     </div>
   );
 }
