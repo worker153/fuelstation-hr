@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
-  Building2, Briefcase, Clock, CalendarCheck, ReceiptText, AlertTriangle, Smartphone, KeyRound
+  Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
+  AlertTriangle, Smartphone, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,91 +10,124 @@ export default function Sidebar({ onClose }) {
   const { user, logout, isSuperAdmin, can } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
 
-  const navItems = [
-    { to: '/dashboard',      icon: LayoutDashboard, label: 'Dashboard',      show: true },
-    { to: '/workers',        icon: Users,           label: 'Workers',         show: true },
-    { to: '/active-workers', icon: Briefcase,       label: 'Active Workers',  show: true },
-    { to: '/branches',       icon: Building2,       label: 'Branches',        show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
-    { to: '/shifts',      icon: Clock,          label: 'Shifts',     show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
-    { to: '/attendance',  icon: CalendarCheck,  label: 'Attendance', show: isSuperAdmin() || can('manageBranches') },
-    { to: '/payroll',     icon: ReceiptText,    label: 'Payroll',    show: isSuperAdmin() || can('manageBranches') },
-    { to: '/shortages',      icon: AlertTriangle,   label: 'Shortages',       show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
-    { to: '/approval-queue',     icon: ShieldCheck, label: 'Approval Queue',    show: isSuperAdmin() },
-    { to: '/staff',              icon: UserCog,     label: 'Staff',             show: isSuperAdmin() },
-    { to: '/attendance-devices', icon: Smartphone,  label: 'Attendance Devices', show: isSuperAdmin() },
-    { to: '/worker-pins',        icon: KeyRound,    label: 'Worker PINs',         show: isSuperAdmin() },
-  ].filter(item => item.show);
+  const groups = [
+    {
+      label: null,
+      items: [
+        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', show: true },
+      ],
+    },
+    {
+      label: 'People',
+      items: [
+        { to: '/workers',        icon: Users,     label: 'Workers',        show: true },
+        { to: '/active-workers', icon: Briefcase, label: 'Active Workers', show: true },
+      ],
+    },
+    {
+      label: 'Operations',
+      items: [
+        { to: '/branches',   icon: Building2,    label: 'Branches',   show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
+        { to: '/shifts',     icon: Clock,        label: 'Shifts',     show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
+        { to: '/attendance', icon: CalendarCheck,label: 'Attendance', show: isSuperAdmin() || can('manageBranches') },
+        { to: '/payroll',    icon: ReceiptText,  label: 'Payroll',    show: isSuperAdmin() || can('manageBranches') },
+        { to: '/shortages',  icon: AlertTriangle,label: 'Shortages',  show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
+      ],
+    },
+    {
+      label: 'Admin',
+      items: [
+        { to: '/approval-queue',     icon: ShieldCheck, label: 'Approval Queue',    show: isSuperAdmin() },
+        { to: '/staff',              icon: UserCog,     label: 'Staff',              show: isSuperAdmin() },
+        { to: '/attendance-devices', icon: Smartphone,  label: 'Attendance Devices', show: isSuperAdmin() },
+        { to: '/worker-pins',        icon: KeyRound,    label: 'Worker PINs',        show: isSuperAdmin() },
+      ],
+    },
+  ];
 
   return (
     <aside className="flex flex-col h-full bg-brand-800 text-white w-64">
+
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-brand-700">
-        <div className="bg-brand-500 rounded-lg p-1.5">
-          <Leaf size={20} className="text-white" />
+      <div className="flex items-center gap-3 px-5 py-5 border-b border-brand-700">
+        <div className="bg-brand-600 rounded-xl p-2 shrink-0">
+          <Leaf size={18} className="text-white" />
         </div>
-        <div>
-          <p className="font-bold text-sm leading-none">FuelStation HR</p>
-          <p className="text-brand-300 text-xs mt-0.5 truncate max-w-[140px]">
-            {user?.company?.name}
-          </p>
+        <div className="min-w-0">
+          <p className="font-bold text-sm leading-tight">FuelStation HR</p>
+          <p className="text-brand-300 text-xs truncate mt-0.5">{user?.company?.name}</p>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            onClick={onClose}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors
-              ${isActive
-                ? 'bg-brand-700 text-white font-medium'
-                : 'text-brand-200 hover:bg-brand-700/60 hover:text-white'
-              }`
-            }
-          >
-            <Icon size={18} />
-            {label}
-          </NavLink>
-        ))}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-5">
+        {groups.map((group, gi) => {
+          const visible = group.items.filter(i => i.show);
+          if (!visible.length) return null;
+          return (
+            <div key={gi}>
+              {group.label && (
+                <p className="text-[10px] uppercase tracking-widest font-semibold text-brand-400 px-3 mb-2">
+                  {group.label}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {visible.map(({ to, icon: Icon, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
+                      ${isActive
+                        ? 'bg-brand-700 text-white'
+                        : 'text-brand-200 hover:bg-brand-700/60 hover:text-white'
+                      }`
+                    }
+                  >
+                    <Icon size={17} className="shrink-0" />
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
-      {/* Role badge */}
-      {user?.role && (
-        <div className="px-4 pb-2">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-brand-700/50 rounded-lg">
-            <ShieldCheck size={13} className="text-brand-300" />
-            <span className="text-xs text-brand-300 capitalize font-medium">
+      {/* Bottom user area */}
+      <div className="border-t border-brand-700 px-3 py-3 space-y-1">
+
+        {/* Role badge */}
+        {user?.role && (
+          <div className="flex items-center gap-2 px-3 py-1 mb-1">
+            <ShieldCheck size={12} className="text-brand-400 shrink-0" />
+            <span className="text-[11px] text-brand-400 font-semibold uppercase tracking-wider">
               {user.role === 'super_admin' ? 'Super Admin' : user.role.replace(/_/g, ' ')}
             </span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* User info + logout */}
-      <div className="border-t border-brand-700 px-4 py-4">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="bg-brand-600 rounded-full w-8 h-8 flex items-center justify-center text-sm font-semibold shrink-0">
+        {/* Avatar + name */}
+        <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-brand-700/40">
+          <div className="bg-brand-600 rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shrink-0">
             {user?.name?.[0]?.toUpperCase()}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-brand-300 text-xs truncate">{user?.email}</p>
+            <p className="text-sm font-medium truncate leading-tight">{user?.name}</p>
+            <p className="text-brand-300 text-[11px] truncate mt-0.5">{user?.email}</p>
           </div>
         </div>
+
+        {/* Sign out */}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 w-full px-3 py-2 text-brand-200 hover:text-white
-                     hover:bg-brand-700/60 rounded-lg text-sm transition-colors"
+          className="flex items-center gap-2.5 w-full px-3 py-2.5 text-brand-300
+                     hover:text-white hover:bg-brand-700/60 rounded-xl text-sm transition-colors"
         >
-          <LogOut size={16} />
+          <LogOut size={15} />
           Sign out
         </button>
       </div>
