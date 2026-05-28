@@ -232,110 +232,109 @@ function ShiftModal({ shift, branches, onClose, onSaved }) {
   );
 }
 
-// ─── Shift Card ───────────────────────────────────────────────────────────────
-function ShiftCard({ shift, canManage, onEdit, onToggle }) {
+// ─── Shift Row ────────────────────────────────────────────────────────────────
+function ShiftRow({ shift, canManage, onEdit, onToggle }) {
   const [toggling, setToggling] = useState(false);
   const handleToggle = async () => { setToggling(true); try { await onToggle(); } finally { setToggling(false); } };
 
-  const isRotation  = shift.shiftType === 'rotation';
-  const isActive    = shift.isActive;
+  const isRotation = shift.shiftType === 'rotation';
+  const isActive   = shift.isActive;
+
   const timeDisplay = !isRotation && shift.startTime && shift.endTime
     ? `${fmtTime(shift.startTime)} – ${fmtTime(shift.endTime)}` : null;
 
-  // colour scheme per type
-  const scheme = isRotation
-    ? { bar: 'bg-purple-500', iconBg: 'bg-purple-100', iconText: 'text-purple-600', badge: 'bg-purple-100 text-purple-700', workerPill: 'bg-purple-50 text-purple-700' }
-    : { bar: 'bg-brand-500',  iconBg: 'bg-brand-100',  iconText: 'text-brand-600',  badge: 'bg-brand-100 text-brand-700',   workerPill: 'bg-brand-50 text-brand-700'  };
-
   return (
-    <div className={`relative flex items-center gap-4 px-5 py-4 border-b border-gray-50 last:border-0
-      ${!isActive ? 'opacity-50' : 'hover:bg-gray-50/60'} transition-colors`}>
+    <div className={`grid items-center gap-3 px-5 py-3.5 border-b border-gray-100 last:border-0 transition-colors
+      ${isActive ? 'hover:bg-gray-50/70' : 'opacity-40 bg-gray-50/30'}
+      grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_80px_auto]`}>
 
-      {/* Left accent bar */}
-      <div className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${isActive ? scheme.bar : 'bg-gray-200'}`} />
-
-      {/* Icon */}
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0
-        ${isActive ? scheme.iconBg : 'bg-gray-100'}`}>
-        {isRotation
-          ? <RefreshCw size={17} className={isActive ? scheme.iconText : 'text-gray-400'} />
-          : <Clock     size={17} className={isActive ? scheme.iconText : 'text-gray-400'} />}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        {/* Name + badges */}
-        <div className="flex items-center gap-2 flex-wrap mb-1">
-          <p className="font-bold text-gray-900 text-sm leading-tight">{shift.name}</p>
-          <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${scheme.badge}`}>
+      {/* Col 1 — Name + type badge */}
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0
+          ${isRotation ? 'bg-purple-100' : 'bg-brand-100'}`}>
+          {isRotation
+            ? <RefreshCw size={14} className="text-purple-600" />
+            : <Clock     size={14} className="text-brand-600"  />}
+        </div>
+        <div className="min-w-0">
+          <p className="font-semibold text-gray-900 text-sm truncate leading-tight">{shift.name}</p>
+          <span className={`text-[10px] font-bold uppercase tracking-wide
+            ${isRotation ? 'text-purple-500' : 'text-brand-500'}`}>
             {isRotation ? 'Rotational' : 'Time-Based'}
           </span>
-          {!isActive && (
-            <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-400 rounded-full font-medium">Inactive</span>
-          )}
         </div>
+      </div>
 
-        {/* Sub-info row */}
-        <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
-          {timeDisplay && (
-            <span className="flex items-center gap-1 text-xs text-gray-600 font-mono bg-gray-100 px-2 py-0.5 rounded-md">
-              <Clock size={10} /> {timeDisplay}
+      {/* Col 2 — Schedule */}
+      <div className="min-w-0">
+        {timeDisplay && (
+          <p className="text-xs font-mono text-gray-700 font-medium">{timeDisplay}</p>
+        )}
+        {isRotation && shift.rotationLabel && (
+          <p className="text-xs text-purple-600 font-medium truncate">{shift.rotationLabel}</p>
+        )}
+        {!isRotation && !timeDisplay && (
+          <p className="text-xs text-gray-400 italic">No time set</p>
+        )}
+        {/* Day chips — compact */}
+        {!isRotation && shift.days?.length > 0 && shift.days.length < 7 && (
+          <div className="flex gap-0.5 mt-1 flex-wrap">
+            {shift.days.map(d => (
+              <span key={d} className="px-1 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-semibold">
+                {SHORT_DAY[d]}
+              </span>
+            ))}
+          </div>
+        )}
+        {!isRotation && shift.days?.length === 7 && (
+          <p className="text-[10px] text-gray-400 mt-0.5">All 7 days</p>
+        )}
+      </div>
+
+      {/* Col 3 — Workers */}
+      <div className="text-center">
+        {shift.workerCount > 0 ? (
+          <Link
+            to={`/active-workers?shiftId=${shift._id}&shiftName=${encodeURIComponent(shift.name)}`}
+            className={`inline-flex flex-col items-center group`}>
+            <span className={`text-lg font-bold leading-tight group-hover:underline
+              ${isRotation ? 'text-purple-600' : 'text-brand-600'}`}>
+              {shift.workerCount}
             </span>
-          )}
-          {isRotation && shift.rotationLabel && (
-            <span className="text-xs text-purple-600 font-medium">{shift.rotationLabel}</span>
-          )}
-
-          {/* Days chips (time-based) */}
-          {!isRotation && shift.days?.length > 0 && shift.days.length < 7 && (
-            <div className="flex gap-1 flex-wrap">
-              {shift.days.map(d => (
-                <span key={d} className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium">
-                  {SHORT_DAY[d]}
-                </span>
-              ))}
-            </div>
-          )}
-          {!isRotation && shift.days?.length === 7 && (
-            <span className="text-xs text-gray-400">All 7 days</span>
-          )}
-        </div>
+            <span className="text-[10px] text-gray-400">
+              {shift.maxWorkers > 0 ? `/ ${shift.maxWorkers} max` : 'workers'}
+            </span>
+          </Link>
+        ) : (
+          <span className="inline-flex flex-col items-center">
+            <span className="text-lg font-bold text-gray-300 leading-tight">0</span>
+            <span className="text-[10px] text-gray-300">
+              {shift.maxWorkers > 0 ? `/ ${shift.maxWorkers} max` : 'workers'}
+            </span>
+          </span>
+        )}
       </div>
 
-      {/* Worker count pill */}
-      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 ${isActive ? scheme.workerPill : 'bg-gray-100 text-gray-400'}`}>
-        <Users size={12} />
-        {shift.workerCount}
-        {shift.maxWorkers > 0 && <span className="opacity-60">/ {shift.maxWorkers}</span>}
-      </div>
-
-      {/* View link */}
-      {shift.workerCount > 0 && (
-        <Link
-          to={`/active-workers?shiftId=${shift._id}&shiftName=${encodeURIComponent(shift.name)}`}
-          className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline shrink-0 hidden sm:block">
-          View →
-        </Link>
-      )}
-
-      {/* Actions */}
-      {canManage && (
-        <div className="flex items-center gap-1 shrink-0">
+      {/* Col 4 — Actions */}
+      {canManage ? (
+        <div className="flex items-center justify-end gap-1">
           <button onClick={onEdit}
-            className="p-2 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-colors"
-            title="Edit shift">
-            <Edit2 size={14} />
+            className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+            title="Edit">
+            <Edit2 size={13} />
           </button>
           <button onClick={handleToggle} disabled={toggling}
-            className={`p-2 rounded-xl transition-colors
-              ${isActive ? 'text-gray-400 hover:text-amber-600 hover:bg-amber-50' : 'text-gray-300 hover:text-green-600 hover:bg-green-50'}`}
+            className={`p-1.5 rounded-lg transition-colors
+              ${isActive
+                ? 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
+                : 'text-gray-300 hover:text-green-600 hover:bg-green-50'}`}
             title={isActive ? 'Deactivate' : 'Activate'}>
             {toggling
               ? <Loader size={14} className="animate-spin" />
-              : isActive ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
+              : isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
           </button>
         </div>
-      )}
+      ) : <div />}
     </div>
   );
 }
@@ -343,75 +342,57 @@ function ShiftCard({ shift, canManage, onEdit, onToggle }) {
 // ─── Branch Group ─────────────────────────────────────────────────────────────
 function BranchGroup({ branchId, branchName, shifts, canManage, onAddShift, onEdit, onToggle }) {
   const [open, setOpen] = useState(true);
-  const fixedCount    = shifts.filter(s => s.shiftType !== 'rotation').length;
-  const rotationCount = shifts.filter(s => s.shiftType === 'rotation').length;
+  const totalWorkers  = shifts.reduce((a, s) => a + (s.workerCount || 0), 0);
   const activeCount   = shifts.filter(s => s.isActive).length;
 
   return (
     <div className="card overflow-hidden">
-      {/* Branch header */}
-      <div className="relative">
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{ background: 'linear-gradient(135deg, #166534, #15803d)' }} />
-        <button
-          onClick={() => setOpen(v => !v)}
-          className="relative flex items-center justify-between w-full px-5 py-4 hover:bg-brand-50/30 transition-colors">
-          <div className="flex items-center gap-3">
-            {/* Branch icon */}
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: 'linear-gradient(135deg, #16a34a, #15803d)' }}>
-              <MapPin size={15} className="text-white" />
-            </div>
-            <div className="text-left">
-              <p className="font-bold text-gray-900 text-sm">{branchName}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                {fixedCount > 0 && (
-                  <span className="text-[11px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-semibold">
-                    {fixedCount} time-based
-                  </span>
-                )}
-                {rotationCount > 0 && (
-                  <span className="text-[11px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold">
-                    {rotationCount} rotational
-                  </span>
-                )}
-                {shifts.length === 0 && (
-                  <span className="text-[11px] text-gray-400">No shifts yet</span>
-                )}
-                {shifts.length > 0 && (
-                  <span className="text-[11px] text-gray-400">· {activeCount} active</span>
-                )}
-              </div>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            {canManage && (
-              <button
-                onClick={e => { e.stopPropagation(); onAddShift(branchId, branchName); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-brand-200
-                           text-brand-700 hover:bg-brand-50 text-xs font-semibold transition-colors shadow-sm">
-                <Plus size={11} /> Add Shift
-              </button>
-            )}
-            <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center">
-              {open
-                ? <ChevronUp size={14} className="text-gray-500" />
-                : <ChevronDown size={14} className="text-gray-500" />}
-            </div>
+      {/* ── Branch header ── */}
+      <div
+        className="flex items-center justify-between px-5 py-3.5 cursor-pointer select-none"
+        style={{ background: 'linear-gradient(135deg,#14532d,#166534)' }}
+        onClick={() => setOpen(v => !v)}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
+            <MapPin size={14} className="text-white" />
           </div>
-        </button>
+          <div>
+            <p className="font-bold text-white text-sm leading-tight">{branchName}</p>
+            <p className="text-green-300 text-[11px] mt-0.5">
+              {shifts.length} shift{shifts.length !== 1 ? 's' : ''}
+              {shifts.length > 0 && ` · ${activeCount} active · ${totalWorkers} workers`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <button
+              onClick={e => { e.stopPropagation(); onAddShift(branchId, branchName); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25
+                         text-white text-xs font-semibold transition-colors">
+              <Plus size={11} /> Add Shift
+            </button>
+          )}
+          <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center">
+            {open
+              ? <ChevronUp   size={13} className="text-white" />
+              : <ChevronDown size={13} className="text-white" />}
+          </div>
+        </div>
       </div>
 
-      {/* Shift list */}
+      {/* ── Shift table ── */}
       {open && (
         shifts.length === 0 ? (
-          <div className="px-5 py-10 text-center border-t border-gray-50">
-            <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-3">
-              <Clock size={22} className="text-gray-300" />
+          <div className="px-5 py-10 text-center">
+            <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center mx-auto mb-3">
+              <Clock size={18} className="text-gray-300" />
             </div>
             <p className="text-sm font-medium text-gray-500 mb-1">No shifts yet</p>
-            <p className="text-xs text-gray-400 mb-4">Add shifts to manage this branch's schedule</p>
+            <p className="text-xs text-gray-400 mb-4">Add a shift to manage this branch's schedule</p>
             {canManage && (
               <button onClick={() => onAddShift(branchId, branchName)} className="btn-primary text-xs py-1.5">
                 <Plus size={12} /> Create First Shift
@@ -419,12 +400,20 @@ function BranchGroup({ branchId, branchName, shifts, canManage, onAddShift, onEd
             )}
           </div>
         ) : (
-          <div className="border-t border-gray-50">
+          <>
+            {/* Column headers */}
+            <div className="grid gap-3 px-5 py-2 bg-gray-50 border-b border-gray-100
+              grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_80px_auto]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Shift Name</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Schedule</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 text-center">Workers</p>
+              {canManage && <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 text-right">Actions</p>}
+            </div>
             {shifts.map(s => (
-              <ShiftCard key={s._id} shift={s} canManage={canManage}
+              <ShiftRow key={s._id} shift={s} canManage={canManage}
                 onEdit={() => onEdit(s)} onToggle={() => onToggle(s)} />
             ))}
-          </div>
+          </>
         )
       )}
     </div>
