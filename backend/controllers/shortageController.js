@@ -344,18 +344,18 @@ const workerPinLookup = async (req, res) => {
     branchId:   worker.branchId?._id  || worker.branchId,
     shiftId:    worker.shiftId,
     photo:      worker.passportPhoto?.url,
-    isSupervisor: worker.role?.toLowerCase() === 'supervisor'
+    isSupervisor: ['supervisor','outside supervisor'].includes(worker.role?.toLowerCase())
   };
 
-  // If supervisor — also return active workers in their branch/shift
+  // If supervisor — return active workers in their branch, scoped to their shift if assigned
   if (result.isSupervisor && result.branchId) {
     const filter = {
       company:          worker.company,
       branchId:         result.branchId,
       employmentStatus: 'active'
     };
-    // NOTE: intentionally NOT filtering by shiftId — supervisors see all
-    // active workers in their branch regardless of shift assignment.
+    // If supervisor has a shift assigned, only show workers from that shift
+    if (result.shiftId) filter.shiftId = result.shiftId;
 
     const shiftWorkers = await Worker.find(filter)
       .select('fullName role passportPhoto shiftId')
