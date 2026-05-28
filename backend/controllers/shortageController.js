@@ -58,7 +58,23 @@ const createAttendanceShortage = async ({
   return shortage;
 };
 
-// ─── POST /api/shortages  (supervisor submits) ────────────────────────────────
+// ─── Shared payroll sync helper ───────────────────────────────────────────────
+const syncPayroll = async ({ company, workerId, branchId, month, year }) => {
+  const payroll = await Payroll.findOne({ company, branchId, month, year, status: 'draft' });
+  if (!payroll) return;
+  const allApproved = await Shortage.find({
+    company, worker: workerId, branchId, month, year, status: 'approved',
+  }).lean();
+  const total = allApproved.reduce((s, x) => s + x.amount, 0);
+  payroll.entries = payroll.entries.map(e => {
+    const plain = e.toObject ? e.toObject() : e;
+    if (String(plain.worker) === String(workerId)) plain.shortage = total;
+    return plain;
+  });
+  await payroll.save();
+};
+
+// ─── POST /api/shortages  (admin/supervisor submits — auto-approved) ──────────
 const submitShortage = async (req, res) => {
   const { workerId, branchId, month, year, date, amount, notes, reason } = req.body;
 
@@ -79,6 +95,10 @@ const submitShortage = async (req, res) => {
     if (branch) branchName = branch.name;
   }
 
+  const parsedAmount = Number(amount);
+  const now = new Date();
+
+  // ── Create shortage — auto-approved immediately ──────────────────────────────
   const shortage = await Shortage.create({
     company:     cid,
     branchId:    resolvedBranchId || undefined,
@@ -88,14 +108,46 @@ const submitShortage = async (req, res) => {
     workerRole:  worker.role,
     month:       Number(month),
     year:        Number(year),
-    date:        date ? new Date(date) : undefined,
-    amount:      Number(amount),
+    date:        date ? new Date(date) : now,
+    amount:      parsedAmount,
     notes:       notes?.trim() || '',
     reason:      reason || 'cash_shortage',
     source:      'manual',
     submittedBy: req.user._id,
-    status:      'pending'
+    status:      'approved',
+    reviewedAt:  now,
   });
+
+  // ── Auto-penalty ─────────────────────────────────────────────────────────────
+  try {
+    const penaltyAmount = parsedAmount >= 5000 ? 5000 : 2000;
+    await Shortage.create({
+      company:          cid,
+      branchId:         resolvedBranchId || undefined,
+      branchName,
+      worker:           workerId,
+      workerName:       worker.fullName,
+      workerRole:       worker.role,
+      month:            Number(month),
+      year:             Number(year),
+      date:             date ? new Date(date) : now,
+      amount:           penaltyAmount,
+      notes:            `Auto-penalty — shortage of ₦${parsedAmount.toLocaleString()} (${parsedAmount >= 5000 ? '≥ ₦5,000' : '< ₦5,000'})`,
+      reason:           'other',
+      source:           'penalty',
+      status:           'approved',
+      reviewedAt:       now,
+      relatedShortageId: shortage._id,
+    });
+  } catch (e) { console.error('Penalty error:', e.message); }
+
+  // ── Sync payroll ─────────────────────────────────────────────────────────────
+  try {
+    await syncPayroll({
+      company: cid, workerId, branchId: resolvedBranchId,
+      month: Number(month), year: Number(year),
+    });
+  } catch (e) { console.error('Payroll sync error:', e.message); }
 
   await shortage.populate('submittedBy', 'name');
   res.status(201).json({ success: true, data: shortage });
@@ -126,86 +178,23 @@ const getShortages = async (req, res) => {
   res.json({ success: true, data: shortages });
 };
 
-// ─── POST /api/shortages/:id/approve  (admin only) ───────────────────────────
+// ─── POST /api/shortages/:id/approve  (kept for backward compat — no-op if already approved) ──
 const approveShortage = async (req, res) => {
   const shortage = await Shortage.findOne({ _id: req.params.id, company: req.user.company._id });
   if (!shortage) return res.status(404).json({ success: false, message: 'Shortage not found' });
-  if (shortage.status !== 'pending')
-    return res.status(400).json({ success: false, message: `Shortage is already ${shortage.status}` });
-
-  shortage.status     = 'approved';
-  shortage.reviewedBy  = req.user._id;
-  shortage.reviewedAt  = new Date();
-  await shortage.save();
-
-  // ── Auto-penalty: apply extra deduction on top of the approved shortage amount ─
-  // Rule: shortage >= ₦5,000 → ₦5,000 penalty; shortage < ₦5,000 → ₦2,000 penalty
-  // Only applies to manual shortages (not attendance deductions or penalties themselves)
-  if (shortage.source === 'manual') {
+  // Shortages are now auto-approved on submission — this endpoint is a no-op
+  if (shortage.status === 'pending') {
+    shortage.status    = 'approved';
+    shortage.reviewedBy = req.user._id;
+    shortage.reviewedAt = new Date();
+    await shortage.save();
     try {
-      const alreadyHasPenalty = await Shortage.findOne({ relatedShortageId: shortage._id }).lean();
-      if (!alreadyHasPenalty) {
-        const penaltyAmount = shortage.amount >= 5000 ? 5000 : 2000;
-        await Shortage.create({
-          company:          shortage.company,
-          branchId:         shortage.branchId,
-          branchName:       shortage.branchName,
-          worker:           shortage.worker,
-          workerName:       shortage.workerName,
-          workerRole:       shortage.workerRole,
-          month:            shortage.month,
-          year:             shortage.year,
-          date:             shortage.date || new Date(),
-          amount:           penaltyAmount,
-          notes:            `Auto-penalty — shortage of ₦${shortage.amount.toLocaleString()} was ${shortage.amount >= 5000 ? '≥ ₦5,000' : '< ₦5,000'}`,
-          reason:           'other',
-          source:           'penalty',
-          status:           'approved',
-          reviewedAt:       new Date(),
-          relatedShortageId: shortage._id,
-        });
-      }
-    } catch (e) { console.error('Penalty creation error:', e.message); }
-  }
-
-  // ── Auto-deduct from payroll if a draft exists for this period ──────────────
-  try {
-    const payroll = await Payroll.findOne({
-      company:  shortage.company,
-      branchId: shortage.branchId,
-      month:    shortage.month,
-      year:     shortage.year,
-      status:   'draft'
-    });
-
-    if (payroll) {
-      // Sum ALL approved shortages for this worker in this period
-      const allApproved = await Shortage.find({
-        company: shortage.company,
-        worker:  shortage.worker,
-        month:   shortage.month,
-        year:    shortage.year,
-        status:  'approved'
-      }).lean();
-
-      const totalShortage = allApproved.reduce((sum, s) => sum + s.amount, 0);
-
-      const newEntries = payroll.entries.map(e => {
-        const plain = e.toObject();
-        if (String(plain.worker) === String(shortage.worker)) {
-          plain.shortage = totalShortage;
-        }
-        return plain;
+      await syncPayroll({
+        company: shortage.company, workerId: shortage.worker,
+        branchId: shortage.branchId, month: shortage.month, year: shortage.year,
       });
-
-      payroll.entries = newEntries;
-      await payroll.save();
-    }
-  } catch (err) {
-    console.error('Failed to sync shortage to payroll:', err.message);
-    // Don't fail the approval if payroll sync fails
+    } catch (e) { /* silent */ }
   }
-
   await shortage.populate('submittedBy reviewedBy', 'name');
   res.json({ success: true, data: shortage });
 };
@@ -226,20 +215,28 @@ const rejectShortage = async (req, res) => {
   res.json({ success: true, data: shortage });
 };
 
-// ─── DELETE /api/shortages/:id  (supervisor cancels own pending) ──────────────
+// ─── DELETE /api/shortages/:id ────────────────────────────────────────────────
 const deleteShortage = async (req, res) => {
   const cid = req.user.company._id;
   const isAdmin = ['super_admin', 'admin'].includes(req.user.role) || req.user.can('manageBranches');
 
   const filter = { _id: req.params.id, company: cid };
-  if (!isAdmin) filter.submittedBy = req.user._id;   // supervisor can only delete own
+  if (!isAdmin) filter.submittedBy = req.user._id;
 
   const shortage = await Shortage.findOne(filter);
   if (!shortage) return res.status(404).json({ success: false, message: 'Shortage not found' });
-  if (shortage.status === 'approved' && !isAdmin)
-    return res.status(403).json({ success: false, message: 'Cannot delete an approved shortage' });
 
+  const { worker, branchId, month, year } = shortage;
+
+  // Delete the shortage + its auto-penalty (if any)
   await shortage.deleteOne();
+  await Shortage.deleteMany({ relatedShortageId: shortage._id });
+
+  // Re-sync payroll so deduction is recalculated
+  try {
+    await syncPayroll({ company: cid, workerId: worker, branchId, month, year });
+  } catch (e) { /* silent */ }
+
   res.json({ success: true, message: 'Shortage deleted' });
 };
 

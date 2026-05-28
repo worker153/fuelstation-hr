@@ -270,23 +270,14 @@ export default function Shortages() {
     } catch (err) { notify(err.response?.data?.message || 'Failed', 'error'); }
   };
 
-  const pendingCount = shortages.filter(s => s.status === 'pending').length;
-
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            Shortage Reports
-            {isAdmin && pendingCount > 0 && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">
-                {pendingCount} pending
-              </span>
-            )}
-          </h1>
+          <h1 className="text-xl font-bold text-gray-900">Shortage Reports</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {isAdmin ? 'All shortage submissions — from supervisors and worker self-service (PIN)' : 'Submit and track shortage reports'}
+            {isAdmin ? 'All shortage records — automatically deducted from salary' : 'Submit and track shortage reports'}
           </p>
         </div>
         {canSubmit && (
@@ -301,8 +292,7 @@ export default function Shortages() {
         <Filter size={14} className="text-gray-400" />
         {isAdmin && (
           <select className="input max-w-[130px]" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-            <option value="all">All statuses</option>
-            <option value="pending">Pending</option>
+            <option value="all">All</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
@@ -317,24 +307,6 @@ export default function Shortages() {
           )}
         </select>
       </div>
-
-      {/* Admin: pending approvals highlighted */}
-      {isAdmin && shortages.filter(s => s.status === 'pending').length > 0 && filterStatus !== 'approved' && filterStatus !== 'rejected' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-            <Clock size={12} /> Pending Approval ({shortages.filter(s => s.status === 'pending').length})
-          </p>
-          <div className="space-y-2">
-            {shortages.filter(s => s.status === 'pending').map(s => (
-              <PendingRow key={s._id} shortage={s}
-                onApprove={() => handleApprove(s._id)}
-                onReject={() => setRejectItem(s)}
-                onDelete={() => handleDelete(s._id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Full list */}
       <div className="card overflow-hidden">
@@ -356,8 +328,6 @@ export default function Shortages() {
           <div className="divide-y divide-gray-50">
             {shortages.map(s => (
               <ShortageRow key={s._id} shortage={s} isAdmin={isAdmin}
-                onApprove={() => handleApprove(s._id)}
-                onReject={() => setRejectItem(s)}
                 onDelete={() => handleDelete(s._id)}
               />
             ))}
@@ -434,15 +404,7 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
 }
 
 // ─── Shortage row (full list) ──────────────────────────────────────────────────
-function ShortageRow({ shortage, isAdmin, onApprove, onReject, onDelete }) {
-  const [approving, setApproving] = useState(false);
-
-  const approve = async () => {
-    setApproving(true);
-    await onApprove();
-    setApproving(false);
-  };
-
+function ShortageRow({ shortage, isAdmin, onDelete }) {
   return (
     <div className="flex items-start gap-4 px-5 py-4 hover:bg-gray-50/50 flex-wrap">
       <div className="flex-1 min-w-0">
@@ -484,22 +446,10 @@ function ShortageRow({ shortage, isAdmin, onApprove, onReject, onDelete }) {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <StatusBadge status={shortage.status} />
-        {isAdmin && shortage.status === 'pending' && (
-          <>
-            <button onClick={approve} disabled={approving}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 transition-colors">
-              {approving ? <Loader size={11} className="animate-spin" /> : <><Check size={11} /> Approve</>}
-            </button>
-            <button onClick={onReject}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100">
-              <X size={11} /> Reject
-            </button>
-          </>
-        )}
-        {(shortage.status === 'pending' || isAdmin) && (
+        {isAdmin && (
           <button onClick={onDelete}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            title="Delete shortage">
             <Trash2 size={14} />
           </button>
         )}
