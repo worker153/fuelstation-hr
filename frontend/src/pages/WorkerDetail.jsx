@@ -22,7 +22,7 @@ const DOC_LABELS = {
   international_passport: 'International Passport'
 };
 
-const ROLES = ['Pump Attendant','Supervisor','Cashier','Manager','Security','Maintenance','Accountant','Driver','Cleaner'];
+const ROLES = ['Pump Attendant','Supervisor','Outside Supervisor','Cashier','Manager','Security','Maintenance','Accountant','Driver','Cleaner'];
 const SCHEDULES = ['Morning Shift','Afternoon Shift','Night Shift','Full Day','Day Shift','Rotating Shift','1 Day In / 1 Day Out'];
 const NIGERIAN_BANKS = [
   'Access Bank','First Bank of Nigeria','Guaranty Trust Bank (GTBank)','Zenith Bank',
