@@ -39,6 +39,7 @@ const branchSchema = new mongoose.Schema({
     lateDeductionAmount:          { type: Number, default: 0 },
     absentDeductionAmount:        { type: Number, default: 0 },
     earlyDepartureDeductionAmount:{ type: Number, default: 0 },
+    noClockInDeductionAmount:     { type: Number, default: 0 },
     workDays:                     { type: [Number], default: [1,2,3,4,5,6] },
   }],
 }, { timestamps: true });

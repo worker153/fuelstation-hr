@@ -90,7 +90,7 @@ function RuleCard({ rule, isDefault, onChange, onRemove }) {
       </div>
 
       {/* Deductions */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Late ₦</p>
           <input type="number" min="0" className="input py-1.5 text-sm"
@@ -104,6 +104,13 @@ function RuleCard({ rule, isDefault, onChange, onRemove }) {
             value={rule.absentDeductionAmount ?? ''}
             placeholder="0"
             onChange={e => onChange('absentDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 font-medium mb-1">No Show ₦ <span className="text-gray-400 font-normal">(full day absent)</span></p>
+          <input type="number" min="0" className="input py-1.5 text-sm"
+            value={rule.noClockInDeductionAmount ?? ''}
+            placeholder="e.g. 10000"
+            onChange={e => onChange('noClockInDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Early Exit ₦</p>
@@ -163,6 +170,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
       lateDeductionAmount:          s?.lateDeductionAmount          || 0,
       absentDeductionAmount:        s?.absentDeductionAmount        || 0,
       earlyDepartureDeductionAmount:s?.earlyDepartureDeductionAmount|| 0,
+      noClockInDeductionAmount:     s?.noClockInDeductionAmount     || 0,
       workDays:                     s?.workDays                     || [1,2,3,4,5,6],
     }];
   };
@@ -189,7 +197,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     ...f,
     attendanceRules: [...f.attendanceRules, {
       role: '', clockInDeadline: '', absentThreshold: '', shiftEnd: '',
-      lateDeductionAmount: 0, absentDeductionAmount: 0, earlyDepartureDeductionAmount: 0,
+      lateDeductionAmount: 0, absentDeductionAmount: 0, earlyDepartureDeductionAmount: 0, noClockInDeductionAmount: 0,
     }],
   }));
 

@@ -418,7 +418,10 @@ const processAbsences = async (req, res) => {
   for (const worker of absentWorkers) {
     // Use the rule that matches this worker's role
     const settings = getSettingsForRole(branch, worker.role) || {};
-    const deductionAmount = settings.absentDeductionAmount || 0;
+    // Prefer dedicated noClockInDeductionAmount; fall back to absentDeductionAmount for old configs
+    const deductionAmount = settings.noClockInDeductionAmount > 0
+      ? settings.noClockInDeductionAmount
+      : (settings.absentDeductionAmount || 0);
     if (deductionAmount > 0) {
       const result = await createAttendanceShortage({
         company:  cid,
@@ -429,7 +432,7 @@ const processAbsences = async (req, res) => {
         source:   'no_clockin',
         reason:   'no_clockin',
         attendanceDate: localDate,
-        notes:    `No clock-in — absent on ${date}`,
+        notes:    `No clock-in — full day absent on ${date}`,
       });
       if (!result._alreadyExisted) processed++;
     }
