@@ -197,23 +197,32 @@ export default function Attendance() {
 
     if (filterBranch && allWorkers.length > 0) {
       // Show all workers for branch — each worker uses settings for their own role
-      return allWorkers.map(w => {
-        const wid      = String(w._id);
-        const ci       = clockInMap[wid];
-        const co       = clockOutMap[wid];
-        const settings = getSettingsForRole(selectedBranch, w.role);
-        const onDuty   = isWorkerOnDuty(w, filterDate);
-        // If off duty and didn't clock in → off_duty; if off duty but came in → on_time (voluntary)
-        const status   = !onDuty && !ci ? 'off_duty' : computeStatus(ci, settings);
-        return {
-          _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
-          clockIn: ci, clockOut: co,
-          status,
-          coStatus: computeClockOutStatus(co, settings),
-          onDuty,
-          settings,
-        };
-      });
+      return allWorkers
+        .filter(w => {
+          // Exempt workers (salary/flexible): only show if they actually clocked in
+          if (w.clockInRequired === false) return !!clockInMap[String(w._id)];
+          return true;
+        })
+        .map(w => {
+          const wid      = String(w._id);
+          const ci       = clockInMap[wid];
+          const co       = clockOutMap[wid];
+          const settings = w.clockInRequired === false ? null : getSettingsForRole(selectedBranch, w.role);
+          const onDuty   = w.clockInRequired === false ? true : isWorkerOnDuty(w, filterDate);
+          // If off duty and didn't clock in → off_duty; if off duty but came in → on_time (voluntary)
+          const status   = w.clockInRequired === false
+            ? 'on_time'
+            : (!onDuty && !ci ? 'off_duty' : computeStatus(ci, settings));
+          return {
+            _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
+            clockIn: ci, clockOut: co,
+            status,
+            coStatus: computeClockOutStatus(co, settings),
+            onDuty,
+            settings,
+            exempt: w.clockInRequired === false,
+          };
+        });
     }
 
     // No branch selected — show raw records only (use default/fallback settings)

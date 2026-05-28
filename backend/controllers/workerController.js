@@ -912,6 +912,15 @@ const updateRotationSchedule = async (req, res) => {
   res.json({ success: true, data: { rotationSchedule: worker.rotationSchedule } });
 };
 
+// ─── PUT /api/workers/:id/clock-in-required ──────────────────────────────────
+const updateClockInRequired = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  worker.clockInRequired = req.body.clockInRequired !== false; // default true
+  await worker.save();
+  res.json({ success: true, data: { clockInRequired: worker.clockInRequired } });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   getWorkerPins, bulkGeneratePins, selfResetPin, searchByName,
@@ -925,5 +934,5 @@ module.exports = {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin, updateRotationSchedule,
+  updateWorkerPin, updateRotationSchedule, updateClockInRequired,
 };

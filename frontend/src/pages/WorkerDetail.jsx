@@ -481,6 +481,8 @@ function EmploymentTab({ worker, branches, onRefresh }) {
       ? new Date(worker.rotationSchedule.startDate).toISOString().split('T')[0] : ''
   );
   const [savingRot,     setSavingRot    ] = useState(false);
+  const [clockInReq,    setClockInReq   ] = useState(worker.clockInRequired !== false);
+  const [savingCIR,     setSavingCIR    ] = useState(false);
 
   const done = () => { setModal(null); onRefresh(); };
 
@@ -512,6 +514,17 @@ function EmploymentTab({ worker, branches, onRefresh }) {
   };
 
   const ROTATION_LABELS = { none:'No rotation', '1_1':'1 Day On / 1 Day Off', '2_2':'2 Days On / 2 Days Off', '3_3':'3 Days On / 3 Days Off', '5_2':'5 Days On / 2 Days Off' };
+
+  const saveClockInRequired = async (val) => {
+    setSavingCIR(true);
+    try {
+      await api.put(`/workers/${worker._id}/clock-in-required`, { clockInRequired: val });
+      setClockInReq(val);
+      notify(val ? 'Clock-in required ✓' : 'Worker marked as clock-in exempt ✓');
+      onRefresh();
+    } catch { notify('Failed to save', 'error'); }
+    finally { setSavingCIR(false); }
+  };
 
   return (
     <div className="space-y-5">
@@ -709,6 +722,35 @@ function EmploymentTab({ worker, branches, onRefresh }) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Clock-in requirement */}
+      <div className="rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Attendance Tracking</p>
+            <p className="text-sm text-gray-800 font-medium">
+              {clockInReq ? '🕐 Clock-in required' : '💼 Salary / Exempt — no clock-in'}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {clockInReq
+                ? 'Worker must clock in. Late/absent deductions apply.'
+                : 'Worker does not clock in. No attendance deductions will fire.'}
+            </p>
+          </div>
+          {canEdit && (
+            <button
+              onClick={() => saveClockInRequired(!clockInReq)}
+              disabled={savingCIR}
+              className={`ml-4 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0
+                ${clockInReq
+                  ? 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700'
+                  : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
+            >
+              {savingCIR ? '…' : clockInReq ? 'Mark Exempt' : 'Require Clock-in'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Action buttons */}

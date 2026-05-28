@@ -168,6 +168,10 @@ const workerSchema = new mongoose.Schema({
     pattern:   { type: String, default: 'none' },  // 'none' | '1_1' | '2_2' | '3_3'
     startDate: { type: Date },                      // anchor: a known "on duty" day
   },
+
+  // Attendance tracking — set false for salary workers (mechanics, accountants, etc.)
+  // who don't clock in/out and should never appear as No Show or receive auto-deductions
+  clockInRequired: { type: Boolean, default: true },
 }, { timestamps: true });
 
 workerSchema.index({ company: 1 });

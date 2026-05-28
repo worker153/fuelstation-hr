@@ -189,8 +189,10 @@ const terminalClock = async (req, res) => {
   // ── Step 7: auto-deduction for late/absent clock-in ──────────────────────────
   if (type === 'clock_in') {
     try {
+      // Skip all deductions for salary/flexible workers who don't need to clock in
+      if (worker.clockInRequired === false) { /* exempt — no deductions */ }
       // Skip all deductions if today is this worker's scheduled off day
-      if (isWorkerOnDuty(worker, now)) {
+      else if (isWorkerOnDuty(worker, now)) {
         const branch   = await Branch.findById(device.branch).lean();
         const settings = getSettingsForRole(branch, worker.role);
 
@@ -438,7 +440,7 @@ const processAbsences = async (req, res) => {
       return res.json({ success: true, processed: 0, total: 0, message: 'Not a configured work day for this branch' });
   }
 
-  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active' }).lean();
+  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active', clockInRequired: { $ne: false } }).lean();
   const clockedIn = await Attendance.find({ company: cid, branch: branchId, date, type: 'clock_in' })
     .distinct('worker');
   const clockedSet = new Set(clockedIn.map(String));
