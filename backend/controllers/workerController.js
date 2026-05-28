@@ -45,7 +45,7 @@ const getStats = async (req, res) => {
   const base = { company: cid };
   if (!isAdmin) {
     if (req.user.branchId) base.branchId = req.user.branchId;
-    if (req.user.can('viewOwnShift') && req.user.shiftId) base.shiftId = req.user.shiftId;
+    if (req.user.shiftId)  base.shiftId  = req.user.shiftId;
   }
 
   const [
@@ -110,11 +110,11 @@ const getWorkers = async (req, res) => {
   const { page = 1, limit = 20, search, status, branch } = req.query;
   const query = { company: req.user.company._id };
 
-  // Branch/shift-scoped: supervisors only see their branch (and optionally their shift)
+  // Branch/shift-scoped: supervisors only see their branch + shift (if assigned)
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
   if (!isAdmin) {
     if (req.user.branchId) query.branchId = req.user.branchId;
-    if (req.user.can('viewOwnShift') && req.user.shiftId) query.shiftId = req.user.shiftId;
+    if (req.user.shiftId)  query.shiftId  = req.user.shiftId;
   }
 
   if (search) {
@@ -153,11 +153,13 @@ const getActiveWorkers = async (req, res) => {
 
   const filter = { company: cid };
 
-  // Branch/shift-scoped: supervisors only see their assigned branch + optionally shift
+  // Branch/shift-scoped: supervisors only see their assigned branch + shift
   const isAdmin = req.user.role === 'super_admin' || req.user.can('manageBranches');
   if (!isAdmin) {
     if (req.user.branchId) filter.branchId = req.user.branchId;
-    if (req.user.can('viewOwnShift') && req.user.shiftId) filter.shiftId = req.user.shiftId;
+    // Auto-scope to shift if supervisor has a shiftId assigned
+    // (viewOwnShift permission is no longer required — having a shiftId is enough)
+    if (req.user.shiftId) filter.shiftId = req.user.shiftId;
   }
 
   if (status) {
@@ -167,7 +169,7 @@ const getActiveWorkers = async (req, res) => {
   }
 
   if (branchId && isAdmin) filter.branchId = branchId;
-  if (shiftId)  filter.shiftId  = shiftId;
+  if (shiftId && (isAdmin || !req.user.shiftId)) filter.shiftId = shiftId; // query param only overrides if no personal shift assigned
   if (role)     filter.role = { $regex: role, $options: 'i' };
   if (search) {
     filter.$or = [
