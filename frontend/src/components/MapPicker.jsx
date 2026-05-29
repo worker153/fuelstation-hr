@@ -107,7 +107,7 @@ export default function MapPicker({ value, onChange }) {
       } else {
         setError(
           isPlusCode(q)
-            ? 'Plus Code not found — try adding the city, e.g. "6F9G+VF Sapele"'
+            ? 'Plus Code not found — try adding the city, e.g. "6FG8+Q2 Abuja"'
             : 'Location not found — try a different search or click the map'
         );
       }
@@ -156,8 +156,8 @@ export default function MapPicker({ value, onChange }) {
       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
         {[
           { label: 'Coordinates', example: '6.3350, 5.6270' },
-          { label: 'Plus Code',   example: '6F9G+VF Sapele' },
-          { label: 'Address',     example: 'Sapele Rd Benin City' },
+          { label: 'Plus Code',   example: '6FG8+Q2 Abuja' },
+          { label: 'Address',     example: 'Awolowo Road Ikoyi Lagos' },
         ].map(h => (
           <button key={h.label} type="button"
             onClick={() => { setQuery(h.example); setError(''); inputRef.current?.focus(); }}

@@ -371,7 +371,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
               {/* Name */}
               <div>
                 <label className="label">Branch Name *</label>
-                <input className="input" placeholder="e.g. SAGE Sapele Rd"
+                <input className="input" placeholder="e.g. Main Branch, North Station…"
                   value={form.name} onChange={e => set('name', e.target.value)} required />
               </div>
 

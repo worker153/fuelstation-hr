@@ -258,7 +258,7 @@ export default function AddressPicker({
       } else {
         setPlusCodeError(
           olc.isValid(code) && olc.isShort(code)
-            ? 'Short code needs a city — e.g. "6F9G+VF Sapele"'
+            ? 'Short code needs a city — e.g. "6FG8+Q2 Abuja"'
             : 'Not recognised — paste Google coordinates (5.88, 5.68), a full Plus Code, or a short code with city'
         );
       }
@@ -297,7 +297,7 @@ export default function AddressPicker({
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10" />
         <input
           className="input pl-9 pr-20"
-          placeholder="Street name + city — e.g. Aganmwonyi Street Benin City"
+          placeholder="Street name + city — e.g. Awolowo Road Ikoyi Lagos"
           value={searchInput}
           onChange={handleSearchInput}
           autoComplete="off"
@@ -348,7 +348,7 @@ export default function AddressPicker({
 
       {/* Search tip */}
       <p className="text-[11px] text-gray-400 flex items-center gap-1 -mt-1">
-        💡 Always include the city — e.g. <span className="font-medium text-gray-500">"Aganmwonyi Benin City"</span> not just <span className="font-medium text-gray-500">"Aganmwonyi"</span>
+        💡 Always include the city — e.g. <span className="font-medium text-gray-500">"Awolowo Road Lagos"</span> not just <span className="font-medium text-gray-500">"Awolowo Road"</span>
       </p>
 
       {gpsError && (
@@ -389,7 +389,7 @@ export default function AddressPicker({
             <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             <input
               className={`input pl-8 text-sm font-mono ${plusCodeError ? 'border-red-300' : ''}`}
-              placeholder="5.8820, 5.6819  or  6GCRMQPX+97  or  6F9G+VF Sapele"
+              placeholder="6.4550, 3.3841  or  6FG8+Q2 Abuja  or  6GCRMQPX+97"
               value={plusCodeInput}
               onChange={e => { setPlusCodeInput(e.target.value); setPlusCodeError(''); }}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handlePlusCodeGenerate())}
@@ -464,7 +464,7 @@ export default function AddressPicker({
         <textarea
           className="input resize-none text-sm"
           rows={2}
-          placeholder="e.g. 30 Aganmonyi street, off Godwill road, near Unity Bank…"
+          placeholder="e.g. 15 Nnamdi Azikiwe Street, off Hospital Road…"
           value={workerAddress}
           onChange={e => {
             setWorkerAddress(e.target.value);
