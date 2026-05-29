@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Delete, Loader, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Delete, Loader, ChevronLeft, ChevronRight, LogOut, X, Clock, Calendar } from 'lucide-react';
 import axios from 'axios';
 
 const BASE   = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -7,7 +7,79 @@ const fmt    = n  => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
-// ── PIN Pad (reused from WorkerShortage style) ─────────────────────────────────
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  // dateStr could be 'YYYY-MM-DD' or a full ISO timestamp
+  const d = new Date(dateStr);
+  const dow = DAY_NAMES[d.getDay()];
+  return `${dow} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+// ── Bottom-sheet detail modal ──────────────────────────────────────────────────
+function DetailSheet({ title, emoji, rows, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end"
+         onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[70vh] flex flex-col"
+           onClick={e => e.stopPropagation()}>
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{emoji}</span>
+            <p className="font-bold text-gray-800 text-base">{title}</p>
+            <span className="bg-gray-100 text-gray-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+              {rows.length}
+            </span>
+          </div>
+          <button onClick={onClose}
+            className="p-1.5 rounded-full hover:bg-gray-100 transition-colors">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+        {/* List */}
+        <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+          {rows.length === 0 ? (
+            <p className="text-center text-gray-400 py-10">No records</p>
+          ) : rows.map((row, i) => (
+            <div key={i} className="px-5 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                    <Calendar size={15} className="text-gray-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800 text-sm">{fmtDate(row.date)}</p>
+                    {row.sub && <p className="text-xs text-gray-500 mt-0.5">{row.sub}</p>}
+                  </div>
+                </div>
+                {row.badge && (
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${row.badgeCls}`}>
+                    {row.badge}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PIN Pad ────────────────────────────────────────────────────────────────────
 function PinPad({ pin, onChange, onSubmit, loading, error }) {
   const press = d => {
     if (pin.length < 4) {
@@ -59,6 +131,21 @@ function PinPad({ pin, onChange, onSubmit, loading, error }) {
   );
 }
 
+// ── Tappable stat card ─────────────────────────────────────────────────────────
+function StatCard({ value, label, emoji, color, onClick, hasDetail }) {
+  return (
+    <button onClick={onClick}
+      className={`bg-white rounded-2xl p-4 shadow-sm text-center w-full transition-all
+        ${hasDetail ? 'active:scale-95 active:shadow-md' : 'cursor-default'}`}>
+      <p className={`text-4xl font-extrabold ${color}`}>{value}</p>
+      <p className="text-sm text-gray-500 font-medium mt-1">{emoji} {label}</p>
+      {hasDetail && value > 0 && (
+        <p className="text-xs text-brand-500 font-medium mt-1.5">Tap to see details →</p>
+      )}
+    </button>
+  );
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function WorkerDashboard() {
   const now = new Date();
@@ -69,6 +156,7 @@ export default function WorkerDashboard() {
   const [data,    setData   ] = useState(null);
   const [month,   setMonth  ] = useState(now.getMonth() + 1);
   const [year,    setYear   ] = useState(now.getFullYear());
+  const [sheet,   setSheet  ] = useState(null);  // { title, emoji, rows }
 
   const load = async (p, mo, yr) => {
     setLoading(true); setError('');
@@ -92,11 +180,66 @@ export default function WorkerDashboard() {
     if (pin) load(pin, mo, yr);
   };
 
+  // ── Build detail rows for each card ──────────────────────────────────────────
+  const openSheet = (type) => {
+    if (!data) return;
+    const { shortages, attendanceDays } = data;
+
+    if (type === 'present') {
+      const rows = (attendanceDays || []).map(d => ({
+        date: d.date,
+        badge:    fmtTime(d.clockIn),
+        badgeCls: 'bg-green-100 text-green-700',
+        sub: d.clockOut ? `Clocked out: ${fmtTime(d.clockOut)}` : 'No clock-out recorded',
+      }));
+      setSheet({ title: 'Days Present', emoji: '✅', rows });
+    }
+
+    if (type === 'late') {
+      const rows = shortages.filter(s => s.source === 'late_arrival').map(s => ({
+        date: s.date,
+        badge:    fmt(s.amount),
+        badgeCls: 'bg-amber-100 text-amber-700',
+        sub: s.notes || 'Late arrival',
+      }));
+      setSheet({ title: 'Came Late', emoji: '🕐', rows });
+    }
+
+    if (type === 'absent') {
+      const rows = shortages.filter(s => s.source === 'absent').map(s => ({
+        date: s.date,
+        badge:    fmt(s.amount),
+        badgeCls: 'bg-red-100 text-red-700',
+        sub: s.notes || 'Absent',
+      }));
+      setSheet({ title: 'Marked Absent', emoji: '❌', rows });
+    }
+
+    if (type === 'noshow') {
+      const rows = shortages.filter(s => s.source === 'no_clockin').map(s => ({
+        date: s.date,
+        badge:    fmt(s.amount),
+        badgeCls: 'bg-red-100 text-red-700',
+        sub: s.notes || 'Did not come in',
+      }));
+      setSheet({ title: 'Did Not Come', emoji: '❌', rows });
+    }
+
+    if (type === 'early') {
+      const rows = shortages.filter(s => s.source === 'early_departure').map(s => ({
+        date: s.date,
+        badge:    fmt(s.amount),
+        badgeCls: 'bg-orange-100 text-orange-700',
+        sub: s.notes || 'Left early',
+      }));
+      setSheet({ title: 'Left Early', emoji: '🚪', rows });
+    }
+  };
+
   if (step === 'pin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-brand-50 to-white flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm overflow-hidden">
-          {/* Header */}
           <div className="bg-brand-600 px-6 py-8 text-center">
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
               <span className="text-3xl">👤</span>
@@ -117,6 +260,16 @@ export default function WorkerDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Detail bottom sheet */}
+      {sheet && (
+        <DetailSheet
+          title={sheet.title}
+          emoji={sheet.emoji}
+          rows={sheet.rows}
+          onClose={() => setSheet(null)}
+        />
+      )}
+
       {/* Top bar */}
       <div className="bg-brand-600 px-4 pt-safe-top">
         <div className="max-w-lg mx-auto py-4 flex items-center justify-between">
@@ -170,24 +323,36 @@ export default function WorkerDashboard() {
           )}
         </div>
 
-        {/* ── ATTENDANCE CARDS ── */}
+        {/* ── ATTENDANCE CARDS (tappable) ── */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-            <p className="text-4xl font-extrabold text-green-600">{attendance.daysPresent}</p>
-            <p className="text-sm text-gray-500 font-medium mt-1">✅ Days Present</p>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-            <p className="text-4xl font-extrabold text-red-500">{attendance.noShowDays}</p>
-            <p className="text-sm text-gray-500 font-medium mt-1">❌ Did Not Come</p>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-            <p className="text-4xl font-extrabold text-amber-500">{attendance.lateDays}</p>
-            <p className="text-sm text-gray-500 font-medium mt-1">🕐 Came Late</p>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-            <p className="text-4xl font-extrabold text-orange-500">{attendance.earlyExitDays}</p>
-            <p className="text-sm text-gray-500 font-medium mt-1">🚪 Left Early</p>
-          </div>
+          <StatCard
+            value={attendance.daysPresent}
+            label="Days Present" emoji="✅"
+            color="text-green-600"
+            hasDetail={attendance.daysPresent > 0}
+            onClick={() => attendance.daysPresent > 0 && openSheet('present')}
+          />
+          <StatCard
+            value={attendance.noShowDays}
+            label="Did Not Come" emoji="❌"
+            color="text-red-500"
+            hasDetail={attendance.noShowDays > 0}
+            onClick={() => attendance.noShowDays > 0 && openSheet('noshow')}
+          />
+          <StatCard
+            value={attendance.lateDays}
+            label="Came Late" emoji="🕐"
+            color="text-amber-500"
+            hasDetail={attendance.lateDays > 0}
+            onClick={() => attendance.lateDays > 0 && openSheet('late')}
+          />
+          <StatCard
+            value={attendance.earlyExitDays}
+            label="Left Early" emoji="🚪"
+            color="text-orange-500"
+            hasDetail={attendance.earlyExitDays > 0}
+            onClick={() => attendance.earlyExitDays > 0 && openSheet('early')}
+          />
         </div>
 
         {/* ── DEDUCTIONS LIST ── */}
@@ -202,7 +367,10 @@ export default function WorkerDashboard() {
                 <div key={s._id} className="px-4 py-3 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold text-gray-800">{s.label}</p>
-                    {s.notes && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{s.notes}</p>}
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {fmtDate(s.date)}
+                      {s.notes ? ` · ${s.notes.replace(/\(deadline.*\)/, '').trim()}` : ''}
+                    </p>
                   </div>
                   <span className="text-sm font-bold text-red-500 shrink-0 ml-3">- {fmt(s.amount)}</span>
                 </div>

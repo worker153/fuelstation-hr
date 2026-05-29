@@ -441,17 +441,30 @@ const workerDashboard = async (req, res) => {
   const mo  = Number(month) || (now.getMonth() + 1);
   const yr  = Number(year)  || now.getFullYear();
 
-  // ── Attendance: count days present + clock-in records ───────────────────────
+  // ── Attendance: clock-in AND clock-out records ─────────────────────────────
   const datePrefix = `${yr}-${String(mo).padStart(2,'0')}-`;
-  const attRecords = await Attendance.find({
+  const allAttRecords = await Attendance.find({
     company: worker.company,
     worker:  worker._id,
-    type:    'clock_in',
     date:    { $regex: `^${datePrefix}` },
-  }).select('date timestamp').lean();
+  }).select('date timestamp type').sort({ timestamp: 1 }).lean();
 
-  const uniqueDays   = new Set(attRecords.map(r => r.date));
-  const daysPresent  = uniqueDays.size;
+  const clockInMap  = {};
+  const clockOutMap = {};
+  allAttRecords.forEach(r => {
+    if (r.type === 'clock_in'  && !clockInMap[r.date])  clockInMap[r.date]  = r.timestamp;
+    if (r.type === 'clock_out')                          clockOutMap[r.date] = r.timestamp;
+  });
+
+  const uniqueDays  = new Set(Object.keys(clockInMap));
+  const daysPresent = uniqueDays.size;
+
+  // Build attendance detail list for "Days Present" tap-to-expand
+  const attendanceDays = [...uniqueDays].sort().map(date => ({
+    date,
+    clockIn:  clockInMap[date]  || null,
+    clockOut: clockOutMap[date] || null,
+  }));
 
   // ── Shortages this month ────────────────────────────────────────────────────
   const shortages = await Shortage.find({
@@ -544,10 +557,12 @@ const workerDashboard = async (req, res) => {
       shortages: shortages.map(s => ({
         _id:    s._id,
         amount: s.amount,
+        source: s.source || 'manual',
         label:  SOURCE_LABELS[s.source] || 'Deduction',
         notes:  s.notes,
-        date:   s.date || s.createdAt,
+        date:   s.attendanceDate || s.date || s.createdAt,
       })),
+      attendanceDays,   // for "Days Present" tap-to-expand
     },
   });
 };
