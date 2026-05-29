@@ -280,8 +280,17 @@ const terminalWorkerByPin = async (req, res) => {
   });
 };
 
+// ── Euclidean distance between two 128-float face descriptors ─────────────────
+// face-api.js convention: distance < 0.4 = same person, > 0.6 = different person
+function faceDistance(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += (a[i] - b[i]) ** 2;
+  return Math.sqrt(sum);
+}
+
 // ── POST /api/devices/terminal/register-face ──────────────────────────────────
-// Worker's first login — save face descriptor to their record
+// Worker's first login — save face descriptor to their record.
+// Rejects if the face is already registered to a DIFFERENT worker (duplicate detection).
 const terminalRegisterFace = async (req, res) => {
   const { token, workerId, faceDescriptor } = req.body;
   if (!token || !workerId || !faceDescriptor)
@@ -295,6 +304,28 @@ const terminalRegisterFace = async (req, res) => {
   const Worker = require('../models/Worker');
   const worker = await Worker.findOne({ _id: workerId, company: device.company });
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  // ── Duplicate face check ───────────────────────────────────────────────────
+  // Compare new descriptor against every OTHER worker in the same company
+  const otherWorkers = await Worker.find({
+    company: device.company,
+    _id:     { $ne: workerId },
+    faceDescriptor: { $exists: true, $not: { $size: 0 } },
+  }).select('fullName faceDescriptor').lean();
+
+  for (const other of otherWorkers) {
+    if (!other.faceDescriptor?.length) continue;
+    const dist = faceDistance(faceDescriptor, other.faceDescriptor);
+    if (dist < 0.40) {
+      // Very high similarity — almost certainly the same physical person
+      console.warn(`[FACE] Duplicate face blocked: ${worker.fullName} matches ${other.fullName} (dist=${dist.toFixed(3)})`);
+      return res.status(400).json({
+        success:   false,
+        duplicate: true,
+        message:   `This face is already registered to another account (${other.fullName}). One person cannot be registered on two accounts.`,
+      });
+    }
+  }
 
   worker.faceDescriptor   = faceDescriptor;
   worker.faceRegisteredAt = new Date();

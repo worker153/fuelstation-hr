@@ -114,6 +114,17 @@ const terminalClock = async (req, res) => {
   // ── 5. Determine overall status ──────────────────────────────────────────────
   const deviceVerified = true;
   const faceVerified   = typeof faceMatchScore === 'number' && faceMatchScore >= 55;
+
+  // Block clock-in if worker has a registered face but the presented face doesn't match
+  if (worker.faceDescriptor?.length && !faceVerified) {
+    return res.status(400).json({
+      success:     false,
+      faceBlocked: true,
+      message:     `Face not recognised for ${worker.fullName}. Please look directly at the camera and try again.`,
+      data:        { faceMatchScore: faceMatchScore || 0 },
+    });
+  }
+
   const status = (gpsVerified && selfie.url && faceVerified && failReasons.length === 0)
     ? 'verified'
     : failReasons.length > 0 ? 'partial' : 'verified';
