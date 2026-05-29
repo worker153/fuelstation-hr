@@ -405,23 +405,32 @@ export default function AddressPicker({
         <label className="label flex items-center gap-1.5">
           <MapPin size={12} className="text-green-600" />
           Google Address
-          <span className="text-gray-400 font-normal text-[11px]">— auto-filled from map or type manually</span>
+          <span className="text-gray-400 font-normal text-[11px]">— type or paste the correct address</span>
         </label>
         <textarea
           className="input resize-none text-sm"
           rows={2}
-          placeholder="Auto-filled when you tap the map or search — or type / paste the address"
+          placeholder="Type or paste the exact address from Google Maps here…"
           value={googleAddress}
           onChange={e => handleGoogleAddressChange(e.target.value)}
           required={required}
         />
         {marker && (
-          <p className="text-xs text-green-600 font-mono mt-1 flex items-center gap-1.5">
-            <MapPin size={10} />
-            {marker[0].toFixed(6)}, {marker[1].toFixed(6)}
-            <span className="text-gray-300 mx-1">·</span>
-            <span className="text-gray-400 italic">tap map to move pin</span>
-          </p>
+          <div className="mt-1.5 space-y-1">
+            <p className="text-xs text-green-600 font-mono flex items-center gap-1.5">
+              <MapPin size={10} />
+              {marker[0].toFixed(6)}, {marker[1].toFixed(6)}
+              <span className="text-gray-300 mx-1">·</span>
+              <span className="text-gray-400 italic">tap map to move pin</span>
+            </p>
+            <p className="text-xs text-amber-600 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+              <span className="shrink-0 mt-0.5">⚠</span>
+              <span>
+                The address above is from OpenStreetMap and <strong>may not match Google Maps</strong> — especially for Nigerian streets.
+                Please verify and correct it manually if needed.
+              </span>
+            </p>
+          </div>
         )}
       </div>
 
