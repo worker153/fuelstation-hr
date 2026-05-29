@@ -297,7 +297,7 @@ export default function AddressPicker({
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10" />
         <input
           className="input pl-9 pr-20"
-          placeholder={placeholder}
+          placeholder="Street name + city — e.g. Aganmwonyi Street Benin City"
           value={searchInput}
           onChange={handleSearchInput}
           autoComplete="off"
@@ -321,14 +321,35 @@ export default function AddressPicker({
           <div className="absolute z-[9999] top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden max-h-64 overflow-y-auto">
             {suggestions.map((s, i) => (
               <button key={i} type="button" onClick={() => pickSuggestion(s)}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-2">
+                className="w-full text-left px-4 py-2.5 hover:bg-brand-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-2">
                 <MapPin size={13} className="text-brand-500 mt-0.5 shrink-0" />
-                <span className="line-clamp-2 text-gray-700">{buildAddress(s)}</span>
+                <div>
+                  <p className="text-sm text-gray-700 leading-snug">{buildAddress(s)}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {[s.address?.city || s.address?.town, s.address?.state].filter(Boolean).join(', ')}
+                  </p>
+                </div>
               </button>
             ))}
           </div>
         )}
+
+        {/* No results hint */}
+        {!searching && searchInput.length >= 3 && suggestions.length === 0 && (
+          <div className="absolute z-[9999] top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-xl px-4 py-3">
+            <p className="text-xs text-gray-500 font-medium">No results — try including the city name:</p>
+            <p className="text-xs text-brand-600 mt-1">
+              e.g. <strong>"{searchInput} Benin City"</strong> or <strong>"{searchInput} Lagos"</strong>
+            </p>
+            <p className="text-xs text-gray-400 mt-1.5">Or paste Google coordinates in the Plus Code field below ↓</p>
+          </div>
+        )}
       </div>
+
+      {/* Search tip */}
+      <p className="text-[11px] text-gray-400 flex items-center gap-1 -mt-1">
+        💡 Always include the city — e.g. <span className="font-medium text-gray-500">"Aganmwonyi Benin City"</span> not just <span className="font-medium text-gray-500">"Aganmwonyi"</span>
+      </p>
 
       {gpsError && (
         <p className="text-xs text-red-500 flex items-center gap-1"><X size={11} /> {gpsError}</p>
