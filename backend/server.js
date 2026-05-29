@@ -15,6 +15,7 @@ const payrollRoutes    = require('./routes/payroll');
 const shortageRoutes   = require('./routes/shortages');
 const deviceRoutes     = require('./routes/devices');
 const attendanceRoutes = require('./routes/attendance');
+const breakRoutes      = require('./routes/breaks');
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/api/payroll',  payrollRoutes);
 app.use('/api/shortages',  shortageRoutes);
 app.use('/api/devices',    deviceRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/breaks',     breakRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });
@@ -59,4 +61,8 @@ app.listen(PORT, () => {
   // Automatically deducts no-show workers; respects rotation schedules
   const { startAbsenceCron } = require('./jobs/absenceCron');
   startAbsenceCron();
+
+  // Start break cron — runs every 5 min; detects overstays + missed break windows
+  const { startBreakCron } = require('./jobs/breakCron');
+  startBreakCron();
 });

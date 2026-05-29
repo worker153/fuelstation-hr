@@ -25,6 +25,7 @@ import AttendanceTerminal  from './pages/AttendanceTerminal';
 import WorkerPins          from './pages/WorkerPins';
 import WorkerPinReset     from './pages/WorkerPinReset';
 import Attendance         from './pages/Attendance';
+import Breaks             from './pages/Breaks';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="/payroll"       element={<Payroll />} />
               <Route path="/shortages"     element={<Shortages />} />
               <Route path="/attendance"    element={<Attendance />} />
+              <Route path="/breaks"        element={<Breaks />} />
 
               <Route path="/workers/new"                                    element={<WorkerForm />} />
               <Route path="/workers/:id"                                    element={<WorkerDetail />} />

@@ -43,6 +43,28 @@ const branchSchema = new mongoose.Schema({
     noClockInDeductionAmount:     { type: Number, default: 0 },
     workDays:                     { type: [Number], default: [1,2,3,4,5,6] },
   }],
+  // ── Break settings ────────────────────────────────────────────────────────────
+  // Times are UTC strings 'HH:MM'.  Nigeria WAT = UTC+1, so enter 1 h earlier.
+  breakSettings: {
+    morning: {
+      enabled:        { type: Boolean, default: true  },
+      allowedMinutes: { type: Number,  default: 5     },
+      windowStart:    { type: String,  default: '07:00' },   // 08:00 WAT
+      windowEnd:      { type: String,  default: '09:30' },   // 10:30 WAT
+    },
+    afternoon: {
+      enabled:        { type: Boolean, default: true  },
+      allowedMinutes: { type: Number,  default: 10    },
+      windowStart:    { type: String,  default: '12:00' },   // 13:00 WAT
+      windowEnd:      { type: String,  default: '14:00' },   // 15:00 WAT
+    },
+    night: {
+      enabled:        { type: Boolean, default: true  },
+      allowedMinutes: { type: Number,  default: 5     },
+      windowStart:    { type: String,  default: '19:00' },   // 20:00 WAT
+      windowEnd:      { type: String,  default: '21:00' },   // 22:00 WAT
+    },
+  },
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });

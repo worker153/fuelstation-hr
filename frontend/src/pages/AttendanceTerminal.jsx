@@ -17,7 +17,7 @@ import {
   Leaf, Building2, LogIn, LogOut, Loader, RefreshCw,
   AlertTriangle, MapPin, Smartphone, ShieldAlert, RotateCcw,
   CheckCircle, XCircle, UserCircle2, Camera, ShieldCheck,
-  Eye, Delete, Shield
+  Eye, Delete, Shield, Coffee, Clock, AlertCircle,
 } from 'lucide-react';
 
 const BASE      = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -718,6 +718,74 @@ function AutoReset({ onReset, seconds = 8 }) {
   );
 }
 
+// ── Break timer (live countdown while on break) ───────────────────────────────
+function BreakTimer({ startTime, allowedMinutes }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const tick = () => setElapsed(Math.floor((Date.now() - new Date(startTime)) / 1000));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [startTime]);
+
+  const totalSecs    = allowedMinutes * 60;
+  const remainSecs   = Math.max(0, totalSecs - elapsed);
+  const overSecs     = Math.max(0, elapsed - totalSecs);
+  const pct          = Math.min(100, (elapsed / totalSecs) * 100);
+  const isOver       = elapsed > totalSecs;
+
+  const fmt = s => `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
+
+  return (
+    <div className={`rounded-2xl p-4 border-2 ${isOver ? 'border-red-500 bg-red-900/30' : 'border-brand-400 bg-brand-900/30'}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-white/60 text-xs font-medium">Break Timer</span>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isOver ? 'bg-red-500 text-white' : 'bg-brand-500 text-white'}`}>
+          {isOver ? `⚠️ OVER by ${fmt(overSecs)}` : `${fmt(remainSecs)} left`}
+        </span>
+      </div>
+      <div className="w-full bg-white/10 rounded-full h-2 mb-2">
+        <div className={`h-2 rounded-full transition-all ${isOver ? 'bg-red-500' : 'bg-brand-400'}`}
+          style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-white text-center text-2xl font-mono font-bold">{fmt(elapsed)}</p>
+      <p className="text-white/40 text-xs text-center mt-0.5">elapsed of {allowedMinutes} min allowed</p>
+    </div>
+  );
+}
+
+// ── Break button ─────────────────────────────────────────────────────────────
+function BreakBtn({ type, label, allowedMinutes, inWindow, taken, status, loading, onSelect }) {
+  const emoji = { morning: '🌅', afternoon: '☀️', night: '🌙' }[type];
+  if (taken && status !== 'missed') {
+    const doneCls = status === 'overstayed' ? 'border-red-700 text-red-300 bg-red-900/20' : 'border-green-700 text-green-300 bg-green-900/20';
+    return (
+      <div className={`flex-1 py-3 px-2 rounded-xl border-2 flex flex-col items-center gap-1 opacity-70 ${doneCls}`}>
+        <span className="text-lg">{emoji}</span>
+        <p className="text-xs font-semibold text-center leading-tight">{label}</p>
+        <p className="text-[10px] opacity-70">{status === 'overstayed' ? '⚠️ Overstayed' : '✓ Done'}</p>
+      </div>
+    );
+  }
+  if (!inWindow || !allowedMinutes) {
+    return (
+      <div className="flex-1 py-3 px-2 rounded-xl border-2 border-white/10 flex flex-col items-center gap-1 opacity-30">
+        <span className="text-lg">{emoji}</span>
+        <p className="text-xs font-semibold text-white/50 text-center leading-tight">{label}</p>
+        <p className="text-[10px] text-white/30">Closed</p>
+      </div>
+    );
+  }
+  return (
+    <button onClick={() => onSelect(type)} disabled={loading}
+      className="flex-1 py-3 px-2 rounded-xl border-2 border-brand-400 bg-brand-500/20 hover:bg-brand-500/30 active:scale-95 flex flex-col items-center gap-1 transition-all disabled:opacity-50">
+      <span className="text-lg">{emoji}</span>
+      <p className="text-xs font-bold text-white text-center leading-tight">{label}</p>
+      <p className="text-[10px] text-brand-300">{allowedMinutes} min</p>
+    </button>
+  );
+}
+
 // ── Main Terminal ─────────────────────────────────────────────────────────────
 export default function AttendanceTerminal() {
   const [token,      setToken    ] = useState(() => {
@@ -727,16 +795,21 @@ export default function AttendanceTerminal() {
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [devStage,   setDevStage  ] = useState(token ? 'loading' : 'setup');
 
-  // Attendance flow: pin | register | type | verify | submitting | done | fail
-  const [step,       setStep      ] = useState('pin');
-  const [worker,     setWorker    ] = useState(null);
-  const [attendType, setAttendType] = useState('clock_in');
-  const [selfieB64,  setSelfieB64 ] = useState(null);
-  const [faceScore,  setFaceScore ] = useState(null);
-  const [result,     setResult    ] = useState(null);
-  const [failMsg,    setFailMsg   ] = useState('');
-  const [pinLoading, setPinLoading] = useState(false);
-  const [pinError,   setPinError  ] = useState('');
+  // Attendance flow: pin | register | action | verify | submitting | done | fail
+  // Break flow: pin → action → break_confirm | break_end → break_done
+  const [step,        setStep      ] = useState('pin');
+  const [worker,      setWorker    ] = useState(null);
+  const [attendType,  setAttendType] = useState('clock_in');
+  const [selfieB64,   setSelfieB64 ] = useState(null);
+  const [faceScore,   setFaceScore ] = useState(null);
+  const [result,      setResult    ] = useState(null);
+  const [failMsg,     setFailMsg   ] = useState('');
+  const [pinLoading,  setPinLoading] = useState(false);
+  const [pinError,    setPinError  ] = useState('');
+  const [breakStatus, setBreakStatus] = useState(null);    // from GET /api/breaks/status
+  const [breakAction, setBreakAction] = useState(null);    // { type, label, allowedMinutes } for confirm
+  const [breakResult, setBreakResult] = useState(null);    // result from start/end
+  const [breakLoading,setBreakLoading] = useState(false);
 
   // Load device info
   const loadDevice = useCallback(async t => {
@@ -754,7 +827,7 @@ export default function AttendanceTerminal() {
     return () => clearInterval(t);
   }, [token, devStage, loadDevice]);
 
-  // PIN submitted
+  // PIN submitted → fetch worker + break status → go to action panel
   const handlePin = async (pin) => {
     setPinLoading(true); setPinError('');
     try {
@@ -763,11 +836,55 @@ export default function AttendanceTerminal() {
       });
       const w = data.data;
       setWorker(w);
-      // First time → register face; returning → verify
-      setStep(w.hasFace ? 'type' : 'register');
+
+      // Also load break status
+      try {
+        const { data: bs } = await axios.get(`${BASE}/breaks/status`, {
+          params: { deviceToken: token, workerId: w._id }
+        });
+        setBreakStatus(bs.data);
+      } catch { setBreakStatus(null); }
+
+      // First time → face registration; then straight to action panel
+      setStep(w.hasFace ? 'action' : 'register');
     } catch (err) {
       setPinError(err.response?.data?.message || 'Invalid PIN');
     } finally { setPinLoading(false); }
+  };
+
+  // Start a break (no face verify needed)
+  const handleStartBreak = async (breakType) => {
+    const cfg = breakStatus?.availableBreaks?.find(b => b.type === breakType);
+    setBreakAction({ type: breakType, label: cfg?.label || breakType, allowedMinutes: cfg?.allowedMinutes });
+    setStep('break_confirm');
+  };
+
+  const confirmStartBreak = async () => {
+    setBreakLoading(true);
+    try {
+      const { data } = await axios.post(`${BASE}/breaks/start`, {
+        deviceToken: token, workerId: worker._id, breakType: breakAction.type,
+      });
+      setBreakResult({ mode: 'started', ...data.data, message: data.message });
+      setStep('break_done');
+    } catch (err) {
+      setBreakResult({ mode: 'error', message: err.response?.data?.message || 'Failed to start break' });
+      setStep('break_done');
+    } finally { setBreakLoading(false); }
+  };
+
+  const handleEndBreak = async () => {
+    setBreakLoading(true);
+    try {
+      const { data } = await axios.post(`${BASE}/breaks/end`, {
+        deviceToken: token, workerId: worker._id,
+      });
+      setBreakResult({ mode: 'ended', ...data.data });
+      setStep('break_done');
+    } catch (err) {
+      setBreakResult({ mode: 'error', message: err.response?.data?.message || 'Failed to end break' });
+      setStep('break_done');
+    } finally { setBreakLoading(false); }
   };
 
   // GPS helper
@@ -811,6 +928,7 @@ export default function AttendanceTerminal() {
     setWorker(null); setResult(null); setFailMsg('');
     setSelfieB64(null); setFaceScore(null);
     setAttendType('clock_in'); setPinError('');
+    setBreakStatus(null); setBreakAction(null); setBreakResult(null);
     setStep('pin');
   }, []);
 
@@ -892,60 +1010,213 @@ export default function AttendanceTerminal() {
         worker={worker}
         token={token}
         onDone={(desc, b64) => {
-          // Update local worker record so next step has it
           setWorker(w => ({ ...w, faceDescriptor: desc, hasFace: true }));
           setSelfieB64(b64);
-          setStep('type');
+          setStep('action');
         }}
         onBack={reset}
       />
     </Shell>
   );
 
-  // ─ Choose clock in / out ──────────────────────────────────────────────────────
-  if (step === 'type') return (
-    <Shell deviceInfo={deviceInfo}>
-      <div className="space-y-4">
-        <div className="flex items-center gap-3 bg-white/10 rounded-2xl px-4 py-4 border border-white/20">
-          {worker.photo
-            ? <img src={worker.photo} className="w-16 h-16 rounded-xl object-cover border-2 border-white/20" alt="" />
-            : <div className="w-16 h-16 rounded-xl bg-white/20 text-white flex items-center justify-center text-2xl font-bold">{worker.fullName[0]}</div>
-          }
-          <div>
-            <p className="text-white font-bold text-xl">{worker.fullName}</p>
-            <p className="text-white/50">{worker.role}</p>
-            {!worker.hasFace && (
-              <p className="text-green-400 text-xs mt-0.5 flex items-center gap-1"><CheckCircle size={10} /> Face registered!</p>
-            )}
+  // ─ Action panel — shows worker status + Clock In/Out + Break buttons ──────────
+  if (step === 'action') {
+    const bs       = breakStatus;
+    const status   = bs?.attendanceStatus || 'absent';
+    const active   = bs?.activeBreak;
+    const avail    = bs?.availableBreaks || [];
+    const anyBreakAvail = avail.some(b => b.inWindow && !b.taken);
+
+    const STATUS_LABEL = {
+      active:        { text: '🟢 Active — In Shift',         cls: 'bg-green-900/40 border-green-600 text-green-300'  },
+      on_break:      { text: '🟡 On Break',                   cls: 'bg-amber-900/40 border-amber-600 text-amber-300'  },
+      break_overdue: { text: '🔴 Break Overdue!',             cls: 'bg-red-900/50 border-red-500 text-red-300 animate-pulse' },
+      clocked_out:   { text: '⚫ Clocked Out',                cls: 'bg-gray-800 border-gray-600 text-gray-300'        },
+      absent:        { text: '⚫ Not Clocked In Today',       cls: 'bg-gray-800 border-gray-600 text-gray-300'        },
+    };
+    const slabel = STATUS_LABEL[status] || STATUS_LABEL.absent;
+
+    return (
+      <Shell deviceInfo={deviceInfo}>
+        <div className="space-y-4">
+          {/* Worker card */}
+          <div className="flex items-center gap-3 bg-white/10 rounded-2xl px-4 py-4 border border-white/20">
+            {worker.photo
+              ? <img src={worker.photo} className="w-16 h-16 rounded-xl object-cover border-2 border-white/20" alt="" />
+              : <div className="w-16 h-16 rounded-xl bg-white/20 text-white flex items-center justify-center text-2xl font-bold">{worker.fullName[0]}</div>
+            }
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-xl truncate">{worker.fullName}</p>
+              <p className="text-white/50 text-sm">{worker.role}</p>
+              {!worker.hasFace && (
+                <p className="text-green-400 text-xs mt-0.5 flex items-center gap-1"><CheckCircle size={10} /> Face registered!</p>
+              )}
+            </div>
           </div>
-        </div>
 
+          {/* Status banner */}
+          <div className={`rounded-xl px-4 py-2.5 border text-sm font-semibold text-center ${slabel.cls}`}>
+            {slabel.text}
+          </div>
+
+          {/* Break timer (if on active break) */}
+          {(status === 'on_break' || status === 'break_overdue') && active && (
+            <BreakTimer startTime={active.startTime} allowedMinutes={active.allowedMinutes} />
+          )}
+
+          {/* ── Not clocked in: only Clock In ── */}
+          {status === 'absent' && (
+            <button onClick={() => { setAttendType('clock_in'); setStep('verify'); }}
+              className="w-full flex flex-col items-center gap-3 py-8 rounded-2xl bg-green-500 hover:bg-green-400 active:scale-95 transition-all shadow-xl">
+              <LogIn size={36} className="text-white" />
+              <div className="text-center">
+                <p className="text-white font-bold text-xl">Clock In</p>
+                <p className="text-green-100 text-xs">Start of shift</p>
+              </div>
+            </button>
+          )}
+
+          {/* ── Clocked out: info only ── */}
+          {status === 'clocked_out' && (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+              <p className="text-white/60 text-sm">You have completed your shift for today.</p>
+            </div>
+          )}
+
+          {/* ── Active / on break / overdue: show all actions ── */}
+          {(status === 'active' || status === 'on_break' || status === 'break_overdue') && (
+            <>
+              {/* Break buttons */}
+              {status === 'active' && (
+                <div>
+                  <p className="text-white/40 text-xs text-center mb-2 font-medium">── BREAKS ──</p>
+                  <div className="flex gap-2">
+                    {avail.map(b => (
+                      <BreakBtn key={b.type}
+                        type={b.type} label={b.label}
+                        allowedMinutes={b.allowedMinutes}
+                        inWindow={b.inWindow} taken={b.taken} status={b.status}
+                        loading={breakLoading}
+                        onSelect={handleStartBreak}
+                      />
+                    ))}
+                  </div>
+                  {!anyBreakAvail && (
+                    <p className="text-white/30 text-xs text-center mt-2">No break windows open right now</p>
+                  )}
+                </div>
+              )}
+
+              {/* End Break button */}
+              {(status === 'on_break' || status === 'break_overdue') && (
+                <button onClick={handleEndBreak} disabled={breakLoading}
+                  className={`w-full py-5 rounded-2xl font-bold text-xl flex items-center justify-center gap-3 shadow-xl transition-all active:scale-95 disabled:opacity-60
+                    ${status === 'break_overdue' ? 'bg-red-500 hover:bg-red-400' : 'bg-amber-500 hover:bg-amber-400'}`}>
+                  {breakLoading ? <Loader size={24} className="animate-spin" /> : <Coffee size={28} />}
+                  End Break
+                </button>
+              )}
+
+              {/* Clock Out button */}
+              {status !== 'on_break' && status !== 'break_overdue' && (
+                <button onClick={() => { setAttendType('clock_out'); setStep('verify'); }}
+                  className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-red-500 hover:bg-red-400 active:scale-95 transition-all shadow-xl">
+                  <LogOut size={24} className="text-white" />
+                  <div className="text-left">
+                    <p className="text-white font-bold text-lg">Clock Out</p>
+                    <p className="text-red-100 text-xs">End of shift</p>
+                  </div>
+                </button>
+              )}
+            </>
+          )}
+
+          <button onClick={reset}
+            className="w-full py-2.5 rounded-xl border border-white/20 text-white/50 text-sm hover:bg-white/10 flex items-center justify-center gap-2">
+            <RotateCcw size={13} /> Not you?
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ─ Break confirm ──────────────────────────────────────────────────────────────
+  if (step === 'break_confirm') return (
+    <Shell deviceInfo={deviceInfo}>
+      <div className="space-y-5 text-center">
+        <div className="bg-brand-900/50 border border-brand-500 rounded-2xl p-5">
+          <Coffee size={40} className="text-brand-300 mx-auto mb-3" />
+          <p className="text-white font-bold text-xl">{breakAction?.label}</p>
+          <p className="text-brand-300 text-lg font-semibold mt-1">{breakAction?.allowedMinutes} minutes</p>
+          <p className="text-white/40 text-sm mt-2">Make sure to return before your time runs out!</p>
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => { setAttendType('clock_in');  setStep('verify'); }}
-            className="flex flex-col items-center gap-3 py-8 rounded-2xl bg-green-500 hover:bg-green-400 active:scale-95 transition-all shadow-xl">
-            <LogIn size={36} className="text-white" />
-            <div className="text-center">
-              <p className="text-white font-bold text-xl">Clock In</p>
-              <p className="text-green-100 text-xs">Start of shift</p>
-            </div>
+          <button onClick={() => setStep('action')}
+            className="py-3.5 rounded-xl border border-white/20 text-white/60 text-sm font-medium hover:bg-white/10 flex items-center justify-center gap-2">
+            <RotateCcw size={14} /> Back
           </button>
-          <button onClick={() => { setAttendType('clock_out'); setStep('verify'); }}
-            className="flex flex-col items-center gap-3 py-8 rounded-2xl bg-red-500 hover:bg-red-400 active:scale-95 transition-all shadow-xl">
-            <LogOut size={36} className="text-white" />
-            <div className="text-center">
-              <p className="text-white font-bold text-xl">Clock Out</p>
-              <p className="text-red-100 text-xs">End of shift</p>
-            </div>
+          <button onClick={confirmStartBreak} disabled={breakLoading}
+            className="py-3.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold text-base flex items-center justify-center gap-2 shadow-xl disabled:opacity-60">
+            {breakLoading ? <Loader size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+            Start Break
           </button>
         </div>
-
-        <button onClick={reset}
-          className="w-full py-2.5 rounded-xl border border-white/20 text-white/50 text-sm hover:bg-white/10 flex items-center justify-center gap-2">
-          <RotateCcw size={13} /> Not you?
-        </button>
       </div>
     </Shell>
   );
+
+  // ─ Break done (start or end result) ──────────────────────────────────────────
+  if (step === 'break_done') {
+    const br = breakResult || {};
+    const isError     = br.mode === 'error';
+    const isEnded     = br.mode === 'ended';
+    const isOverstayed = isEnded && br.overstayed;
+
+    return (
+      <Shell deviceInfo={deviceInfo}>
+        <div className="space-y-4 text-center">
+          <div className={`w-20 h-20 rounded-2xl flex items-center justify-center mx-auto shadow-2xl ${
+            isError ? 'bg-red-900/50 border border-red-700' :
+            isOverstayed ? 'bg-red-500' :
+            isEnded ? 'bg-green-500' : 'bg-brand-500'
+          }`}>
+            {isError      ? <XCircle size={40} className="text-red-400" /> :
+             isOverstayed ? <AlertCircle size={40} className="text-white" /> :
+             isEnded      ? <CheckCircle size={40} className="text-white" /> :
+                            <Coffee size={40} className="text-white" />}
+          </div>
+
+          <div>
+            <p className="text-white text-2xl font-bold">
+              {isError ? 'Error' :
+               isOverstayed ? 'Break Ended — Overstayed!' :
+               isEnded ? 'Break Ended' : 'Break Started!'}
+            </p>
+            <p className={`text-sm mt-1 ${isError ? 'text-red-400' : isOverstayed ? 'text-red-300' : 'text-white/50'}`}>
+              {isError ? br.message :
+               isEnded ? `${br.actualMinutes ?? 0} min taken · ${br.allowedMinutes} min allowed` :
+               br.message || ''}
+            </p>
+          </div>
+
+          {isOverstayed && (
+            <div className="bg-red-900/40 border border-red-700 rounded-2xl px-4 py-3">
+              <p className="text-red-300 font-semibold text-sm">⚠️ {br.excessMinutes} minute(s) over limit</p>
+              <p className="text-red-400/70 text-xs mt-0.5">Your supervisor has been notified</p>
+            </div>
+          )}
+
+          {!isError && isEnded && !isOverstayed && (
+            <div className="bg-green-900/30 border border-green-700 rounded-2xl px-4 py-3">
+              <p className="text-green-300 text-sm font-medium">✅ Back to work — good job!</p>
+            </div>
+          )}
+
+          <AutoReset onReset={reset} seconds={8} />
+        </div>
+      </Shell>
+    );
+  }
 
   // ─ Face verification ──────────────────────────────────────────────────────────
   if (step === 'verify') return (
@@ -955,7 +1226,7 @@ export default function AttendanceTerminal() {
         storedDescriptor={worker.faceDescriptor}
         type={attendType}
         onVerified={(b64, score) => submitAttendance(b64, score)}
-        onBack={() => setStep('type')}
+        onBack={() => setStep('action')}
       />
     </Shell>
   );
