@@ -337,192 +337,206 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-4">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
-              <Building2 size={16} className="text-brand-600" />
-            </div>
-            <h3 className="font-bold text-gray-900">{branch ? 'Edit Branch' : 'New Branch'}</h3>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={18} />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto md:pl-64">
+      <div className="min-h-full flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl my-6">
 
-        <form onSubmit={submit} className="px-6 py-5 space-y-4">
-          {/* Name */}
-          <div>
-            <label className="label">Branch Name *</label>
-            <input className="input" placeholder="e.g. SAGE Sapele rd"
-              value={form.name} onChange={e => set('name', e.target.value)} required />
-          </div>
-
-          {/* ── Google Maps Import ──────────────────────────────────────────── */}
-          <div className={`rounded-xl border p-3.5 space-y-2 transition-colors
-            ${imported ? 'border-green-300 bg-green-50' : 'border-dashed border-brand-300 bg-brand-50/40'}`}>
-            <div className="flex items-center gap-2">
-              <Link2 size={13} className={imported ? 'text-green-600' : 'text-brand-500'} />
-              <p className="text-xs font-semibold text-gray-700">Import from Google Maps</p>
-              {imported && <span className="text-xs text-green-600 font-medium ml-auto">✓ Location imported</span>}
-            </div>
-            <p className="text-xs text-gray-400">
-              Open the branch location on Google Maps → tap <strong>Share</strong> → <strong>Copy link</strong> → paste below
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                className={`input flex-1 text-sm py-2 ${importError ? 'border-red-300 focus:ring-red-300' : ''}`}
-                placeholder="https://maps.app.goo.gl/... or google.com/maps/..."
-                value={mapsLink}
-                onChange={handleMapsLinkChange}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), importFromMaps())}
-              />
-              <button
-                type="button"
-                onClick={importFromMaps}
-                disabled={!mapsLink.trim() || importing}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium
-                           hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
-                {importing
-                  ? <Loader size={13} className="animate-spin" />
-                  : <><Navigation size={13} /> Import</>
-                }
-              </button>
-            </div>
-            {importError && (
-              <p className={`text-xs flex items-start gap-1 ${importError.startsWith('ℹ️') ? 'text-brand-600' : 'text-red-600'}`}>
-                {importError.startsWith('ℹ️')
-                  ? <span>{importError}</span>
-                  : <><AlertCircle size={11} className="shrink-0 mt-0.5" /> {importError}</>
-                }
-              </p>
-            )}
-            {imported && form.location?.lat && (
-              <p className="text-xs text-green-700 font-mono flex items-center gap-1">
-                <MapPin size={11} />
-                {form.location.lat.toFixed(6)}, {form.location.lng.toFixed(6)}
-              </p>
-            )}
-          </div>
-
-          {/* Address */}
-          <div>
-            <label className="label">Address</label>
-            <textarea className="input resize-none" rows={2}
-              placeholder="Full street address (auto-filled on import, or type manually)"
-              value={form.address} onChange={e => set('address', e.target.value)} />
-          </div>
-
-          {/* Phone */}
-          <div>
-            <label className="label">Branch Phone</label>
-            <input className="input" placeholder="08012345678" type="tel"
-              value={form.phone} onChange={e => set('phone', e.target.value)} />
-          </div>
-
-          {/* Manager */}
-          <div>
-            <label className="label">Branch Manager / Supervisor</label>
-            <select className="input" value={form.managerId} onChange={e => set('managerId', e.target.value)}>
-              <option value="">— No manager assigned —</option>
-              {staff.map(s => (
-                <option key={s._id} value={s._id}>
-                  {s.name} ({s.role?.replace(/_/g, ' ')})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Attendance Rules */}
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <button type="button" onClick={() => setShowAttendance(v => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
-              <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <Clock size={14} /> Attendance Rules
-                {form.attendanceRules.length > 1 && (
-                  <span className="text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-medium">
-                    {form.attendanceRules.length} roles
-                  </span>
-                )}
-              </span>
-              <ChevronDown size={14} className={`text-gray-400 transition-transform ${showAttendance ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showAttendance && (
-              <div className="px-4 py-4 space-y-3 border-t border-gray-100">
-                {/* datalist for role autocomplete */}
-                <datalist id="role-suggestions-list">
-                  {PRESET_ROLES.map(r => <option key={r} value={r} />)}
-                </datalist>
-
-                {form.attendanceRules.map((rule, idx) => (
-                  <RuleCard
-                    key={idx}
-                    rule={rule}
-                    isDefault={rule.role === 'default'}
-                    onChange={(key, val) => setRule(idx, key, val)}
-                    onRemove={() => removeRule(idx)}
-                  />
-                ))}
-
-                <button type="button" onClick={addRule}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-brand-300 hover:text-brand-600 transition-colors">
-                  <Plus size={14} /> Add Role-Specific Rule
-                </button>
-
-                <p className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
-                  💡 Enter times in Nigerian time (e.g. 8:00 AM means 08:00). Set ₦ amounts to 0 to track without deducting.
+          {/* ── Header ─────────────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center shrink-0">
+                <Building2 size={18} className="text-brand-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 leading-tight">
+                  {branch ? 'Edit Branch' : 'New Branch'}
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {branch ? 'Update branch details and attendance rules' : 'Add a new branch location'}
                 </p>
               </div>
-            )}
-          </div>
-
-          {/* Map pin (optional manual override) */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="label mb-0">
-                Location Pin
-                <span className="text-gray-400 font-normal ml-1">(optional — use map to adjust)</span>
-              </label>
-              <button type="button" onClick={() => setShowMap(v => !v)}
-                className="text-xs text-brand-600 hover:underline flex items-center gap-1 font-medium">
-                <Navigation size={11} />
-                {showMap ? 'Hide map' : form.location?.lat ? 'Adjust on map' : 'Pin on map'}
-              </button>
             </div>
-            {form.location?.lat && !showMap && (
-              <p className="text-xs text-brand-600 font-mono flex items-center gap-1.5 mb-1">
-                <MapPin size={11} />
-                {form.location.lat.toFixed(6)}, {form.location.lng.toFixed(6)}
-                <button type="button" onClick={() => set('location', null)}
-                  className="ml-2 text-gray-400 hover:text-red-500 transition-colors">
-                  <X size={11} />
-                </button>
-              </p>
-            )}
-            {showMap && (
-              <MapPicker
-                value={form.location}
-                onChange={loc => set('location', loc)}
-              />
-            )}
+            <button onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors shrink-0">
+              <X size={18} />
+            </button>
           </div>
 
-          {/* Buttons */}
-          <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving}
-              className="btn-primary flex-1 justify-center">
-              {saving
-                ? <Loader size={15} className="animate-spin" />
-                : <><Save size={14} /> {branch ? 'Save Changes' : 'Create Branch'}</>
-              }
-            </button>
-            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          </div>
-        </form>
+          <form onSubmit={submit} className="divide-y divide-gray-100">
+
+            {/* ── Section 1: Branch Details ─────────────────────────────────── */}
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Branch Details</p>
+
+              {/* Name */}
+              <div>
+                <label className="label">Branch Name *</label>
+                <input className="input" placeholder="e.g. SAGE Sapele Rd"
+                  value={form.name} onChange={e => set('name', e.target.value)} required />
+              </div>
+
+              {/* Address */}
+              <div>
+                <label className="label">Address</label>
+                <textarea className="input resize-none" rows={2}
+                  placeholder="Full street address (auto-filled on map import)"
+                  value={form.address} onChange={e => set('address', e.target.value)} />
+              </div>
+
+              {/* Phone + Manager — 2 columns */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Branch Phone</label>
+                  <input className="input" placeholder="08012345678" type="tel"
+                    value={form.phone} onChange={e => set('phone', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Branch Manager</label>
+                  <select className="input" value={form.managerId} onChange={e => set('managerId', e.target.value)}>
+                    <option value="">— Unassigned —</option>
+                    {staff.map(s => (
+                      <option key={s._id} value={s._id}>
+                        {s.name} ({s.role?.replace(/_/g, ' ')})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section 2: Location ───────────────────────────────────────── */}
+            <div className="px-6 py-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Location</p>
+                <button type="button" onClick={() => setShowMap(v => !v)}
+                  className="text-xs text-brand-600 hover:underline flex items-center gap-1 font-medium">
+                  <Navigation size={11} />
+                  {showMap ? 'Hide map' : form.location?.lat ? 'Adjust on map' : 'Pin on map'}
+                </button>
+              </div>
+
+              {/* Google Maps Import */}
+              <div className={`rounded-xl border p-3.5 space-y-2 transition-colors
+                ${imported ? 'border-green-300 bg-green-50' : 'border-dashed border-brand-300 bg-brand-50/40'}`}>
+                <div className="flex items-center gap-2">
+                  <Link2 size={13} className={imported ? 'text-green-600' : 'text-brand-500'} />
+                  <p className="text-xs font-semibold text-gray-700">Import from Google Maps</p>
+                  {imported && <span className="text-xs text-green-600 font-medium ml-auto">✓ Location imported</span>}
+                </div>
+                <p className="text-xs text-gray-400">
+                  Open in Google Maps → tap <strong>Share</strong> → <strong>Copy link</strong> → paste below
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    className={`input flex-1 text-sm py-2 ${importError ? 'border-red-300 focus:ring-red-300' : ''}`}
+                    placeholder="https://maps.app.goo.gl/... or google.com/maps/..."
+                    value={mapsLink}
+                    onChange={handleMapsLinkChange}
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), importFromMaps())}
+                  />
+                  <button
+                    type="button"
+                    onClick={importFromMaps}
+                    disabled={!mapsLink.trim() || importing}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium
+                               hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
+                    {importing
+                      ? <Loader size={13} className="animate-spin" />
+                      : <><Navigation size={13} /> Import</>
+                    }
+                  </button>
+                </div>
+                {importError && (
+                  <p className={`text-xs flex items-start gap-1 ${importError.startsWith('ℹ️') ? 'text-brand-600' : 'text-red-600'}`}>
+                    {importError.startsWith('ℹ️')
+                      ? <span>{importError}</span>
+                      : <><AlertCircle size={11} className="shrink-0 mt-0.5" /> {importError}</>
+                    }
+                  </p>
+                )}
+                {imported && form.location?.lat && (
+                  <p className="text-xs text-green-700 font-mono flex items-center gap-1">
+                    <MapPin size={11} />
+                    {form.location.lat.toFixed(6)}, {form.location.lng.toFixed(6)}
+                  </p>
+                )}
+              </div>
+
+              {/* Coords display when map hidden */}
+              {form.location?.lat && !showMap && (
+                <p className="text-xs text-brand-600 font-mono flex items-center gap-1.5">
+                  <MapPin size={11} />
+                  {form.location.lat.toFixed(6)}, {form.location.lng.toFixed(6)}
+                  <button type="button" onClick={() => set('location', null)}
+                    className="ml-2 text-gray-400 hover:text-red-500 transition-colors">
+                    <X size={11} />
+                  </button>
+                </p>
+              )}
+              {showMap && (
+                <MapPicker value={form.location} onChange={loc => set('location', loc)} />
+              )}
+            </div>
+
+            {/* ── Section 3: Attendance Rules ───────────────────────────────── */}
+            <div>
+              <button type="button" onClick={() => setShowAttendance(v => !v)}
+                className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <Clock size={15} className="text-brand-500" />
+                  Attendance Rules
+                  {form.attendanceRules.length > 1 && (
+                    <span className="text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-medium">
+                      {form.attendanceRules.length} roles
+                    </span>
+                  )}
+                </span>
+                <ChevronDown size={14} className={`text-gray-400 transition-transform ${showAttendance ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showAttendance && (
+                <div className="px-6 pb-5 space-y-3 border-t border-gray-100">
+                  <datalist id="role-suggestions-list">
+                    {PRESET_ROLES.map(r => <option key={r} value={r} />)}
+                  </datalist>
+
+                  {form.attendanceRules.map((rule, idx) => (
+                    <RuleCard
+                      key={idx}
+                      rule={rule}
+                      isDefault={rule.role === 'default'}
+                      onChange={(key, val) => setRule(idx, key, val)}
+                      onRemove={() => removeRule(idx)}
+                    />
+                  ))}
+
+                  <button type="button" onClick={addRule}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-brand-300 hover:text-brand-600 transition-colors">
+                    <Plus size={14} /> Add Role-Specific Rule
+                  </button>
+
+                  <p className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+                    💡 Enter times in Nigerian time (WAT). Set ₦ amounts to 0 to track without deducting.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Footer Buttons ────────────────────────────────────────────── */}
+            <div className="px-6 py-4 flex gap-3 bg-gray-50 rounded-b-2xl">
+              <button type="submit" disabled={saving}
+                className="btn-primary flex-1 justify-center">
+                {saving
+                  ? <Loader size={15} className="animate-spin" />
+                  : <><Save size={14} /> {branch ? 'Save Changes' : 'Create Branch'}</>
+                }
+              </button>
+              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+            </div>
+          </form>
+
+        </div>
       </div>
     </div>
   );
