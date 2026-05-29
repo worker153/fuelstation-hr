@@ -90,6 +90,33 @@ function computeClockOutStatus(clockOutRecord, settings) {
   return mins < seH * 60 + seM ? 'early' : 'on_time';
 }
 
+// Returns true if this worker clocked in but never clocked out AND their
+// shift end time has already passed (so they should have clocked out by now).
+function isMissingClockOut(clockInRecord, clockOutRecord, settings, filterDate) {
+  if (!clockInRecord) return false;   // never clocked in — not a missing clock-out
+  if (clockOutRecord) return false;   // already clocked out — fine
+  if (!settings?.shiftEnd) return false; // no shift end configured — can't tell
+
+  const now     = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes(); // browser local time (WAT)
+
+  const [seH, seM]    = settings.shiftEnd.split(':').map(Number);
+  const shiftEndMins  = seH * 60 + seM;
+
+  // For past dates: always flag (shift is definitely over)
+  const todayStr = now.toISOString().split('T')[0];
+  if (filterDate < todayStr) return true;
+
+  // For today: only flag if shift end has passed
+  if (settings.shiftEndNextDay) {
+    // Next-day shift — shift end is tomorrow; only flag if it's now past midnight
+    // and the shift-end time has passed. Simplified: if we're past shiftEnd WAT today
+    // and it's early morning (shift ran overnight), flag it.
+    return nowMins >= shiftEndMins;
+  }
+  return nowMins >= shiftEndMins;
+}
+
 const STATUS_CFG = {
   on_time:  { label: 'On Time',  cls: 'bg-green-100 text-green-700', row: '',               icon: CheckCircle },
   late:     { label: 'Late',     cls: 'bg-amber-100 text-amber-700', row: 'bg-amber-50/40', icon: AlertTriangle },
@@ -282,10 +309,13 @@ export default function Attendance() {
 
   // Summary counts (off_duty workers are their own category, excluded from no_show)
   const summary = useMemo(() => {
-    const counts = { on_time: 0, late: 0, absent: 0, no_show: 0, off_duty: 0 };
-    rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+    const counts = { on_time: 0, late: 0, absent: 0, no_show: 0, off_duty: 0, missing_clockout: 0 };
+    rows.forEach(r => {
+      if (counts[r.status] !== undefined) counts[r.status]++;
+      if (isMissingClockOut(r.clockIn, r.clockOut, r.settings, filterDate)) counts.missing_clockout++;
+    });
     return counts;
-  }, [rows]);
+  }, [rows, filterDate]);
 
   const loadMonthlySummary = useCallback(async () => {
     if (!monthlyBranch) return;
@@ -519,12 +549,13 @@ export default function Attendance() {
       {filterBranch && rows.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { key: 'on_time',  label: 'On Time',  icon: CheckCircle,  cls: 'text-green-600', bg: 'bg-green-50 border-green-100' },
-            { key: 'late',     label: 'Late',     icon: Clock,        cls: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
-            { key: 'absent',   label: 'Absent',   icon: AlertTriangle,cls: 'text-red-600',   bg: 'bg-red-50 border-red-100' },
-            { key: 'no_show',  label: 'No Show',  icon: UserX,        cls: 'text-red-700',   bg: 'bg-red-50 border-red-100' },
-            { key: 'off_duty', label: 'Off Duty', icon: UserX,        cls: 'text-gray-500',  bg: 'bg-gray-50 border-gray-200' },
-          ].filter(c => c.key !== 'off_duty' || summary.off_duty > 0)
+            { key: 'on_time',          label: 'On Time',       icon: CheckCircle,  cls: 'text-green-600', bg: 'bg-green-50 border-green-100' },
+            { key: 'late',             label: 'Late',          icon: Clock,        cls: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
+            { key: 'absent',           label: 'Absent',        icon: AlertTriangle,cls: 'text-red-600',   bg: 'bg-red-50 border-red-100' },
+            { key: 'no_show',          label: 'No Show',       icon: UserX,        cls: 'text-red-700',   bg: 'bg-red-50 border-red-100' },
+            { key: 'missing_clockout', label: 'No Clock-Out',  icon: AlertTriangle,cls: 'text-orange-600',bg: 'bg-orange-50 border-orange-200' },
+            { key: 'off_duty',         label: 'Off Duty',      icon: UserX,        cls: 'text-gray-500',  bg: 'bg-gray-50 border-gray-200' },
+          ].filter(c => (c.key !== 'off_duty' || summary.off_duty > 0) && (c.key !== 'missing_clockout' || summary.missing_clockout > 0))
           .map(({ key, label, icon: Icon, cls, bg }) => (
             <div key={key} className={`rounded-xl border p-3 ${bg}`}>
               <div className={`flex items-center gap-1.5 mb-1 ${cls}`}>
@@ -674,6 +705,12 @@ export default function Attendance() {
                             <LogOut size={12} className="text-red-400 shrink-0" />
                             <span className="text-sm text-gray-700 font-mono">{fmtTime(row.clockOut.timestamp)}</span>
                           </div>
+                        ) : row.clockIn ? (
+                          isMissingClockOut(row.clockIn, row.clockOut, row.settings, filterDate)
+                            ? <span className="inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 w-fit animate-pulse">
+                                ⚠️ No Clock-Out
+                              </span>
+                            : <span className="text-sm text-gray-400 italic">still in</span>
                         ) : (
                           <span className="text-sm text-gray-300">—</span>
                         )}
