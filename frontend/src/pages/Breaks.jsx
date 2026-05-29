@@ -5,6 +5,7 @@ import { Coffee, Clock, CheckCircle, AlertTriangle, XCircle,
          Settings, X, Save, Loader, ToggleLeft, ToggleRight } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import NumInput from '../components/NumInput';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -270,9 +271,9 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="text-xs font-semibold text-gray-500 block mb-1">Duration (min)</label>
-                        <input type="number" min="1" max="60"
+                        <NumInput min={1} max={60}
                           value={v.allowedMinutes}
-                          onChange={e => set(key, 'allowedMinutes', Number(e.target.value))}
+                          onChange={v2 => set(key, 'allowedMinutes', v2 || 1)}
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-brand-400" />
                       </div>
                       <div>
@@ -295,19 +296,17 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-semibold text-gray-500 block mb-1">Overstay Deduction (₦)</label>
-                        <input type="number" min="0"
+                        <NumInput
                           value={v.overstayDeductionAmount}
-                          onChange={e => set(key, 'overstayDeductionAmount', Number(e.target.value))}
-                          placeholder="0"
+                          onChange={v2 => set(key, 'overstayDeductionAmount', v2)}
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
                         <p className="text-[10px] text-gray-400 mt-0.5">Deducted when break time exceeded</p>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-500 block mb-1">Missed Break Deduction (₦)</label>
-                        <input type="number" min="0"
+                        <NumInput
                           value={v.missedDeductionAmount}
-                          onChange={e => set(key, 'missedDeductionAmount', Number(e.target.value))}
-                          placeholder="0"
+                          onChange={v2 => set(key, 'missedDeductionAmount', v2)}
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
                         <p className="text-[10px] text-gray-400 mt-0.5">Deducted if break window not used</p>
                       </div>

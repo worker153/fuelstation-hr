@@ -6,6 +6,7 @@ import {
   Building2, Navigation, Link2, AlertCircle, Clock, ChevronDown
 } from 'lucide-react';
 import api from '../utils/api';
+import NumInput from '../components/NumInput';
 import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import MapPicker from '../components/MapPicker';
@@ -103,31 +104,27 @@ function RuleCard({ rule, isDefault, onChange, onRemove }) {
       <div className="grid grid-cols-2 gap-2">
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Late ₦</p>
-          <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.lateDeductionAmount ?? ''}
-            placeholder="0"
-            onChange={e => onChange('lateDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
+          <NumInput className="input py-1.5 text-sm"
+            value={rule.lateDeductionAmount ?? 0}
+            onChange={v => onChange('lateDeductionAmount', v)} />
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Absent ₦</p>
-          <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.absentDeductionAmount ?? ''}
-            placeholder="0"
-            onChange={e => onChange('absentDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
+          <NumInput className="input py-1.5 text-sm"
+            value={rule.absentDeductionAmount ?? 0}
+            onChange={v => onChange('absentDeductionAmount', v)} />
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">No Show ₦ <span className="text-gray-400 font-normal">(full day absent)</span></p>
-          <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.noClockInDeductionAmount ?? ''}
-            placeholder="e.g. 10000"
-            onChange={e => onChange('noClockInDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
+          <NumInput className="input py-1.5 text-sm" placeholder="e.g. 10000"
+            value={rule.noClockInDeductionAmount ?? 0}
+            onChange={v => onChange('noClockInDeductionAmount', v)} />
         </div>
         <div>
           <p className="text-xs text-gray-500 font-medium mb-1">Early Exit ₦</p>
-          <input type="number" min="0" className="input py-1.5 text-sm"
-            value={rule.earlyDepartureDeductionAmount ?? ''}
-            placeholder="0"
-            onChange={e => onChange('earlyDepartureDeductionAmount', e.target.value === '' ? 0 : Number(e.target.value))} />
+          <NumInput className="input py-1.5 text-sm"
+            value={rule.earlyDepartureDeductionAmount ?? 0}
+            onChange={v => onChange('earlyDepartureDeductionAmount', v)} />
         </div>
       </div>
 

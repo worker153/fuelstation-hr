@@ -14,6 +14,7 @@ import VerificationBadge from '../components/VerificationBadge';
 import { EmploymentBadge } from './ActiveWorkers';
 import MapPicker from '../components/MapPicker';
 import FileUpload from '../components/FileUpload';
+import NumInput from '../components/NumInput';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DOC_LABELS = {
@@ -1071,9 +1072,9 @@ function SalaryBankTab({ worker, onRefresh }) {
           <form onSubmit={saveSalary} className="p-5 space-y-4">
             <div>
               <label className="label">Monthly Salary (₦)</label>
-              <input type="number" className="input" placeholder="0"
-                value={salForm.monthly}
-                onChange={e => setSalForm(f => ({ ...f, monthly: e.target.value }))} />
+              <NumInput className="input" placeholder="e.g. 100000"
+                value={Number(salForm.monthly) || 0}
+                onChange={v => setSalForm(f => ({ ...f, monthly: v }))} />
             </div>
             <div>
               <label className="label">Payment Status</label>

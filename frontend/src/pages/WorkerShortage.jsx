@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Leaf, CheckCircle, ArrowLeft, Loader, Users, ChevronRight, Delete } from 'lucide-react';
 import axios from 'axios';
+import NumInput from '../components/NumInput';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG')}`;
@@ -268,10 +269,10 @@ export default function WorkerShortage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount (₦) *</label>
-                  <input type="number" inputMode="numeric" min="1"
+                  <NumInput min={1}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    placeholder="e.g. 5000"
-                    value={amount} onChange={e => { setAmount(e.target.value); setError(''); }} autoFocus />
+                    placeholder="e.g. 5000" autoFocus
+                    value={Number(amount) || 0} onChange={v => { setAmount(v); setError(''); }} />
                   {amount > 0 && <p className="text-xs text-brand-600 mt-1 font-medium">{fmt(amount)}</p>}
                 </div>
 

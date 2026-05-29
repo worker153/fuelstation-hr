@@ -11,6 +11,7 @@ const fmt = n => `₦${Number(n||0).toLocaleString()}`;
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import NumInput from '../components/NumInput';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split('T')[0];
@@ -395,8 +396,8 @@ export default function Attendance() {
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500 mb-1.5">Year</p>
-              <input type="number" className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-400"
-                value={monthlyYear} onChange={e => setMonthlyYear(Number(e.target.value))} min="2020" max="2100" />
+              <NumInput className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                value={monthlyYear} onChange={v => setMonthlyYear(v || new Date().getFullYear())} min={2020} max={2100} />
             </div>
             <button onClick={loadMonthlySummary} disabled={!monthlyBranch || monthlyLoading}
               className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">

@@ -8,6 +8,7 @@ import {
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import NumInput from '../components/NumInput';
 
 const ALL_DAYS  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const SHORT_DAY = { Monday:'Mon', Tuesday:'Tue', Wednesday:'Wed', Thursday:'Thu', Friday:'Fri', Saturday:'Sat', Sunday:'Sun' };
@@ -219,8 +220,8 @@ function ShiftModal({ shift, branches, onClose, onSaved }) {
 
           <div>
             <label className="label">Max Workers <span className="text-gray-400 font-normal">(0 = no limit)</span></label>
-            <input type="number" min="0" className="input" placeholder="0"
-              value={form.maxWorkers} onChange={e => set('maxWorkers', e.target.value)} />
+            <NumInput className="input" placeholder="0 = no limit"
+              value={Number(form.maxWorkers) || 0} onChange={v => set('maxWorkers', v)} />
           </div>
 
           <div className="flex gap-3 pt-1">

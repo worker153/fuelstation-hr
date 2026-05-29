@@ -7,6 +7,7 @@ import {
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import NumInput from '../components/NumInput';
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -132,8 +133,8 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
 
           <div>
             <label className="label">Shortage Amount (₦) *</label>
-            <input type="number" min="1" className="input" placeholder="e.g. 5000"
-              value={amount} onChange={e => setAmount(e.target.value)} required />
+            <NumInput min={1} className="input" placeholder="e.g. 5000"
+              value={Number(amount) || 0} onChange={v => setAmount(v)} />
           </div>
 
           <div>

@@ -122,7 +122,7 @@ function EditCell({ value, onChange, highlight }) {
   const [draft,   setDraft  ] = useState('');
   const inputRef = useRef(null);
 
-  const open = () => { setDraft(value || '0'); setEditing(true); setTimeout(() => inputRef.current?.select(), 50); };
+  const open = () => { setDraft(value ? String(value) : ''); setEditing(true); setTimeout(() => inputRef.current?.select(), 50); };
   const save = () => { onChange(Number(draft) || 0); setEditing(false); };
 
   if (editing) return (
