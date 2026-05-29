@@ -266,9 +266,15 @@ export default function WorkerPrint() {
               <tbody>
                 <Row label="Full Name"   value={worker.fullName} />
                 <Row label="Phone"       value={worker.phone} />
-                <Row label="Address"     value={worker.addressLocation?.formatted || worker.address} />
+                <Row label="Google Address"   value={worker.addressLocation?.formatted || worker.address} />
+                {worker.addressLocation?.workerAddress && (
+                  <Row label="Worker's Address" value={worker.addressLocation.workerAddress} />
+                )}
+                {worker.addressLocation?.landmark && (
+                  <Row label="Landmark"     value={worker.addressLocation.landmark} />
+                )}
                 {worker.addressLocation?.plusCode && (
-                  <Row label="Plus Code" value={worker.addressLocation.plusCode} />
+                  <Row label="Plus Code"    value={worker.addressLocation.plusCode} />
                 )}
                 {worker.addressLocation?.coordinates?.lat && (
                   <Row label="Coordinates"

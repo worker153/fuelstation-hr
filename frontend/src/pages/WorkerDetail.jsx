@@ -1666,8 +1666,10 @@ export default function WorkerDetail() {
               {[
                 ['Full Name',    worker.fullName],
                 ['Phone',        worker.phone],
-                ['Address',      worker.addressLocation?.formatted || worker.address],
-                ['Plus Code',    worker.addressLocation?.plusCode  || '—'],
+                ['Google Address', worker.addressLocation?.formatted || worker.address],
+                ["Worker's Address", worker.addressLocation?.workerAddress || '—'],
+                ['Landmark',     worker.addressLocation?.landmark   || '—'],
+                ['Plus Code',    worker.addressLocation?.plusCode   || '—'],
                 ['Coordinates',  worker.addressLocation?.coordinates
                   ? `${worker.addressLocation.coordinates.lat.toFixed(6)}, ${worker.addressLocation.coordinates.lng.toFixed(6)}`
                   : '—'],

@@ -144,8 +144,16 @@ function AddressStep({ worker, onUpdate, onNext, onPrev }) {
   const notify = useNotify();
   const [location,    setLocation]    = useState(
     worker.addressLocation?.coordinates
-      ? { formatted: worker.addressLocation.formatted, coordinates: worker.addressLocation.coordinates }
-      : worker.address ? { formatted: worker.address, coordinates: null } : null
+      ? {
+          formatted:     worker.addressLocation.formatted,
+          coordinates:   worker.addressLocation.coordinates,
+          plusCode:      worker.addressLocation.plusCode      || '',
+          workerAddress: worker.addressLocation.workerAddress || '',
+          landmark:      worker.addressLocation.landmark      || '',
+        }
+      : worker.address
+        ? { formatted: worker.address, coordinates: null, workerAddress: '', landmark: '' }
+        : null
   );
   const [streetPhoto, setStreetPhoto] = useState(null);
   const [housePhoto,  setHousePhoto]  = useState(null);
@@ -157,11 +165,13 @@ function AddressStep({ worker, onUpdate, onNext, onPrev }) {
     try {
       // Save address location
       await api.put(`/workers/${worker._id}/address-location`, {
-        formatted: location.formatted,
-        lat:       location.coordinates?.lat,
-        lng:       location.coordinates?.lng,
-        address:   location.formatted,
-        plusCode:  location.plusCode || ''
+        formatted:     location.formatted,
+        lat:           location.coordinates?.lat,
+        lng:           location.coordinates?.lng,
+        address:       location.formatted,
+        plusCode:      location.plusCode      || '',
+        workerAddress: location.workerAddress || '',
+        landmark:      location.landmark      || '',
       });
 
       // Upload street / house photos to house verification

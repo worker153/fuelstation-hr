@@ -66,7 +66,9 @@ const workerSchema = new mongoose.Schema({
 
   // Structured address with Plus Code
   addressLocation: {
-    formatted:   String,
+    formatted:     String,   // Google / geocoder-generated address
+    workerAddress: String,   // Address as the worker described it
+    landmark:      String,   // Nearest landmark
     coordinates: { lat: Number, lng: Number },
     plusCode:    String
   },

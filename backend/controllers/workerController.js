@@ -299,14 +299,16 @@ const updateAddressLocation = async (req, res) => {
   const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
 
-  const { formatted, lat, lng, address, plusCode } = req.body;
+  const { formatted, lat, lng, address, plusCode, workerAddress, landmark } = req.body;
 
   if (address) worker.address = address;
-  if (formatted || (lat && lng)) {
+  if (formatted || (lat && lng) || workerAddress !== undefined || landmark !== undefined) {
     worker.addressLocation = {
-      formatted:   formatted || worker.addressLocation?.formatted,
-      coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : worker.addressLocation?.coordinates,
-      plusCode:    plusCode   || worker.addressLocation?.plusCode || ''
+      formatted:     formatted     || worker.addressLocation?.formatted,
+      workerAddress: workerAddress !== undefined ? workerAddress : (worker.addressLocation?.workerAddress || ''),
+      landmark:      landmark      !== undefined ? landmark      : (worker.addressLocation?.landmark      || ''),
+      coordinates:   lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : worker.addressLocation?.coordinates,
+      plusCode:      plusCode    || worker.addressLocation?.plusCode || '',
     };
   }
 

@@ -11,7 +11,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-lea
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { OpenLocationCode } from 'open-location-code';
-import { Search, MapPin, Navigation, X, Loader, Hash } from 'lucide-react';
+import { Search, MapPin, Navigation, X, Loader, Hash, Landmark } from 'lucide-react';
 
 const olc = new OpenLocationCode();
 
@@ -79,7 +79,9 @@ export default function AddressPicker({
   placeholder = 'Search street, area or city in Nigeria…',
   required,
 }) {
-  const [inputValue,  setInputValue]  = useState(value?.formatted || '');
+  const [inputValue,    setInputValue]    = useState(value?.formatted     || '');
+  const [workerAddress, setWorkerAddress] = useState(value?.workerAddress || '');
+  const [landmark,      setLandmark]      = useState(value?.landmark      || '');
   const [marker,      setMarker]      = useState(
     value?.coordinates ? [value.coordinates.lat, value.coordinates.lng] : null
   );
@@ -97,13 +99,15 @@ export default function AddressPicker({
   const debounce = useRef(null);
 
   // ── emit to parent ────────────────────────────────────────────────────────
-  const emit = useCallback((formatted, lat, lng, code) => {
+  const emit = useCallback((formatted, lat, lng, code, wa, lmk) => {
     onChange?.({
       formatted,
-      coordinates: lat != null ? { lat, lng } : null,
-      plusCode: code || ''
+      coordinates:   lat != null ? { lat, lng } : null,
+      plusCode:      code || '',
+      workerAddress: wa  ?? workerAddress,
+      landmark:      lmk ?? landmark,
     });
-  }, [onChange]);
+  }, [onChange, workerAddress, landmark]);  // eslint-disable-line
 
   // ── pin a resolved location ───────────────────────────────────────────────
   const pin = useCallback((lat, lng, address) => {
@@ -114,14 +118,14 @@ export default function AddressPicker({
     setFlyTarget({ pos, zoom: PINNED_ZOOM });
     setInputValue(address);
     setSuggestions([]);
-    emit(address, lat, lng, code);
-  }, [emit]);
+    emit(address, lat, lng, code, workerAddress, landmark);
+  }, [emit, workerAddress, landmark]);  // eslint-disable-line
 
   // ── search input changed ──────────────────────────────────────────────────
   const handleInput = (e) => {
     const val = e.target.value;
     setInputValue(val);
-    emit(val, marker?.[0] ?? null, marker?.[1] ?? null);
+    emit(val, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, workerAddress, landmark);
     clearTimeout(debounce.current);
     if (val.length >= 3) {
       debounce.current = setTimeout(async () => {
@@ -189,7 +193,17 @@ export default function AddressPicker({
     setPlusCode('');
     setSuggestions([]);
     setGpsError('');
-    emit('', null, null, '');
+    emit('', null, null, '', workerAddress, landmark);
+  };
+
+  // ── worker address / landmark changed ─────────────────────────────────────
+  const handleWorkerAddress = (val) => {
+    setWorkerAddress(val);
+    emit(inputValue, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, val, landmark);
+  };
+  const handleLandmark = (val) => {
+    setLandmark(val);
+    emit(inputValue, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, workerAddress, val);
   };
 
   return (
@@ -289,35 +303,69 @@ export default function AddressPicker({
         </MapContainer>
       </div>
 
-      {/* ── Address / Plus Code confirmation ── */}
-      {marker ? (
-        <div className="bg-green-50 border border-green-200 rounded-xl overflow-hidden">
-          {/* Address row */}
-          <div className="flex items-start gap-2 px-3 py-2.5 border-b border-green-100">
-            <MapPin size={14} className="text-green-600 mt-0.5 shrink-0" />
-            <p className="text-xs font-semibold text-green-800 leading-snug flex-1">{inputValue}</p>
-          </div>
-
-          {/* Coordinates + Plus Code row */}
-          <div className="flex items-center gap-3 px-3 py-2 flex-wrap">
-            <span className="text-xs text-green-600 font-mono">
-              📍 {marker[0].toFixed(6)}, {marker[1].toFixed(6)}
-            </span>
-            {plusCode && (
-              <span className="flex items-center gap-1 bg-brand-600 text-white text-xs font-bold px-2.5 py-1 rounded-full tracking-wide">
-                <Hash size={10} />
-                {plusCode}
+      {/* ── Google Address (auto-generated) ── */}
+      <div>
+        <label className="label flex items-center gap-1.5">
+          <MapPin size={12} className="text-brand-500" />
+          Google Address
+          <span className="text-gray-400 font-normal text-[11px]">(auto-generated from map)</span>
+        </label>
+        {marker ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 overflow-hidden">
+            <div className="px-3 py-2.5 border-b border-green-100">
+              <p className="text-sm font-medium text-green-800 leading-snug">{inputValue}</p>
+            </div>
+            <div className="flex items-center gap-3 px-3 py-2 flex-wrap">
+              <span className="text-xs text-green-600 font-mono">
+                📍 {marker[0].toFixed(6)}, {marker[1].toFixed(6)}
               </span>
-            )}
-            <span className="text-xs text-green-500 ml-auto">tap map to move</span>
+              {plusCode && (
+                <span className="flex items-center gap-1 bg-brand-600 text-white text-xs font-bold px-2.5 py-1 rounded-full tracking-wide">
+                  <Hash size={10} />
+                  {plusCode}
+                </span>
+              )}
+              <span className="text-xs text-green-500 ml-auto italic">tap map to move pin</span>
+            </div>
           </div>
-        </div>
-      ) : (
-        <p className="text-xs text-gray-400 flex items-center gap-1.5 px-1">
-          <MapPin size={11} />
-          Tap anywhere on the map — address &amp; Plus Code fill in automatically
-        </p>
-      )}
+        ) : (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-3">
+            <p className="text-xs text-gray-400 flex items-center gap-1.5">
+              <MapPin size={11} />
+              Search or tap the map above — address fills in automatically
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Worker's Own Address ── */}
+      <div>
+        <label className="label flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          Address as Worker Described It
+        </label>
+        <textarea
+          className="input resize-none text-sm"
+          rows={2}
+          placeholder="e.g. 30 Aganmonyi street, off Godwill road, near Unity Bank…"
+          value={workerAddress}
+          onChange={e => handleWorkerAddress(e.target.value)}
+        />
+      </div>
+
+      {/* ── Nearest Landmark ── */}
+      <div>
+        <label className="label flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-500" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
+          Nearest Landmark
+        </label>
+        <input
+          className="input text-sm"
+          placeholder="e.g. Behind First Bank, near Total filling station…"
+          value={landmark}
+          onChange={e => handleLandmark(e.target.value)}
+        />
+      </div>
     </div>
   );
 }
