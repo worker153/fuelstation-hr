@@ -241,6 +241,17 @@ const updateBranch = async (req, res) => {
   if (req.body.attendanceRules !== undefined) {
     branch.attendanceRules = req.body.attendanceRules;
   }
+  if (req.body.breakSettings) {
+    const cur = branch.breakSettings?.toObject?.() || {};
+    const inc = req.body.breakSettings;
+    // Deep-merge each break type
+    branch.breakSettings = {
+      morning:   { ...(cur.morning   || {}), ...(inc.morning   || {}) },
+      afternoon: { ...(cur.afternoon || {}), ...(inc.afternoon || {}) },
+      night:     { ...(cur.night     || {}), ...(inc.night     || {}) },
+    };
+    branch.markModified('breakSettings');
+  }
 
   await branch.save();
   await branch.populate('manager', 'name email role');

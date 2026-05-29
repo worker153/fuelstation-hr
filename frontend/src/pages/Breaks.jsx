@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Coffee, Clock, CheckCircle, AlertTriangle, XCircle,
          ChevronDown, ChevronUp, RefreshCw, CalendarDays,
-         Building2, User, ChevronRight, AlertCircle } from 'lucide-react';
+         Building2, User, ChevronRight, AlertCircle,
+         Settings, X, Save, Loader, ToggleLeft, ToggleRight,
+         Info } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -159,6 +161,172 @@ function WorkerRow({ workerBreaks }) {
   );
 }
 
+// ── Break Settings Modal ───────────────────────────────────────────────────────
+const BREAK_TYPES = [
+  { key: 'morning',   label: 'Morning Break',   emoji: '🌅', defaultMins: 5  },
+  { key: 'afternoon', label: 'Afternoon Break',  emoji: '☀️', defaultMins: 10 },
+  { key: 'night',     label: 'Night Break',      emoji: '🌙', defaultMins: 5  },
+];
+
+function BreakSettingsModal({ branch, onClose, onSaved }) {
+  const [form,    setForm   ] = useState(null);
+  const [saving,  setSaving ] = useState(false);
+  const [err,     setErr    ] = useState('');
+
+  // Initialise form from branch
+  useEffect(() => {
+    const bs = branch.breakSettings || {};
+    const defaults = { morning: {}, afternoon: {}, night: {} };
+    const base = {
+      morning:   { enabled: true, allowedMinutes: 5,  windowStart: '07:00', windowEnd: '09:30', overstayDeductionAmount: 0, missedDeductionAmount: 0, ...defaults.morning,   ...(bs.morning   || {}) },
+      afternoon: { enabled: true, allowedMinutes: 10, windowStart: '12:00', windowEnd: '14:00', overstayDeductionAmount: 0, missedDeductionAmount: 0, ...defaults.afternoon, ...(bs.afternoon || {}) },
+      night:     { enabled: true, allowedMinutes: 5,  windowStart: '19:00', windowEnd: '21:00', overstayDeductionAmount: 0, missedDeductionAmount: 0, ...defaults.night,     ...(bs.night     || {}) },
+    };
+    setForm(base);
+  }, [branch]);
+
+  const set = (type, field, val) => setForm(f => ({
+    ...f, [type]: { ...f[type], [field]: val },
+  }));
+
+  const save = async () => {
+    setSaving(true); setErr('');
+    try {
+      await api.put(`/branches/${branch._id}`, { breakSettings: form });
+      onSaved(form);
+    } catch (e) {
+      setErr(e.response?.data?.message || 'Save failed');
+    } finally { setSaving(false); }
+  };
+
+  if (!form) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+              <Settings size={18} className="text-brand-600" /> Break Settings
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">{branch.name}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        {/* Note about UTC */}
+        <div className="mx-6 mt-4 flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+          <Info size={13} className="shrink-0 mt-0.5" />
+          <span>Times are in <strong>UTC</strong>. Nigeria (WAT) = UTC+1 — enter 1 hour earlier. e.g. 8:00 AM WAT → enter 07:00</span>
+        </div>
+
+        {/* Break rows */}
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
+          {BREAK_TYPES.map(({ key, label, emoji }) => {
+            const v = form[key];
+            return (
+              <div key={key} className={`rounded-2xl border-2 p-4 space-y-4 transition-colors ${v.enabled ? 'border-brand-200 bg-brand-50/30' : 'border-gray-200 bg-gray-50/50 opacity-60'}`}>
+                {/* Header row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{emoji}</span>
+                    <span className="font-semibold text-gray-800">{label}</span>
+                  </div>
+                  <button onClick={() => set(key, 'enabled', !v.enabled)}
+                    className="flex items-center gap-1.5 text-sm font-medium transition-colors">
+                    {v.enabled
+                      ? <><ToggleRight size={22} className="text-brand-600" /><span className="text-brand-600">Enabled</span></>
+                      : <><ToggleLeft  size={22} className="text-gray-400"  /><span className="text-gray-400">Disabled</span></>}
+                  </button>
+                </div>
+
+                {v.enabled && (
+                  <>
+                    {/* Timing row */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">Duration (min)</label>
+                        <input type="number" min="1" max="60"
+                          value={v.allowedMinutes}
+                          onChange={e => set(key, 'allowedMinutes', Number(e.target.value))}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-brand-400" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">Window Start (UTC)</label>
+                        <input type="time"
+                          value={v.windowStart}
+                          onChange={e => set(key, 'windowStart', e.target.value)}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">Window End (UTC)</label>
+                        <input type="time"
+                          value={v.windowEnd}
+                          onChange={e => set(key, 'windowEnd', e.target.value)}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+                      </div>
+                    </div>
+
+                    {/* Deduction row */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">Overstay Deduction (₦)</label>
+                        <input type="number" min="0"
+                          value={v.overstayDeductionAmount}
+                          onChange={e => set(key, 'overstayDeductionAmount', Number(e.target.value))}
+                          placeholder="0"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+                        <p className="text-[10px] text-gray-400 mt-0.5">Deducted when break time exceeded</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">Missed Break Deduction (₦)</label>
+                        <input type="number" min="0"
+                          value={v.missedDeductionAmount}
+                          onChange={e => set(key, 'missedDeductionAmount', Number(e.target.value))}
+                          placeholder="0"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+                        <p className="text-[10px] text-gray-400 mt-0.5">Deducted if break window not used</p>
+                      </div>
+                    </div>
+
+                    {/* WAT preview */}
+                    <p className="text-[11px] text-brand-600 bg-brand-50 rounded-lg px-3 py-1.5">
+                      ⏰ WAT: {v.windowStart ? (() => {
+                        const [h,m] = v.windowStart.split(':').map(Number);
+                        return `${String((h+1)%24).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                      })() : '--:--'} – {v.windowEnd ? (() => {
+                        const [h,m] = v.windowEnd.split(':').map(Number);
+                        return `${String((h+1)%24).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                      })() : '--:--'} · {v.allowedMinutes} min allowed
+                    </p>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        {err && <p className="mx-6 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{err}</p>}
+        <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-60">
+            {saving ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}
+            Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function Breaks() {
   const { isSuperAdmin, can } = useAuth();
@@ -172,6 +340,7 @@ export default function Breaks() {
   const [loading,    setLoading  ] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [msg,        setMsg      ] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   // Load branches
   useEffect(() => {
@@ -265,13 +434,34 @@ export default function Breaks() {
           </select>
         </div>
         {canManage && branchId && (
-          <button onClick={handleProcessMissed} disabled={processing}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium disabled:opacity-50 shadow-sm">
-            {processing ? <RefreshCw size={13} className="animate-spin" /> : <AlertCircle size={13} />}
-            Process Missed
-          </button>
+          <>
+            <button onClick={() => setShowSettings(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium shadow-sm transition-colors">
+              <Settings size={13} /> Configure Breaks
+            </button>
+            <button onClick={handleProcessMissed} disabled={processing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium disabled:opacity-50 shadow-sm">
+              {processing ? <RefreshCw size={13} className="animate-spin" /> : <AlertCircle size={13} />}
+              Process Missed
+            </button>
+          </>
         )}
       </div>
+
+      {/* Settings modal */}
+      {showSettings && selBranch && (
+        <BreakSettingsModal
+          branch={selBranch}
+          onClose={() => setShowSettings(false)}
+          onSaved={(newSettings) => {
+            // Update local branch copy so WAT preview refreshes
+            setBranches(bs => bs.map(b => b._id === selBranch._id
+              ? { ...b, breakSettings: newSettings } : b));
+            setShowSettings(false);
+            setMsg('✅ Break settings saved');
+          }}
+        />
+      )}
 
       {msg && (
         <div className={`px-4 py-3 rounded-xl text-sm font-medium ${msg.startsWith('✅') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>

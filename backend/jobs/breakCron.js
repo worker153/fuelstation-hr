@@ -13,7 +13,8 @@ const Break      = require('../models/Break');
 const Branch     = require('../models/Branch');
 const Worker     = require('../models/Worker');
 const Attendance = require('../models/Attendance');
-const { getBreakConfig } = require('../controllers/breakController');
+const { getBreakConfig }            = require('../controllers/breakController');
+const { createAttendanceShortage }  = require('../controllers/shortageController');
 
 function toMins(hhmm) {
   if (!hhmm) return null;
@@ -27,20 +28,38 @@ async function runBreakCron() {
   const dateStr = now.toISOString().split('T')[0];
 
   // ── 1. Overstayed detection ───────────────────────────────────────────────────
-  const activeBreaks = await Break.find({ status: 'active' });
+  const activeBreaks = await Break.find({ status: 'active' }).lean();
   for (const b of activeBreaks) {
-    const elapsedMins = Math.floor((now - b.startTime) / 60000);
+    const elapsedMins = Math.floor((now - new Date(b.startTime)) / 60000);
     const grace = 2;   // 2-minute grace before marking overstayed
     if (elapsedMins > b.allowedMinutes + grace) {
       const excess = elapsedMins - b.allowedMinutes;
-      b.status        = 'overstayed';
-      b.excessMinutes = excess;
-      b.auditLog.push({
-        action: 'auto_overstay', by: 'cron', timestamp: now,
-        notes:  `Auto-detected ${excess} min overstay (elapsed: ${elapsedMins} min, allowed: ${b.allowedMinutes} min)`,
+      await Break.findByIdAndUpdate(b._id, {
+        $set:  { status: 'overstayed', excessMinutes: excess },
+        $push: { auditLog: {
+          action: 'auto_overstay', by: 'cron', timestamp: now,
+          notes:  `Auto-detected ${excess} min overstay (elapsed: ${elapsedMins} min, allowed: ${b.allowedMinutes} min)`,
+        }},
       });
-      await b.save();
       console.log(`[BREAK-CRON] Overstay: ${b.workerName} — ${b.breakType} break, ${excess} min over`);
+
+      // Create shortage deduction if configured
+      try {
+        const branch = await Branch.findById(b.branchId).lean();
+        const cfg    = getBreakConfig(branch)?.[b.breakType] || {};
+        const amt    = cfg.overstayDeductionAmount || 0;
+        if (amt > 0) {
+          const worker = await Worker.findById(b.worker).lean();
+          if (worker) {
+            await createAttendanceShortage({
+              company: b.company, worker, branchId: b.branchId, branchName: b.branchName,
+              amount: amt, source: 'manual', reason: 'other',
+              attendanceDate: new Date(dateStr + 'T00:00:00.000Z'),
+              notes: `Break overstay — ${b.breakType} break, ${excess} min over limit`,
+            });
+          }
+        }
+      } catch (e) { console.error('[BREAK-CRON] overstay shortage error:', e.message); }
     }
   }
 
@@ -94,6 +113,17 @@ async function runBreakCron() {
             }],
           });
           console.log(`[BREAK-CRON] Missed: ${worker?.fullName} ${breakType} break at ${branch.name}`);
+
+          // Create shortage deduction if configured
+          const amt = cfg.missedDeductionAmount || 0;
+          if (amt > 0 && worker) {
+            await createAttendanceShortage({
+              company: branch.company, worker, branchId: branch._id, branchName: branch.name,
+              amount: amt, source: 'manual', reason: 'other',
+              attendanceDate: new Date(dateStr + 'T00:00:00.000Z'),
+              notes: `Missed ${breakType} break (window: ${cfg.windowStart}–${cfg.windowEnd} UTC)`,
+            });
+          }
         } catch (e) {
           if (e.code !== 11000) console.error('[BREAK-CRON] missed creation error:', e.message);
         }
