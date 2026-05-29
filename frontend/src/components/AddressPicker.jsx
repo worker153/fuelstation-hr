@@ -29,6 +29,19 @@ const NIGERIA_CENTER = [9.082, 8.6753];
 const DEFAULT_ZOOM   = 6;
 const PINNED_ZOOM    = 17;
 
+// ── Detect "lat, lng" coordinate strings ─────────────────────────────────────
+function parseCoords(text) {
+  // Handles: "5.8820, 5.6819" | "5.8820 5.6819" | "5.8820,5.6819"
+  // Also handles DMS-like strings that still have decimal degrees
+  const clean = text.trim().replace(/[°NnSsEeWw]/g, '');
+  const m = clean.match(/^(-?\d{1,3}\.?\d*)\s*[,\s]\s*(-?\d{1,3}\.?\d*)$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
+  if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  return null;
+}
+
 // ── Build a short readable address from Nominatim result ─────────────────────
 function buildAddress(result) {
   const a = result.address || {};
@@ -138,6 +151,19 @@ export default function AddressPicker({
     clearTimeout(debounce.current);
     if (val.length >= 3) {
       debounce.current = setTimeout(async () => {
+        // If it looks like coordinates, use reverse geocode immediately
+        const coords = parseCoords(val);
+        if (coords) {
+          setSearching(true);
+          try {
+            const r = await nominatimReverse(coords.lat, coords.lng);
+            pin(coords.lat, coords.lng, buildAddress(r));
+            setSearchInput('');
+          } catch {
+            pin(coords.lat, coords.lng, `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
+          } finally { setSearching(false); }
+          return;
+        }
         setSearching(true);
         try { setSuggestions(await nominatimSearch(val)); }
         catch { setSuggestions([]); }
@@ -187,7 +213,7 @@ export default function AddressPicker({
     );
   };
 
-  // ── Plus Code → Generate address & pin ───────────────────────────────────
+  // ── Plus Code / Coordinates → Generate address & pin ────────────────────
   const handlePlusCodeGenerate = async () => {
     const code = plusCodeInput.trim();
     if (!code) return;
@@ -195,12 +221,24 @@ export default function AddressPicker({
     setPlusCodeError('');
 
     try {
-      // Full Plus Code (e.g. "6GCRMQPX+97") — decode directly with OLC library
+      // ① Raw coordinates like "5.8820, 5.6819" → reverse geocode directly
+      const coords = parseCoords(code);
+      if (coords) {
+        try {
+          const r = await nominatimReverse(coords.lat, coords.lng);
+          pin(coords.lat, coords.lng, buildAddress(r));
+        } catch {
+          pin(coords.lat, coords.lng, `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
+        }
+        setPlusCodeInput('');
+        return;
+      }
+
+      // ② Full Plus Code (e.g. "6GCRMQPX+97") → decode with OLC, then reverse geocode
       if (olc.isValid(code) && olc.isFull(code)) {
         const decoded = olc.decode(code);
         const lat = decoded.latitudeCenter;
         const lng = decoded.longitudeCenter;
-        // Reverse geocode to get a proper address string
         try {
           const r = await nominatimReverse(lat, lng);
           pin(lat, lng, buildAddress(r));
@@ -211,7 +249,7 @@ export default function AddressPicker({
         return;
       }
 
-      // Short Plus Code with city (e.g. "6F9G+VF Sapele") — use Nominatim
+      // ③ Short Plus Code with city (e.g. "6F9G+VF Sapele") → Nominatim search
       const results = await nominatimSearch(code);
       if (results.length) {
         const s = results[0];
@@ -221,7 +259,7 @@ export default function AddressPicker({
         setPlusCodeError(
           olc.isValid(code) && olc.isShort(code)
             ? 'Short code needs a city — e.g. "6F9G+VF Sapele"'
-            : 'Plus Code not found — check and try again'
+            : 'Not recognised — paste Google coordinates (5.88, 5.68), a full Plus Code, or a short code with city'
         );
       }
     } catch {
@@ -322,15 +360,15 @@ export default function AddressPicker({
       <div>
         <label className="label flex items-center gap-1.5">
           <Hash size={12} className="text-brand-500" />
-          Plus Code
-          <span className="text-gray-400 font-normal text-[11px]">— paste to pin the map & generate address</span>
+          Plus Code or Coordinates
+          <span className="text-gray-400 font-normal text-[11px]">— paste either to pin & generate address</span>
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             <input
               className={`input pl-8 text-sm font-mono ${plusCodeError ? 'border-red-300' : ''}`}
-              placeholder="e.g. 6GCRMQPX+97 or 6F9G+VF Sapele"
+              placeholder="5.8820, 5.6819  or  6GCRMQPX+97  or  6F9G+VF Sapele"
               value={plusCodeInput}
               onChange={e => { setPlusCodeInput(e.target.value); setPlusCodeError(''); }}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handlePlusCodeGenerate())}
