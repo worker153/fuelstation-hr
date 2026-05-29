@@ -54,4 +54,9 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+
+  // Start absence cron — runs daily at 01:00 UTC (02:00 WAT)
+  // Automatically deducts no-show workers; respects rotation schedules
+  const { startAbsenceCron } = require('./jobs/absenceCron');
+  startAbsenceCron();
 });
