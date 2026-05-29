@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Coffee, Clock, CheckCircle, AlertTriangle, XCircle,
          ChevronDown, ChevronUp, RefreshCw, CalendarDays,
          Building2, User, ChevronRight, AlertCircle } from 'lucide-react';
-import api from '../services/api';
+import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
 const TODAY = new Date().toISOString().split('T')[0];
