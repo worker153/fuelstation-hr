@@ -465,6 +465,11 @@ const workerDashboard = async (req, res) => {
   const totalDeducted = shortages.reduce((s, x) => s + x.amount, 0);
 
   // ── Payroll: base salary + any bonus/adjustments ────────────────────────────
+  let baseSalary = worker.salary?.monthly || 0;
+  let bonus      = 0;
+  let netPay     = null;
+
+  // Try current month payroll first
   const payroll = await Payroll.findOne({
     company:  worker.company,
     branchId: worker.branchId?._id || worker.branchId,
@@ -472,16 +477,26 @@ const workerDashboard = async (req, res) => {
     year:     yr,
   }).lean();
 
-  let baseSalary = worker.salary?.monthly || 0;
-  let bonus      = 0;
-  let netPay     = null;
-
   if (payroll) {
     const entry = payroll.entries?.find(e => String(e.worker) === String(worker._id));
     if (entry) {
-      baseSalary = entry.baseSalary ?? baseSalary;
+      // grossSalary is the base monthly salary in the Payroll model
+      baseSalary = entry.grossSalary ?? entry.baseSalary ?? baseSalary;
       bonus      = entry.bonus      ?? 0;
       netPay     = entry.netPay     ?? null;
+    }
+  }
+
+  // If still no baseSalary, look for most recent payroll entry for this worker
+  if (!baseSalary) {
+    const recentPayroll = await Payroll.findOne({
+      company:          worker.company,
+      'entries.worker': worker._id,
+    }).sort({ year: -1, month: -1 }).lean();
+
+    if (recentPayroll) {
+      const entry = recentPayroll.entries?.find(e => String(e.worker) === String(worker._id));
+      if (entry) baseSalary = entry.grossSalary ?? entry.baseSalary ?? 0;
     }
   }
 
