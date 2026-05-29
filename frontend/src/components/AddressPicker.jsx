@@ -1,17 +1,19 @@
 /**
  * AddressPicker — OpenStreetMap + Nominatim (free, no API key)
  *
- * • Type to search → dropdown suggestions
- * • Click map → address auto-generated instantly
- * • GPS button → centres on your current location
- * • Clean short address format extracted from geocoder
+ * • Search bar    → address suggestions with auto-pin
+ * • Plus Code box → type / paste a Plus Code → decode & pin map
+ * • Google Address→ editable textarea (auto-filled or type manually)
+ * • Click map     → auto-generate address & Plus Code
+ * • GPS button    → pin current location
+ * • Worker Address + Landmark — separate manual fields
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { OpenLocationCode } from 'open-location-code';
-import { Search, MapPin, Navigation, X, Loader, Hash, Landmark } from 'lucide-react';
+import { Search, MapPin, Navigation, X, Loader, Hash } from 'lucide-react';
 
 const olc = new OpenLocationCode();
 
@@ -36,7 +38,6 @@ function buildAddress(result) {
     a.city || a.town || a.municipality || a.county,
     a.state,
   ].filter(Boolean);
-  // Fall back to display_name trimmed if nothing useful
   return parts.length ? parts.join(', ') + ', Nigeria' : result.display_name;
 }
 
@@ -79,23 +80,31 @@ export default function AddressPicker({
   placeholder = 'Search street, area or city in Nigeria…',
   required,
 }) {
-  const [inputValue,    setInputValue]    = useState(value?.formatted     || '');
-  const [workerAddress, setWorkerAddress] = useState(value?.workerAddress || '');
-  const [landmark,      setLandmark]      = useState(value?.landmark      || '');
-  const [marker,      setMarker]      = useState(
+  // Google address (editable)
+  const [googleAddress,  setGoogleAddress]  = useState(value?.formatted     || '');
+  // Worker's own description
+  const [workerAddress,  setWorkerAddress]  = useState(value?.workerAddress || '');
+  // Nearest landmark
+  const [landmark,       setLandmark]       = useState(value?.landmark      || '');
+  // Map marker + plus code
+  const [marker,         setMarker]         = useState(
     value?.coordinates ? [value.coordinates.lat, value.coordinates.lng] : null
   );
-  const [plusCode,    setPlusCode]    = useState(
-    value?.coordinates
-      ? olc.encode(value.coordinates.lat, value.coordinates.lng, 10)
-      : ''
+  const [plusCode,       setPlusCode]       = useState(
+    value?.coordinates ? olc.encode(value.coordinates.lat, value.coordinates.lng, 10) : ''
   );
-  const [flyTarget,   setFlyTarget]   = useState(null);
-  const [suggestions, setSuggestions] = useState([]);
-  const [searching,   setSearching]   = useState(false);
-  const [reversing,   setReversing]   = useState(false);
-  const [gpsLoading,  setGpsLoading]  = useState(false);
-  const [gpsError,    setGpsError]    = useState('');
+  // Plus Code input field (separate from display)
+  const [plusCodeInput,  setPlusCodeInput]  = useState('');
+  const [plusCodeLoading,setPlusCodeLoading]= useState(false);
+  const [plusCodeError,  setPlusCodeError]  = useState('');
+  // Search bar
+  const [flyTarget,      setFlyTarget]      = useState(null);
+  const [suggestions,    setSuggestions]    = useState([]);
+  const [searching,      setSearching]      = useState(false);
+  const [reversing,      setReversing]      = useState(false);
+  const [gpsLoading,     setGpsLoading]     = useState(false);
+  const [gpsError,       setGpsError]       = useState('');
+  const [searchInput,    setSearchInput]    = useState('');
   const debounce = useRef(null);
 
   // ── emit to parent ────────────────────────────────────────────────────────
@@ -109,23 +118,23 @@ export default function AddressPicker({
     });
   }, [onChange, workerAddress, landmark]);  // eslint-disable-line
 
-  // ── pin a resolved location ───────────────────────────────────────────────
+  // ── pin a resolved location (from map click, GPS, or Plus Code) ───────────
   const pin = useCallback((lat, lng, address) => {
     const pos  = [lat, lng];
-    const code = olc.encode(lat, lng, 10);   // 10-digit = ~14×14 m accuracy
+    const code = olc.encode(lat, lng, 10);
     setMarker(pos);
     setPlusCode(code);
     setFlyTarget({ pos, zoom: PINNED_ZOOM });
-    setInputValue(address);
+    setGoogleAddress(address);
     setSuggestions([]);
+    setSearchInput('');
     emit(address, lat, lng, code, workerAddress, landmark);
   }, [emit, workerAddress, landmark]);  // eslint-disable-line
 
-  // ── search input changed ──────────────────────────────────────────────────
-  const handleInput = (e) => {
+  // ── Search bar ────────────────────────────────────────────────────────────
+  const handleSearchInput = (e) => {
     const val = e.target.value;
-    setInputValue(val);
-    emit(val, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, workerAddress, landmark);
+    setSearchInput(val);
     clearTimeout(debounce.current);
     if (val.length >= 3) {
       debounce.current = setTimeout(async () => {
@@ -143,7 +152,7 @@ export default function AddressPicker({
     pin(parseFloat(s.lat), parseFloat(s.lon), buildAddress(s));
   };
 
-  // ── map click → auto-generate address ────────────────────────────────────
+  // ── Map click → auto-generate address ────────────────────────────────────
   const handleMapClick = useCallback(async (lat, lng) => {
     setReversing(true);
     try {
@@ -158,10 +167,7 @@ export default function AddressPicker({
 
   // ── GPS ───────────────────────────────────────────────────────────────────
   const handleGPS = () => {
-    if (!navigator.geolocation) {
-      setGpsError('GPS not supported on this device');
-      return;
-    }
+    if (!navigator.geolocation) { setGpsError('GPS not supported on this device'); return; }
     setGpsLoading(true);
     setGpsError('');
     navigator.geolocation.getCurrentPosition(
@@ -171,24 +177,63 @@ export default function AddressPicker({
           pin(lat, lng, buildAddress(r));
         } catch {
           pin(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-        } finally {
-          setGpsLoading(false);
-        }
+        } finally { setGpsLoading(false); }
       },
       (err) => {
-        setGpsError(
-          err.code === 1
-            ? 'Allow location access in your browser settings'
-            : 'Could not get your location'
-        );
+        setGpsError(err.code === 1 ? 'Allow location access in your browser settings' : 'Could not get your location');
         setGpsLoading(false);
       },
       { timeout: 10000 }
     );
   };
 
+  // ── Plus Code → Generate address & pin ───────────────────────────────────
+  const handlePlusCodeGenerate = async () => {
+    const code = plusCodeInput.trim();
+    if (!code) return;
+    setPlusCodeLoading(true);
+    setPlusCodeError('');
+
+    try {
+      // Full Plus Code (e.g. "6GCRMQPX+97") — decode directly with OLC library
+      if (olc.isValid(code) && olc.isFull(code)) {
+        const decoded = olc.decode(code);
+        const lat = decoded.latitudeCenter;
+        const lng = decoded.longitudeCenter;
+        // Reverse geocode to get a proper address string
+        try {
+          const r = await nominatimReverse(lat, lng);
+          pin(lat, lng, buildAddress(r));
+        } catch {
+          pin(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }
+        setPlusCodeInput('');
+        return;
+      }
+
+      // Short Plus Code with city (e.g. "6F9G+VF Sapele") — use Nominatim
+      const results = await nominatimSearch(code);
+      if (results.length) {
+        const s = results[0];
+        pin(parseFloat(s.lat), parseFloat(s.lon), buildAddress(s));
+        setPlusCodeInput('');
+      } else {
+        setPlusCodeError(
+          olc.isValid(code) && olc.isShort(code)
+            ? 'Short code needs a city — e.g. "6F9G+VF Sapele"'
+            : 'Plus Code not found — check and try again'
+        );
+      }
+    } catch {
+      setPlusCodeError('Failed to decode — check your internet and try again');
+    } finally {
+      setPlusCodeLoading(false);
+    }
+  };
+
   const clearAll = () => {
-    setInputValue('');
+    setGoogleAddress('');
+    setSearchInput('');
     setMarker(null);
     setPlusCode('');
     setSuggestions([]);
@@ -196,54 +241,38 @@ export default function AddressPicker({
     emit('', null, null, '', workerAddress, landmark);
   };
 
-  // ── worker address / landmark changed ─────────────────────────────────────
-  const handleWorkerAddress = (val) => {
-    setWorkerAddress(val);
-    emit(inputValue, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, val, landmark);
-  };
-  const handleLandmark = (val) => {
-    setLandmark(val);
-    emit(inputValue, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, workerAddress, val);
+  const handleGoogleAddressChange = (val) => {
+    setGoogleAddress(val);
+    emit(val, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, workerAddress, landmark);
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {label && (
         <label className="label">
           {label}{required && <span className="text-red-500"> *</span>}
         </label>
       )}
 
-      {/* ── Search bar ── */}
+      {/* ── Search bar ─────────────────────────────────────────────────────── */}
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10" />
         <input
           className="input pl-9 pr-20"
           placeholder={placeholder}
-          value={inputValue}
-          onChange={handleInput}
-          required={required}
+          value={searchInput}
+          onChange={handleSearchInput}
           autoComplete="off"
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
-          {(searching || reversing) && (
-            <Loader size={13} className="text-gray-400 animate-spin" />
-          )}
-          <button
-            type="button"
-            onClick={handleGPS}
-            disabled={gpsLoading}
+          {(searching || reversing) && <Loader size={13} className="text-gray-400 animate-spin" />}
+          <button type="button" onClick={handleGPS} disabled={gpsLoading}
             title="Detect my current location"
-            className="p-1.5 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {gpsLoading
-              ? <Loader size={14} className="animate-spin" />
-              : <Navigation size={14} />
-            }
+            className="p-1.5 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors disabled:opacity-50">
+            {gpsLoading ? <Loader size={14} className="animate-spin" /> : <Navigation size={14} />}
           </button>
-          {inputValue && (
-            <button type="button" onClick={clearAll}
-              className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg">
+          {(googleAddress || searchInput) && (
+            <button type="button" onClick={clearAll} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg">
               <X size={14} />
             </button>
           )}
@@ -253,12 +282,8 @@ export default function AddressPicker({
         {suggestions.length > 0 && (
           <div className="absolute z-[9999] top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden max-h-64 overflow-y-auto">
             {suggestions.map((s, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => pickSuggestion(s)}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-2"
-              >
+              <button key={i} type="button" onClick={() => pickSuggestion(s)}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-2">
                 <MapPin size={13} className="text-brand-500 mt-0.5 shrink-0" />
                 <span className="line-clamp-2 text-gray-700">{buildAddress(s)}</span>
               </button>
@@ -267,18 +292,12 @@ export default function AddressPicker({
         )}
       </div>
 
-      {/* GPS error */}
       {gpsError && (
-        <p className="text-xs text-red-500 flex items-center gap-1">
-          <X size={11} /> {gpsError}
-        </p>
+        <p className="text-xs text-red-500 flex items-center gap-1"><X size={11} /> {gpsError}</p>
       )}
 
-      {/* ── Map ── */}
-      <div
-        className="rounded-xl overflow-hidden border border-gray-200 shadow-sm relative"
-        style={{ height: 300 }}
-      >
+      {/* ── Map ────────────────────────────────────────────────────────────── */}
+      <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm relative" style={{ height: 300 }}>
         {reversing && (
           <div className="absolute inset-0 z-[9998] flex items-center justify-center bg-white/60 rounded-xl">
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow border border-gray-100">
@@ -287,12 +306,8 @@ export default function AddressPicker({
             </div>
           </div>
         )}
-        <MapContainer
-          center={marker || NIGERIA_CENTER}
-          zoom={marker ? PINNED_ZOOM : DEFAULT_ZOOM}
-          style={{ height: '100%', width: '100%' }}
-          scrollWheelZoom
-        >
+        <MapContainer center={marker || NIGERIA_CENTER} zoom={marker ? PINNED_ZOOM : DEFAULT_ZOOM}
+          style={{ height: '100%', width: '100%' }} scrollWheelZoom>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -303,42 +318,76 @@ export default function AddressPicker({
         </MapContainer>
       </div>
 
-      {/* ── Google Address (auto-generated) ── */}
+      {/* ── Plus Code input ────────────────────────────────────────────────── */}
       <div>
         <label className="label flex items-center gap-1.5">
-          <MapPin size={12} className="text-brand-500" />
-          Google Address
-          <span className="text-gray-400 font-normal text-[11px]">(auto-generated from map)</span>
+          <Hash size={12} className="text-brand-500" />
+          Plus Code
+          <span className="text-gray-400 font-normal text-[11px]">— paste to pin the map & generate address</span>
         </label>
-        {marker ? (
-          <div className="rounded-xl border border-green-200 bg-green-50 overflow-hidden">
-            <div className="px-3 py-2.5 border-b border-green-100">
-              <p className="text-sm font-medium text-green-800 leading-snug">{inputValue}</p>
-            </div>
-            <div className="flex items-center gap-3 px-3 py-2 flex-wrap">
-              <span className="text-xs text-green-600 font-mono">
-                📍 {marker[0].toFixed(6)}, {marker[1].toFixed(6)}
-              </span>
-              {plusCode && (
-                <span className="flex items-center gap-1 bg-brand-600 text-white text-xs font-bold px-2.5 py-1 rounded-full tracking-wide">
-                  <Hash size={10} />
-                  {plusCode}
-                </span>
-              )}
-              <span className="text-xs text-green-500 ml-auto italic">tap map to move pin</span>
-            </div>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              className={`input pl-8 text-sm font-mono ${plusCodeError ? 'border-red-300' : ''}`}
+              placeholder="e.g. 6GCRMQPX+97 or 6F9G+VF Sapele"
+              value={plusCodeInput}
+              onChange={e => { setPlusCodeInput(e.target.value); setPlusCodeError(''); }}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handlePlusCodeGenerate())}
+            />
           </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-3">
-            <p className="text-xs text-gray-400 flex items-center gap-1.5">
-              <MapPin size={11} />
-              Search or tap the map above — address fills in automatically
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={handlePlusCodeGenerate}
+            disabled={!plusCodeInput.trim() || plusCodeLoading}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium
+                       hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
+            {plusCodeLoading
+              ? <Loader size={13} className="animate-spin" />
+              : <><MapPin size={13} /> Generate</>
+            }
+          </button>
+        </div>
+        {plusCodeError && (
+          <p className="text-xs text-red-500 mt-1 flex items-center gap-1">⚠ {plusCodeError}</p>
+        )}
+        {/* Show current auto-generated Plus Code badge when map is pinned */}
+        {plusCode && !plusCodeInput && (
+          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5">
+            Current:
+            <span className="inline-flex items-center gap-1 bg-brand-600 text-white text-xs font-bold px-2 py-0.5 rounded-full tracking-wide">
+              <Hash size={9} />{plusCode}
+            </span>
+          </p>
         )}
       </div>
 
-      {/* ── Worker's Own Address ── */}
+      {/* ── Google Address (editable) ──────────────────────────────────────── */}
+      <div>
+        <label className="label flex items-center gap-1.5">
+          <MapPin size={12} className="text-green-600" />
+          Google Address
+          <span className="text-gray-400 font-normal text-[11px]">— auto-filled from map or type manually</span>
+        </label>
+        <textarea
+          className="input resize-none text-sm"
+          rows={2}
+          placeholder="Auto-filled when you tap the map or search — or type / paste the address"
+          value={googleAddress}
+          onChange={e => handleGoogleAddressChange(e.target.value)}
+          required={required}
+        />
+        {marker && (
+          <p className="text-xs text-green-600 font-mono mt-1 flex items-center gap-1.5">
+            <MapPin size={10} />
+            {marker[0].toFixed(6)}, {marker[1].toFixed(6)}
+            <span className="text-gray-300 mx-1">·</span>
+            <span className="text-gray-400 italic">tap map to move pin</span>
+          </p>
+        )}
+      </div>
+
+      {/* ── Worker's Own Address ───────────────────────────────────────────── */}
       <div>
         <label className="label flex items-center gap-1.5">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -349,11 +398,14 @@ export default function AddressPicker({
           rows={2}
           placeholder="e.g. 30 Aganmonyi street, off Godwill road, near Unity Bank…"
           value={workerAddress}
-          onChange={e => handleWorkerAddress(e.target.value)}
+          onChange={e => {
+            setWorkerAddress(e.target.value);
+            emit(googleAddress, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, e.target.value, landmark);
+          }}
         />
       </div>
 
-      {/* ── Nearest Landmark ── */}
+      {/* ── Nearest Landmark ───────────────────────────────────────────────── */}
       <div>
         <label className="label flex items-center gap-1.5">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-500" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
@@ -363,7 +415,10 @@ export default function AddressPicker({
           className="input text-sm"
           placeholder="e.g. Behind First Bank, near Total filling station…"
           value={landmark}
-          onChange={e => handleLandmark(e.target.value)}
+          onChange={e => {
+            setLandmark(e.target.value);
+            emit(googleAddress, marker?.[0] ?? null, marker?.[1] ?? null, plusCode, workerAddress, e.target.value);
+          }}
         />
       </div>
     </div>
