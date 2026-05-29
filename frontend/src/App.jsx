@@ -19,6 +19,7 @@ import WorkerPrint        from './pages/WorkerPrint';
 import Payroll            from './pages/Payroll';
 import Shortages           from './pages/Shortages';
 import WorkerShortage      from './pages/WorkerShortage';
+import WorkerDashboard     from './pages/WorkerDashboard';
 import AttendanceDevices   from './pages/AttendanceDevices';
 import AttendanceTerminal  from './pages/AttendanceTerminal';
 import WorkerPins          from './pages/WorkerPins';
@@ -58,7 +59,8 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-            <Route path="/shortage"  element={<WorkerShortage />} />
+            <Route path="/shortage"        element={<WorkerShortage />} />
+            <Route path="/my-dashboard"    element={<WorkerDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />
             <Route path="/my-pin"   element={<WorkerPinReset />} />
 

@@ -421,8 +421,124 @@ const workerPinLookup = async (req, res) => {
   res.json({ success: true, data: result });
 };
 
+// ─── GET /api/shortages/worker/dashboard?pin=xxxx&month=5&year=2026 ──────────
+// Public — worker enters PIN, sees their attendance + salary summary
+const Attendance = require('../models/Attendance');
+
+const workerDashboard = async (req, res) => {
+  const { pin, month, year } = req.query;
+  if (!pin) return res.status(400).json({ success: false, message: 'PIN required' });
+
+  const worker = await Worker.findOne({ pin: String(pin).trim() })
+    .populate('branchId', 'name attendanceRules attendanceSettings')
+    .lean();
+
+  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN' });
+  if (worker.employmentStatus !== 'active')
+    return res.status(400).json({ success: false, message: 'Account is not active' });
+
+  const now = new Date();
+  const mo  = Number(month) || (now.getMonth() + 1);
+  const yr  = Number(year)  || now.getFullYear();
+
+  // ── Attendance: count days present + clock-in records ───────────────────────
+  const datePrefix = `${yr}-${String(mo).padStart(2,'0')}-`;
+  const attRecords = await Attendance.find({
+    company: worker.company,
+    worker:  worker._id,
+    type:    'clock_in',
+    date:    { $regex: `^${datePrefix}` },
+  }).select('date timestamp').lean();
+
+  const uniqueDays   = new Set(attRecords.map(r => r.date));
+  const daysPresent  = uniqueDays.size;
+
+  // ── Shortages this month ────────────────────────────────────────────────────
+  const shortages = await Shortage.find({
+    company: worker.company,
+    worker:  worker._id,
+    month:   mo,
+    year:    yr,
+    status:  'approved',
+  }).select('amount source reason notes date createdAt').sort({ createdAt: -1 }).lean();
+
+  const totalDeducted = shortages.reduce((s, x) => s + x.amount, 0);
+
+  // ── Payroll: base salary + any bonus/adjustments ────────────────────────────
+  const payroll = await Payroll.findOne({
+    company:  worker.company,
+    branchId: worker.branchId?._id || worker.branchId,
+    month:    mo,
+    year:     yr,
+  }).lean();
+
+  let baseSalary = worker.salary?.monthly || 0;
+  let bonus      = 0;
+  let netPay     = null;
+
+  if (payroll) {
+    const entry = payroll.entries?.find(e => String(e.worker) === String(worker._id));
+    if (entry) {
+      baseSalary = entry.baseSalary ?? baseSalary;
+      bonus      = entry.bonus      ?? 0;
+      netPay     = entry.netPay     ?? null;
+    }
+  }
+
+  const expectedPay = netPay !== null ? netPay : Math.max(0, baseSalary + bonus - totalDeducted);
+
+  // ── Count absence types from shortages ─────────────────────────────────────
+  const lateDays      = shortages.filter(s => s.source === 'late_arrival').length;
+  const absentDays    = shortages.filter(s => s.source === 'absent').length;
+  const noShowDays    = shortages.filter(s => s.source === 'no_clockin').length;
+  const earlyExitDays = shortages.filter(s => s.source === 'early_departure').length;
+
+  // Label map for shortage sources
+  const SOURCE_LABELS = {
+    late_arrival:    'Late Arrival',
+    absent:          'Late But Absent',
+    no_clockin:      'Did Not Come In',
+    early_departure: 'Left Early',
+    penalty:         'Penalty',
+    manual:          'Other Deduction',
+  };
+
+  res.json({
+    success: true,
+    data: {
+      worker: {
+        fullName:   worker.fullName,
+        role:       worker.role,
+        branchName: worker.branchId?.name || worker.branch || '',
+        photo:      worker.passportPhoto?.url || null,
+      },
+      period:   { month: mo, year: yr },
+      attendance: {
+        daysPresent,
+        lateDays,
+        absentDays,
+        noShowDays,
+        earlyExitDays,
+      },
+      salary: {
+        baseSalary,
+        bonus,
+        totalDeducted,
+        expectedPay,
+      },
+      shortages: shortages.map(s => ({
+        _id:    s._id,
+        amount: s.amount,
+        label:  SOURCE_LABELS[s.source] || 'Deduction',
+        notes:  s.notes,
+        date:   s.date || s.createdAt,
+      })),
+    },
+  });
+};
+
 module.exports = {
   submitShortage, getShortages, approveShortage, rejectShortage,
   deleteShortage, getShortagesSummary, workerPinSubmit, workerPinLookup,
-  createAttendanceShortage,
+  createAttendanceShortage, workerDashboard,
 };

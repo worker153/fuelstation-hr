@@ -6,12 +6,13 @@ const {
   submitShortage, getShortages,
   approveShortage, rejectShortage,
   deleteShortage, getShortagesSummary,
-  workerPinSubmit, workerPinLookup
+  workerPinSubmit, workerPinLookup, workerDashboard
 } = require('../controllers/shortageController');
 
 // ── Public routes (no auth — worker PIN self-service) ─────────────────────────
-router.get('/worker/lookup', workerPinLookup);
-router.post('/worker',       workerPinSubmit);
+router.get('/worker/lookup',    workerPinLookup);
+router.get('/worker/dashboard', workerDashboard);
+router.post('/worker',          workerPinSubmit);
 
 // ── Protected routes ──────────────────────────────────────────────────────────
 router.use(protect);
