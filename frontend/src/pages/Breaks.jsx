@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Coffee, Clock, CheckCircle, AlertTriangle, XCircle,
          ChevronDown, ChevronUp, RefreshCw, CalendarDays,
          Building2, User, ChevronRight, AlertCircle,
-         Settings, X, Save, Loader, ToggleLeft, ToggleRight,
-         Info } from 'lucide-react';
+         Settings, X, Save, Loader, ToggleLeft, ToggleRight } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -161,6 +160,19 @@ function WorkerRow({ workerBreaks }) {
   );
 }
 
+// ── Time helpers: WAT ↔ UTC (WAT = UTC+1) ────────────────────────────────────
+// Backend stores UTC; UI shows Nigerian time only
+function utcToWat(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+function watToUtc(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${String((h + 23) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 // ── Break Settings Modal ───────────────────────────────────────────────────────
 const BREAK_TYPES = [
   { key: 'morning',   label: 'Morning Break',   emoji: '🌅', defaultMins: 5  },
@@ -169,20 +181,26 @@ const BREAK_TYPES = [
 ];
 
 function BreakSettingsModal({ branch, onClose, onSaved }) {
-  const [form,    setForm   ] = useState(null);
-  const [saving,  setSaving ] = useState(false);
-  const [err,     setErr    ] = useState('');
+  const [form,   setForm  ] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr   ] = useState('');
 
-  // Initialise form from branch
+  // Load branch settings — convert stored UTC times → WAT for display
   useEffect(() => {
     const bs = branch.breakSettings || {};
-    const defaults = { morning: {}, afternoon: {}, night: {} };
-    const base = {
-      morning:   { enabled: true, allowedMinutes: 5,  windowStart: '07:00', windowEnd: '09:30', overstayDeductionAmount: 0, missedDeductionAmount: 0, ...defaults.morning,   ...(bs.morning   || {}) },
-      afternoon: { enabled: true, allowedMinutes: 10, windowStart: '12:00', windowEnd: '14:00', overstayDeductionAmount: 0, missedDeductionAmount: 0, ...defaults.afternoon, ...(bs.afternoon || {}) },
-      night:     { enabled: true, allowedMinutes: 5,  windowStart: '19:00', windowEnd: '21:00', overstayDeductionAmount: 0, missedDeductionAmount: 0, ...defaults.night,     ...(bs.night     || {}) },
-    };
-    setForm(base);
+    const init = (stored, defStart, defEnd, defMins) => ({
+      enabled:                 stored?.enabled                 ?? true,
+      allowedMinutes:          stored?.allowedMinutes          ?? defMins,
+      windowStart:             utcToWat(stored?.windowStart    || defStart),
+      windowEnd:               utcToWat(stored?.windowEnd      || defEnd),
+      overstayDeductionAmount: stored?.overstayDeductionAmount ?? 0,
+      missedDeductionAmount:   stored?.missedDeductionAmount   ?? 0,
+    });
+    setForm({
+      morning:   init(bs.morning,   '07:00', '09:30', 5 ),   // shows 08:00–10:30 WAT
+      afternoon: init(bs.afternoon, '12:00', '14:00', 10),   // shows 13:00–15:00 WAT
+      night:     init(bs.night,     '19:00', '21:00', 5 ),   // shows 20:00–22:00 WAT
+    });
   }, [branch]);
 
   const set = (type, field, val) => setForm(f => ({
@@ -192,8 +210,17 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
   const save = async () => {
     setSaving(true); setErr('');
     try {
-      await api.put(`/branches/${branch._id}`, { breakSettings: form });
-      onSaved(form);
+      // Convert WAT times back → UTC before sending to backend
+      const payload = {};
+      for (const key of ['morning', 'afternoon', 'night']) {
+        payload[key] = {
+          ...form[key],
+          windowStart: watToUtc(form[key].windowStart),
+          windowEnd:   watToUtc(form[key].windowEnd),
+        };
+      }
+      await api.put(`/branches/${branch._id}`, { breakSettings: payload });
+      onSaved(payload);
     } catch (e) {
       setErr(e.response?.data?.message || 'Save failed');
     } finally { setSaving(false); }
@@ -210,17 +237,11 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
             <h2 className="font-bold text-gray-900 text-lg flex items-center gap-2">
               <Settings size={18} className="text-brand-600" /> Break Settings
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">{branch.name}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{branch.name} · All times in Nigerian Time (WAT)</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
             <X size={18} className="text-gray-500" />
           </button>
-        </div>
-
-        {/* Note about UTC */}
-        <div className="mx-6 mt-4 flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-          <Info size={13} className="shrink-0 mt-0.5" />
-          <span>Times are in <strong>UTC</strong>. Nigeria (WAT) = UTC+1 — enter 1 hour earlier. e.g. 8:00 AM WAT → enter 07:00</span>
         </div>
 
         {/* Break rows */}
@@ -255,14 +276,14 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-brand-400" />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">Window Start (UTC)</label>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">Start Time</label>
                         <input type="time"
                           value={v.windowStart}
                           onChange={e => set(key, 'windowStart', e.target.value)}
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">Window End (UTC)</label>
+                        <label className="text-xs font-semibold text-gray-500 block mb-1">End Time</label>
                         <input type="time"
                           value={v.windowEnd}
                           onChange={e => set(key, 'windowEnd', e.target.value)}
@@ -292,15 +313,9 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
                       </div>
                     </div>
 
-                    {/* WAT preview */}
-                    <p className="text-[11px] text-brand-600 bg-brand-50 rounded-lg px-3 py-1.5">
-                      ⏰ WAT: {v.windowStart ? (() => {
-                        const [h,m] = v.windowStart.split(':').map(Number);
-                        return `${String((h+1)%24).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-                      })() : '--:--'} – {v.windowEnd ? (() => {
-                        const [h,m] = v.windowEnd.split(':').map(Number);
-                        return `${String((h+1)%24).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-                      })() : '--:--'} · {v.allowedMinutes} min allowed
+                    {/* Summary line */}
+                    <p className="text-[11px] text-brand-700 bg-brand-50 rounded-lg px-3 py-1.5 font-medium">
+                      ⏰ {v.windowStart || '--:--'} – {v.windowEnd || '--:--'} · {v.allowedMinutes} min
                     </p>
                   </>
                 )}
@@ -310,7 +325,7 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        {err && <p className="mx-6 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{err}</p>}
+        {err && <p className="mx-6 mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{err}</p>}
         <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
           <button onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50">
