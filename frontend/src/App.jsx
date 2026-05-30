@@ -36,12 +36,11 @@ function PrivateRoute({ children }) {
     </div>
   );
   if (!user) {
-    // Save intended URL in sessionStorage — survives PWA/home-screen cold opens
     const dest = location.pathname + location.search;
-    if (dest !== '/' && dest !== '/login') {
-      sessionStorage.setItem('loginRedirect', dest);
-    }
-    return <Navigate to="/login" replace />;
+    const to = (dest && dest !== '/' && dest !== '/login')
+      ? `/login?redirect=${encodeURIComponent(dest)}`
+      : '/login';
+    return <Navigate to={to} replace />;
   }
   return children;
 }
