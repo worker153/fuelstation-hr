@@ -287,23 +287,24 @@ export default function Shortages() {
       if (filterStatus && filterStatus !== 'all') params.set('status', filterStatus);
       if (filterMonth)  params.set('month', filterMonth);
       if (filterYear)   params.set('year',  filterYear);
-
-      // Build worker query — pass supervisor's branch/shift explicitly as extra guard
-      const wParams = new URLSearchParams({ limit: 500 });
-      if (!isAdmin && user?.branchId) wParams.set('branchId', user.branchId);
-      if (!isAdmin && user?.shiftId)  wParams.set('shiftId',  user.shiftId);
-
-      const [sRes, wRes] = await Promise.all([
-        api.get(`/shortages?${params}`),
-        canSubmit ? api.get(`/workers/active-workers?${wParams}`) : Promise.resolve({ data: { data: [] } })
-      ]);
-      setShortages(sRes.data.data);
-      setWorkers(wRes.data.data || []);
+      const { data } = await api.get(`/shortages?${params}`);
+      setShortages(data.data);
     } catch { notify('Failed to load shortages', 'error'); }
     finally { setLoading(false); }
   }, [filterStatus, filterMonth, filterYear]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load workers separately so auth timing doesn't block the list
+  useEffect(() => {
+    if (!canSubmit) return;
+    const wParams = new URLSearchParams({ limit: 500, status: 'active' });
+    if (!isAdmin && user?.branchId) wParams.set('branchId', String(user.branchId?._id || user.branchId));
+    if (!isAdmin && user?.shiftId)  wParams.set('shiftId',  String(user.shiftId?._id  || user.shiftId));
+    api.get(`/workers/active-workers?${wParams}`)
+      .then(r => setWorkers(r.data.data || []))
+      .catch(() => {});
+  }, [canSubmit, isAdmin, user?.branchId, user?.shiftId]);
 
   const handleApprove = async (id) => {
     try {
