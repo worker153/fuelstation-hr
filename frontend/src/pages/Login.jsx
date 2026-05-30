@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Leaf, Eye, EyeOff, CheckCircle, Users, BarChart3, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotify } from '../context/NotificationContext';
@@ -18,9 +18,6 @@ export default function Login() {
   const { login }             = useAuth();
   const notify                = useNotify();
   const navigate              = useNavigate();
-  const location              = useLocation();
-  // If redirected from a protected page, go back there after login
-  const from = location.state?.from || '/dashboard';
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -29,7 +26,10 @@ export default function Login() {
     setLoading(true);
     try {
       await login(form.email, form.password);
-      navigate(from, { replace: true });
+      // Retrieve saved destination (set by PrivateRoute when redirecting to login)
+      const dest = sessionStorage.getItem('loginRedirect') || '/dashboard';
+      sessionStorage.removeItem('loginRedirect');
+      navigate(dest, { replace: true });
     } catch (err) {
       notify(err.response?.data?.message || 'Login failed. Check your credentials.', 'error');
     } finally {

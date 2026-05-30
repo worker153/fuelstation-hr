@@ -35,8 +35,15 @@ function PrivateRoute({ children }) {
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
     </div>
   );
-  // Pass current path as `from` so login can redirect back after sign-in
-  return user ? children : <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
+  if (!user) {
+    // Save intended URL in sessionStorage — survives PWA/home-screen cold opens
+    const dest = location.pathname + location.search;
+    if (dest !== '/' && dest !== '/login') {
+      sessionStorage.setItem('loginRedirect', dest);
+    }
+    return <Navigate to="/login" replace />;
+  }
+  return children;
 }
 
 function PublicRoute({ children }) {
