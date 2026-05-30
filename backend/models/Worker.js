@@ -158,7 +158,9 @@ const workerSchema = new mongoose.Schema({
 
   addedBy:      { type: ObjectId, ref: 'User' },
   registeredAt: { type: Date },  // override for the displayed "Registered" date (editable by super admin)
-  pin:          { type: String, trim: true },  // 4-digit PIN for self-service shortage entry
+  pin:              { type: String, trim: true },  // 4-digit PIN for self-service shortage entry
+  pinSelfReset:     { type: Boolean, default: false }, // true when worker self-reset via /my-pin
+  pinSelfResetAt:   { type: Date },
 
   // Face biometric — 128-float descriptor from face-api.js, registered on terminal first login
   faceDescriptor:    { type: [Number], default: undefined },

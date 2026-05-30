@@ -815,7 +815,9 @@ const selfResetPin = async (req, res) => {
   if (conflict)
     return res.status(400).json({ success: false, message: 'That PIN is already in use — choose a different one' });
 
-  worker.pin = String(newPin);
+  worker.pin           = String(newPin);
+  worker.pinSelfReset  = true;
+  worker.pinSelfResetAt = new Date();
   await worker.save();
 
   res.json({
@@ -928,7 +930,7 @@ const updateWorkerPin = async (req, res) => {
 
   const worker = await Worker.findOneAndUpdate(
     { _id: req.params.id, company: req.user.company._id },
-    { pin: String(pin) },
+    { pin: String(pin), pinSelfReset: false, pinSelfResetAt: null },
     { new: true }
   );
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });

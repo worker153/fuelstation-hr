@@ -246,7 +246,8 @@ export default function WorkerPins() {
   };
 
   const pinUpdated = (id, pin) => {
-    setWorkers(prev => prev.map(w => w._id === id ? { ...w, pin } : w));
+    // When admin sets/changes PIN, clear the self-reset badge
+    setWorkers(prev => prev.map(w => w._id === id ? { ...w, pin, pinSelfReset: false, pinSelfResetAt: null } : w));
     setEditWorker(null);
   };
 
@@ -373,10 +374,22 @@ export default function WorkerPins() {
                       : <div className="w-9 h-9 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm shrink-0">{w.fullName[0]}</div>
                     }
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{w.fullName}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{w.fullName}</p>
+                        {w.pinSelfReset && (
+                          <span className="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full font-medium shrink-0 whitespace-nowrap">
+                            🔄 Self Reset
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-400 truncate">
                         {w.role}
                         {w.branchId?.name && <span className="ml-1.5 flex-inline items-center gap-0.5"><Building2 size={9} className="inline" /> {w.branchId.name}</span>}
+                        {w.pinSelfResetAt && (
+                          <span className="ml-1.5 text-blue-400">
+                            · changed {new Date(w.pinSelfResetAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
