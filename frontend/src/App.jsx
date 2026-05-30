@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import Layout             from './components/Layout';
@@ -29,12 +29,14 @@ import Breaks             from './pages/Breaks';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
     </div>
   );
-  return user ? children : <Navigate to="/login" replace />;
+  // Pass current path as `from` so login can redirect back after sign-in
+  return user ? children : <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
 }
 
 function PublicRoute({ children }) {
