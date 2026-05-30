@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   AlertTriangle, Plus, Check, X, Clock, CheckCircle, XCircle,
   ChevronDown, Building2, Users, Loader, Trash2, ReceiptText,
-  DollarSign, Filter
+  DollarSign, Filter, Search
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -63,15 +63,25 @@ const StatusBadge = ({ status }) => {
 function SubmitModal({ workers, onClose, onSubmitted }) {
   const notify = useNotify();
   const now    = new Date();
-  const [workerId, setWorkerId] = useState('');
-  const [month,    setMonth   ] = useState(now.getMonth() + 1);
-  const [year,     setYear    ] = useState(now.getFullYear());
-  const [date,     setDate    ] = useState(now.toISOString().split('T')[0]);
-  const [amount,   setAmount  ] = useState('');
-  const [reason,   setReason  ] = useState('cash_shortage');
-  const [notes,    setNotes   ] = useState('');
-  const [loading,  setLoading ] = useState(false);
+  const [workerId,    setWorkerId   ] = useState('');
+  const [workerSearch,setWorkerSearch] = useState('');
+  const [month,       setMonth      ] = useState(now.getMonth() + 1);
+  const [year,        setYear       ] = useState(now.getFullYear());
+  const [date,        setDate       ] = useState(now.toISOString().split('T')[0]);
+  const [amount,      setAmount     ] = useState('');
+  const [reason,      setReason     ] = useState('cash_shortage');
+  const [notes,       setNotes      ] = useState('');
+  const [loading,     setLoading    ] = useState(false);
   const years = Array.from({ length: 3 }, (_, i) => now.getFullYear() - i);
+
+  // Filter workers by search text
+  const filteredWorkers = workerSearch.trim()
+    ? workers.filter(w =>
+        `${w.fullName} ${w.role}`.toLowerCase().includes(workerSearch.toLowerCase())
+      )
+    : workers;
+
+  const selectedWorker = workers.find(w => w._id === workerId);
 
   const submit = async e => {
     e.preventDefault();
@@ -89,8 +99,8 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
               <AlertTriangle size={15} className="text-red-600" />
@@ -100,15 +110,56 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
 
-        <form onSubmit={submit} className="px-5 py-5 space-y-4">
+        <form onSubmit={submit} className="px-5 py-5 space-y-4 overflow-y-auto flex-1">
+          {/* Worker search + select */}
           <div>
             <label className="label">Worker *</label>
-            <select className="input" value={workerId} onChange={e => setWorkerId(e.target.value)} required>
-              <option value="">— Select worker —</option>
-              {workers.map(w => (
-                <option key={w._id} value={w._id}>{w.fullName} ({w.role})</option>
-              ))}
-            </select>
+            {/* Search box */}
+            <div className="relative mb-1.5">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                className="input pl-8"
+                placeholder="Search by name or role…"
+                value={workerSearch}
+                onChange={e => { setWorkerSearch(e.target.value); setWorkerId(''); }}
+              />
+              {workerSearch && (
+                <button type="button" onClick={() => setWorkerSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            {/* Filtered list — shown as scrollable list when searching, else dropdown */}
+            {workerSearch ? (
+              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-44 overflow-y-auto">
+                {filteredWorkers.length === 0 ? (
+                  <p className="text-center text-gray-400 text-sm py-3">No workers found</p>
+                ) : filteredWorkers.map(w => (
+                  <button key={w._id} type="button"
+                    onClick={() => { setWorkerId(w._id); setWorkerSearch(''); }}
+                    className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors
+                      ${workerId === w._id ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-800'}`}>
+                    {w.fullName}
+                    <span className="text-xs text-gray-400 ml-1">· {w.role}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <select className="input" value={workerId} onChange={e => setWorkerId(e.target.value)} required>
+                <option value="">— Select worker —</option>
+                {workers.map(w => (
+                  <option key={w._id} value={w._id}>{w.fullName} ({w.role})</option>
+                ))}
+              </select>
+            )}
+            {/* Show selected worker name when search cleared */}
+            {selectedWorker && !workerSearch && (
+              <p className="text-xs text-green-600 font-semibold mt-1 pl-1">
+                ✓ {selectedWorker.fullName}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -238,7 +289,7 @@ export default function Shortages() {
       if (filterYear)   params.set('year',  filterYear);
 
       // Build worker query — pass supervisor's branch/shift explicitly as extra guard
-      const wParams = new URLSearchParams();
+      const wParams = new URLSearchParams({ limit: 500 });
       if (!isAdmin && user?.branchId) wParams.set('branchId', user.branchId);
       if (!isAdmin && user?.shiftId)  wParams.set('shiftId',  user.shiftId);
 
