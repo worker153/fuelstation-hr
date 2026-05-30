@@ -26,6 +26,7 @@ const ALL_PERMISSIONS = [
   { key: 'manageStaff',      label: 'Manage Staff',       desc: 'Can view staff list' },
   { key: 'approveWorkers',   label: 'Approve Workers',    desc: 'Can approve verifications' },
   { key: 'submitShortages',  label: 'Submit Shortages',   desc: 'Can report worker shortages for approval' },
+  { key: 'bookOffences',     label: 'Book Offences',      desc: 'Can record disciplinary offences against workers' },
   { key: 'viewOwnShift',    label: 'View Own Shift Only', desc: 'Restricts worker view to their assigned shift only' },
 ];
 

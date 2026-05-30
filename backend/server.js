@@ -16,6 +16,7 @@ const shortageRoutes   = require('./routes/shortages');
 const deviceRoutes     = require('./routes/devices');
 const attendanceRoutes = require('./routes/attendance');
 const breakRoutes      = require('./routes/breaks');
+const offenceRoutes    = require('./routes/offences');
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use('/api/shortages',  shortageRoutes);
 app.use('/api/devices',    deviceRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/breaks',     breakRoutes);
+app.use('/api/offences',   offenceRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });

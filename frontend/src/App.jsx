@@ -27,6 +27,7 @@ import WorkerPinReset     from './pages/WorkerPinReset';
 import Attendance         from './pages/Attendance';
 import Breaks             from './pages/Breaks';
 import StaffPolicy        from './pages/StaffPolicy';
+import Offences           from './pages/Offences';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="/shortages"     element={<Shortages />} />
               <Route path="/attendance"    element={<Attendance />} />
               <Route path="/breaks"        element={<Breaks />} />
+              <Route path="/offences"      element={<Offences />} />
 
               <Route path="/workers/new"                                    element={<WorkerForm />} />
               <Route path="/workers/:id"                                    element={<WorkerDetail />} />
