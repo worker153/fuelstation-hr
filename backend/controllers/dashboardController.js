@@ -35,7 +35,7 @@ function isOnRotation(pattern, startDate, checkDate) {
 //   'off'  = worker is on a scheduled day off
 //   'skip' = clockInRequired=false (salary/no-attendance workers)
 function workerDutyStatus(worker, shift, dateUTC) {
-  // Salary workers — never shown in attendance
+  // Salary / no-clock-in workers — never shown in attendance
   if (worker.clockInRequired === false) return 'skip';
 
   // No shift assigned → assume they work every day
@@ -44,27 +44,36 @@ function workerDutyStatus(worker, shift, dateUTC) {
   const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const dayName   = DAY_NAMES[dateUTC.getUTCDay()];
 
+  // ── Fixed shift ──────────────────────────────────────────────────────────
   if (shift.shiftType === 'fixed') {
     const workDays = shift.days || [];
-    if (workDays.length === 0) return 'on';        // no restriction → every day
+    // Default = all 7 days → treat as "every day" only if it literally has all 7
+    // If it has fewer than 7 days, respect the configuration
+    if (workDays.length === 0 || workDays.length === 7) return 'on';
     return workDays.includes(dayName) ? 'on' : 'off';
   }
 
+  // ── Rotation shift ───────────────────────────────────────────────────────
   if (shift.shiftType === 'rotation') {
-    // Worker-level rotation schedule takes priority
+    // 1. Worker-level rotation schedule takes priority
     const rp = worker.rotationSchedule?.pattern || 'none';
     const sd = worker.rotationSchedule?.startDate;
     if (rp !== 'none' && sd) {
       return isOnRotation(rp, new Date(sd), dateUTC) ? 'on' : 'off';
     }
-    // Fall back to shift pattern with worker's resumptionDate (or rotationSchedule.startDate) as anchor
-    const sp     = shift.rotationPattern;
-    const anchor = worker.rotationSchedule?.startDate || worker.resumptionDate;
+
+    // 2. Shift-level pattern + best available anchor
+    const sp = shift.rotationPattern;
+    const anchor = worker.rotationSchedule?.startDate
+                || worker.resumptionDate
+                || worker.activatedAt;   // last-resort: date worker was activated
     if (sp && sp !== 'custom' && anchor) {
       return isOnRotation(sp, new Date(anchor), dateUTC) ? 'on' : 'off';
     }
-    // Cannot determine — include as on-duty (safer than hiding someone)
-    return 'on';
+
+    // 3. No anchor at all — cannot calculate rotation
+    //    Return 'off' (conservative: do NOT falsely mark as absent)
+    return 'off';
   }
 
   return 'on';
@@ -244,7 +253,7 @@ const getAdminSummary = async (req, res) => {
 
     // Populate shift for grouping
     Worker.find({ company: cid, employmentStatus: 'active' })
-          .select('_id fullName role branchId shiftId clockInRequired rotationSchedule resumptionDate')
+          .select('_id fullName role branchId shiftId clockInRequired rotationSchedule resumptionDate activatedAt')
           .populate('shiftId', '_id name startTime endTime shiftType days rotationPattern')
           .lean(),
 
