@@ -1,8 +1,14 @@
 /**
  * AdminDashboard — /admin-dashboard
  * Simple, icon-heavy, mobile-first dashboard for admins/supervisors.
- * Accessed via PIN login at /admin/:userId — no email/password needed.
- * Reads token from sessionStorage.adminToken.
+ * PIN-login only. Token stored in sessionStorage.adminToken.
+ *
+ * Features:
+ *  - Browse any past date (← / Today / →)
+ *  - Staff tab: per-shift groups with ✅ All Present badge
+ *  - Shortage tab: day view + full month history grouped by date
+ *  - Bookings tab: day view + full month history grouped by date
+ *  - Add tab: quick Record Shortage + Book Offence forms
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -10,13 +16,40 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL || '/api';
 
-// ── axios instance using sessionStorage token ─────────────────────────────────
+// Axios instance using sessionStorage token
 const adminApi = axios.create({ baseURL: API });
 adminApi.interceptors.request.use(cfg => {
   const t = sessionStorage.getItem('adminToken');
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
   return cfg;
 });
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+const todayUTC = () => new Date().toISOString().slice(0, 10);
+
+const addDays = (dateStr, n) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+};
+
+const fmtDateLabel = (dateStr) => {
+  const today = todayUTC();
+  if (dateStr === today) return 'Today';
+  if (dateStr === addDays(today, -1)) return 'Yesterday';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const days  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dt    = new Date(Date.UTC(y, m - 1, d));
+  return `${days[dt.getUTCDay()]} ${d} ${names[m-1]}`;
+};
+
+const fmtTime = (ts) => {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const roleLabel = (r) => (r || '').replace(/_/g, ' ');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const REASON_OPTIONS = [
@@ -30,20 +63,20 @@ const REASON_OPTIONS = [
 ];
 
 const OFFENCE_OPTIONS = [
-  { value: 'late_arrival',          icon: '🕐', label: 'Late Arrival'    },
-  { value: 'absent_without_notice', icon: '🚫', label: 'Absent'          },
-  { value: 'mobile_phone_misuse',   icon: '📵', label: 'Phone Misuse'    },
-  { value: 'rude_to_customer',      icon: '😤', label: 'Rude to Customer'},
-  { value: 'cash_shortage',         icon: '💵', label: 'Cash Shortage'   },
-  { value: 'fuel_shortage',         icon: '⛽', label: 'Fuel Shortage'   },
-  { value: 'improper_uniform',      icon: '👕', label: 'Bad Uniform'     },
-  { value: 'negligence',            icon: '😴', label: 'Negligence'      },
-  { value: 'sleeping_on_duty',      icon: '💤', label: 'Sleeping'        },
-  { value: 'abandoning_post',       icon: '🏃', label: 'Left Post'       },
-  { value: 'fighting_misconduct',   icon: '👊', label: 'Fighting'        },
-  { value: 'damage_to_property',    icon: '💥', label: 'Damage'          },
-  { value: 'theft_fraud',           icon: '🚨', label: 'Theft/Fraud'     },
-  { value: 'other',                 icon: '📝', label: 'Other'           },
+  { value: 'late_arrival',          icon: '🕐', label: 'Late Arrival'     },
+  { value: 'absent_without_notice', icon: '🚫', label: 'Absent'           },
+  { value: 'mobile_phone_misuse',   icon: '📵', label: 'Phone Misuse'     },
+  { value: 'rude_to_customer',      icon: '😤', label: 'Rude to Customer' },
+  { value: 'cash_shortage',         icon: '💵', label: 'Cash Shortage'    },
+  { value: 'fuel_shortage',         icon: '⛽', label: 'Fuel Shortage'    },
+  { value: 'improper_uniform',      icon: '👕', label: 'Bad Uniform'      },
+  { value: 'negligence',            icon: '😴', label: 'Negligence'       },
+  { value: 'sleeping_on_duty',      icon: '💤', label: 'Sleeping'         },
+  { value: 'abandoning_post',       icon: '🏃', label: 'Left Post'        },
+  { value: 'fighting_misconduct',   icon: '👊', label: 'Fighting'         },
+  { value: 'damage_to_property',    icon: '💥', label: 'Damage'           },
+  { value: 'theft_fraud',           icon: '🚨', label: 'Theft/Fraud'      },
+  { value: 'other',                 icon: '📝', label: 'Other'            },
 ];
 
 const SEVERITY = [
@@ -54,23 +87,37 @@ const SEVERITY = [
 ];
 
 const ACTION = [
-  { value: 'verbal_warning',   label: 'Verbal Warning'   },
-  { value: 'written_warning',  label: 'Written Warning'  },
-  { value: 'suspension',       label: 'Suspension'       },
-  { value: 'deduction',        label: 'Deduction (₦)'   },
-  { value: 'none',             label: 'No Action Yet'    },
+  { value: 'verbal_warning',  label: 'Verbal Warning'  },
+  { value: 'written_warning', label: 'Written Warning' },
+  { value: 'suspension',      label: 'Suspension'      },
+  { value: 'deduction',       label: 'Deduction (₦)'  },
+  { value: 'none',            label: 'No Action Yet'   },
 ];
 
-const fmtTime = (ts) => {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+const REASON_LABEL = {
+  cash_shortage: '💵 Cash', fuel_shortage: '⛽ Fuel',
+  equipment_damage: '🔧 Equipment', customer_complaint: '😤 Customer',
+  late_arrival: '🕐 Late', absent: '🚫 Absent',
+  no_clockin: '👻 No Clock-In', other: '📝 Other',
 };
 
-const roleLabel = (r) => (r || '').replace(/_/g, ' ');
+const OFFENCE_ICON = {
+  late_arrival: '🕐', absent_without_notice: '🚫', mobile_phone_misuse: '📵',
+  rude_to_customer: '😤', cash_shortage: '💵', fuel_shortage: '⛽',
+  improper_uniform: '👕', negligence: '😴', sleeping_on_duty: '💤',
+  abandoning_post: '🏃', fighting_misconduct: '👊', damage_to_property: '💥',
+  theft_fraud: '🚨', other: '📝',
+};
 
-// ── Quick-add: Shortage Modal ─────────────────────────────────────────────────
-function ShortageModal({ workers, branchId, onClose, onSaved, adminUser }) {
+const SEV_CLS = {
+  minor:    'bg-yellow-100 text-yellow-800',
+  moderate: 'bg-orange-100 text-orange-800',
+  serious:  'bg-red-100 text-red-700',
+  gross:    'bg-red-900 text-white',
+};
+
+// ── Shortage Modal ─────────────────────────────────────────────────────────────
+function ShortageModal({ workers, branchId, onClose, onSaved }) {
   const [workerId, setWorkerId] = useState('');
   const [amount,   setAmount  ] = useState('');
   const [reason,   setReason  ] = useState('cash_shortage');
@@ -83,19 +130,14 @@ function ShortageModal({ workers, branchId, onClose, onSaved, adminUser }) {
     if (!amount || isNaN(amount) || Number(amount) <= 0) return setError('Enter a valid amount');
     setSaving(true); setError('');
     try {
-      await adminApi.post('/shortages', {
-        workerId, amount: Number(amount), reason, notes,
-        branchId,
-      });
+      await adminApi.post('/shortages', { workerId, amount: Number(amount), reason, notes, branchId });
       onSaved();
-    } catch (e) {
-      setError(e.response?.data?.message || 'Failed to save');
-    } finally { setSaving(false); }
+    } catch (e) { setError(e.response?.data?.message || 'Failed to save'); }
+    finally { setSaving(false); }
   };
 
   return (
     <FullModal title="💸 Record Shortage" onClose={onClose}>
-      {/* Worker */}
       <FieldLabel>👤 Worker</FieldLabel>
       <select className="bigInput" value={workerId} onChange={e => setWorkerId(e.target.value)}>
         <option value="">— Select worker —</option>
@@ -104,35 +146,27 @@ function ShortageModal({ workers, branchId, onClose, onSaved, adminUser }) {
         ))}
       </select>
 
-      {/* Amount */}
       <FieldLabel>💰 Amount (₦)</FieldLabel>
       <input className="bigInput" type="number" inputMode="numeric" placeholder="e.g. 1500"
         value={amount} onChange={e => setAmount(e.target.value)} />
 
-      {/* Reason */}
       <FieldLabel>📋 Reason</FieldLabel>
       <div className="grid grid-cols-3 gap-2">
         {REASON_OPTIONS.map(r => (
-          <button key={r.value} type="button"
-            onClick={() => setReason(r.value)}
+          <button key={r.value} type="button" onClick={() => setReason(r.value)}
             className={`py-3 rounded-xl border-2 text-center transition-all
-              ${reason === r.value
-                ? 'border-green-500 bg-green-50 text-green-800 font-bold'
-                : 'border-gray-200 bg-white text-gray-600'}`}
-          >
+              ${reason === r.value ? 'border-green-500 bg-green-50 text-green-800 font-bold' : 'border-gray-200 bg-white text-gray-600'}`}>
             <div className="text-2xl">{r.icon}</div>
             <div className="text-xs mt-1 font-medium leading-tight">{r.label}</div>
           </button>
         ))}
       </div>
 
-      {/* Notes */}
       <FieldLabel>📝 Notes (optional)</FieldLabel>
       <textarea className="bigInput resize-none" rows={2}
         placeholder="What happened?" value={notes} onChange={e => setNotes(e.target.value)} />
 
       {error && <p className="text-red-600 font-semibold text-sm text-center">{error}</p>}
-
       <button onClick={submit} disabled={saving}
         className="w-full py-4 rounded-2xl bg-green-600 hover:bg-green-700 text-white text-xl font-black shadow-lg transition-all active:scale-95 disabled:opacity-50">
         {saving ? 'Saving…' : '✅ Submit Shortage'}
@@ -141,16 +175,16 @@ function ShortageModal({ workers, branchId, onClose, onSaved, adminUser }) {
   );
 }
 
-// ── Quick-add: Offence Modal ──────────────────────────────────────────────────
+// ── Offence Modal ─────────────────────────────────────────────────────────────
 function OffenceModal({ workers, branchId, onClose, onSaved }) {
-  const [workerId,  setWorkerId  ] = useState('');
-  const [type,      setType      ] = useState('');
-  const [severity,  setSeverity  ] = useState('');
-  const [action,    setAction    ] = useState('verbal_warning');
-  const [deduction, setDeduction ] = useState('');
-  const [desc,      setDesc      ] = useState('');
-  const [saving,    setSaving    ] = useState(false);
-  const [error,     setError     ] = useState('');
+  const [workerId,  setWorkerId ] = useState('');
+  const [type,      setType     ] = useState('');
+  const [severity,  setSeverity ] = useState('');
+  const [action,    setAction   ] = useState('verbal_warning');
+  const [deduction, setDeduction] = useState('');
+  const [desc,      setDesc     ] = useState('');
+  const [saving,    setSaving   ] = useState(false);
+  const [error,     setError    ] = useState('');
 
   const submit = async () => {
     if (!workerId) return setError('Pick a worker');
@@ -164,14 +198,12 @@ function OffenceModal({ workers, branchId, onClose, onSaved }) {
         description: desc,
       });
       onSaved();
-    } catch (e) {
-      setError(e.response?.data?.message || 'Failed to save');
-    } finally { setSaving(false); }
+    } catch (e) { setError(e.response?.data?.message || 'Failed to save'); }
+    finally { setSaving(false); }
   };
 
   return (
     <FullModal title="⚠️ Book Offence" onClose={onClose}>
-      {/* Worker */}
       <FieldLabel>👤 Worker</FieldLabel>
       <select className="bigInput" value={workerId} onChange={e => setWorkerId(e.target.value)}>
         <option value="">— Select worker —</option>
@@ -180,38 +212,29 @@ function OffenceModal({ workers, branchId, onClose, onSaved }) {
         ))}
       </select>
 
-      {/* Offence type — scrollable grid */}
       <FieldLabel>🚨 What did they do?</FieldLabel>
       <div className="grid grid-cols-3 gap-2">
         {OFFENCE_OPTIONS.map(o => (
-          <button key={o.value} type="button"
-            onClick={() => setType(o.value)}
+          <button key={o.value} type="button" onClick={() => setType(o.value)}
             className={`py-2.5 rounded-xl border-2 text-center transition-all
-              ${type === o.value
-                ? 'border-orange-500 bg-orange-50 text-orange-800 font-bold'
-                : 'border-gray-200 bg-white text-gray-600'}`}
-          >
+              ${type === o.value ? 'border-orange-500 bg-orange-50 text-orange-800 font-bold' : 'border-gray-200 bg-white text-gray-600'}`}>
             <div className="text-xl">{o.icon}</div>
             <div className="text-[11px] mt-0.5 font-medium leading-tight">{o.label}</div>
           </button>
         ))}
       </div>
 
-      {/* Severity */}
       <FieldLabel>🔥 How serious?</FieldLabel>
       <div className="grid grid-cols-4 gap-2">
         {SEVERITY.map(s => (
-          <button key={s.value} type="button"
-            onClick={() => setSeverity(s.value)}
+          <button key={s.value} type="button" onClick={() => setSeverity(s.value)}
             className={`py-3 rounded-xl text-sm font-bold border-2 transition-all
-              ${severity === s.value
-                ? `${s.bg} ${s.text} border-transparent shadow-md scale-105`
-                : 'bg-gray-100 text-gray-500 border-transparent'}`}
-          >{s.label}</button>
+              ${severity === s.value ? `${s.bg} ${s.text} border-transparent shadow-md scale-105` : 'bg-gray-100 text-gray-500 border-transparent'}`}>
+            {s.label}
+          </button>
         ))}
       </div>
 
-      {/* Action */}
       <FieldLabel>📋 Action Taken</FieldLabel>
       <select className="bigInput" value={action} onChange={e => setAction(e.target.value)}>
         {ACTION.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
@@ -221,14 +244,11 @@ function OffenceModal({ workers, branchId, onClose, onSaved }) {
           value={deduction} onChange={e => setDeduction(e.target.value)} />
       )}
 
-      {/* Description */}
       <FieldLabel>📝 Details (optional)</FieldLabel>
       <textarea className="bigInput resize-none" rows={2}
-        placeholder="Brief description of what happened…"
-        value={desc} onChange={e => setDesc(e.target.value)} />
+        placeholder="Brief description…" value={desc} onChange={e => setDesc(e.target.value)} />
 
       {error && <p className="text-red-600 font-semibold text-sm text-center">{error}</p>}
-
       <button onClick={submit} disabled={saving}
         className="w-full py-4 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white text-xl font-black shadow-lg transition-all active:scale-95 disabled:opacity-50">
         {saving ? 'Saving…' : '⚠️ Book Worker'}
@@ -237,7 +257,7 @@ function OffenceModal({ workers, branchId, onClose, onSaved }) {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Shared helpers ────────────────────────────────────────────────────────────
 function FullModal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto">
@@ -259,14 +279,14 @@ function FieldLabel({ children }) {
   return <p className="text-sm font-bold text-gray-600 -mb-1">{children}</p>;
 }
 
-// ── Worker name badge ─────────────────────────────────────────────────────────
+// ── Worker row ────────────────────────────────────────────────────────────────
 function WorkerRow({ name, role, time, hasOut, absent }) {
   return (
     <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-2
       ${absent ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'}`}>
       <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base font-black
         ${absent ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-        {name[0]?.toUpperCase()}
+        {(name || '?')[0].toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
         <p className={`font-bold leading-tight truncate ${absent ? 'text-red-800' : 'text-gray-900'}`}>{name}</p>
@@ -283,47 +303,223 @@ function WorkerRow({ name, role, time, hasOut, absent }) {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Shift group card ──────────────────────────────────────────────────────────
+function ShiftGroup({ group }) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className={`rounded-2xl border-2 mb-4 overflow-hidden
+      ${group.allPresent ? 'border-green-300' : group.absentCount > 0 ? 'border-amber-300' : 'border-gray-200'}`}>
+
+      {/* Header — tap to expand/collapse */}
+      <button onClick={() => setOpen(o => !o)}
+        className={`w-full px-4 py-3 flex items-center justify-between text-left
+          ${group.allPresent ? 'bg-green-50' : group.absentCount > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+        <div>
+          <p className="font-black text-gray-900 text-base">{group.shiftName}</p>
+          {(group.startTime || group.endTime) && (
+            <p className="text-xs text-gray-500 font-medium">
+              {group.startTime}{group.endTime ? ` – ${group.endTime}` : ''}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {group.allPresent && group.total > 0 ? (
+            <span className="bg-green-500 text-white text-xs font-black px-3 py-1 rounded-full">
+              ✅ All Present
+            </span>
+          ) : (
+            <div className="text-right">
+              <p className="text-xs font-black text-green-700">✅ {group.presentCount} in</p>
+              {group.absentCount > 0 && (
+                <p className="text-xs font-black text-red-600">❌ {group.absentCount} absent</p>
+              )}
+            </div>
+          )}
+          <span className="text-gray-400 text-lg">{open ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {/* Workers */}
+      {open && (
+        <div className="px-3 py-3 space-y-1">
+          {group.present.map((w, i) => (
+            <WorkerRow key={i} name={w.fullName} role={w.role}
+              time={fmtTime(w.clockInTime)} hasOut={w.hasClockOut} />
+          ))}
+          {group.absent.map((w, i) => (
+            <WorkerRow key={i} name={w.fullName} role={w.role} absent />
+          ))}
+          {group.total === 0 && (
+            <p className="text-center text-gray-400 text-sm py-2">No workers in this shift</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Shortage card ─────────────────────────────────────────────────────────────
+function ShortageCard({ s }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-4 mb-2 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-bold text-gray-900">{s.workerName}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{REASON_LABEL[s.reason] || s.reason}</p>
+          {s.notes && <p className="text-xs text-gray-400 mt-1 italic">{s.notes}</p>}
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-lg font-black text-red-600">₦{(s.amount || 0).toLocaleString()}</p>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full
+            ${s.source !== 'manual' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+            {s.source === 'manual' ? 'Manual' : 'Auto'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Offence card ──────────────────────────────────────────────────────────────
+function OffenceCard({ o }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-4 mb-2 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-bold text-gray-900">{o.workerName}</p>
+          <p className="text-sm text-gray-600 mt-0.5">
+            {OFFENCE_ICON[o.offenceType] || '⚠️'} {(o.offenceType || '').replace(/_/g, ' ')}
+          </p>
+          {o.description && <p className="text-xs text-gray-400 mt-1 italic">{o.description}</p>}
+        </div>
+        <span className={`text-xs font-bold px-2 py-1 rounded-full capitalize shrink-0 ${SEV_CLS[o.severity] || 'bg-gray-100 text-gray-700'}`}>
+          {o.severity}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── History group (day bucket) ────────────────────────────────────────────────
+function HistoryDateGroup({ group, type }) {
+  const [open, setOpen] = useState(false);
+  const isToday = group.date === todayUTC();
+
+  return (
+    <div className="mb-2 rounded-xl border border-gray-200 overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors">
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-black ${isToday ? 'text-green-700' : 'text-gray-700'}`}>
+            {isToday ? '📅 Today' : `📅 ${fmtDateLabel(group.date)}`}
+          </span>
+          <span className="text-xs text-gray-400">{group.count} record{group.count !== 1 ? 's' : ''}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {type === 'shortage' && (
+            <span className="font-black text-red-600 text-sm">₦{group.total.toLocaleString()}</span>
+          )}
+          {type === 'offence' && (
+            <span className="font-black text-orange-600 text-sm">{group.count} booking{group.count !== 1 ? 's' : ''}</span>
+          )}
+          <span className="text-gray-400">{open ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {open && (
+        <div className="px-3 pt-2 pb-1">
+          {type === 'shortage' && group.items.map((s, i) => <ShortageCard key={i} s={s} />)}
+          {type === 'offence'  && group.items.map((o, i) => <OffenceCard  key={i} o={o} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────────
+function StatCard({ emoji, value, label, color, onClick }) {
+  const colors = {
+    green:  'bg-green-50  border-green-200  ',
+    red:    'bg-red-50    border-red-200    ',
+    amber:  'bg-amber-50  border-amber-200  ',
+    orange: 'bg-orange-50 border-orange-200 ',
+  };
+  const textColors = { green: 'text-green-700', red: 'text-red-700', amber: 'text-amber-700', orange: 'text-orange-700' };
+  return (
+    <button onClick={onClick}
+      className={`rounded-2xl border-2 p-4 text-left w-full shadow-sm active:scale-95 transition-all ${colors[color]}`}>
+      <div className="text-3xl mb-1">{emoji}</div>
+      <div className={`text-3xl font-black ${textColors[color]}`}>{value}</div>
+      <div className={`text-xs font-semibold mt-0.5 ${textColors[color]} opacity-70`}>{label}</div>
+    </button>
+  );
+}
+
+// ── SectionHeader ─────────────────────────────────────────────────────────────
+function SectionHeader({ emoji, title, color }) {
+  const cls = {
+    green:  'text-green-700 bg-green-50 border-green-200',
+    red:    'text-red-700   bg-red-50   border-red-200',
+    amber:  'text-amber-700 bg-amber-50 border-amber-200',
+    orange: 'text-orange-700 bg-orange-50 border-orange-200',
+    gray:   'text-gray-700  bg-gray-50  border-gray-200',
+  };
+  return (
+    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border font-black text-base mb-3 ${cls[color] || cls.gray}`}>
+      {emoji} {title}
+    </div>
+  );
+}
+
+function EmptyState({ msg }) {
+  return (
+    <div className="text-center py-8 text-gray-400">
+      <p className="text-4xl mb-2">😊</p>
+      <p className="font-semibold">{msg}</p>
+    </div>
+  );
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'home',      icon: '🏠', label: 'Home'      },
-  { id: 'staff',     icon: '👥', label: 'Staff'     },
-  { id: 'shortage',  icon: '💸', label: 'Shortage'  },
-  { id: 'bookings',  icon: '⚠️', label: 'Bookings'  },
-  { id: 'add',       icon: '➕', label: 'Add'       },
+  { id: 'home',     icon: '🏠', label: 'Home'     },
+  { id: 'staff',    icon: '👥', label: 'Staff'    },
+  { id: 'shortage', icon: '💸', label: 'Shortage' },
+  { id: 'bookings', icon: '⚠️', label: 'Bookings' },
+  { id: 'add',      icon: '➕', label: 'Add'      },
 ];
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
-  const navigate  = useNavigate();
-  const [tab,     setTab    ] = useState('home');
-  const [data,    setData   ] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [selBranch, setSelBranch] = useState('');
-  const [allWorkers, setAllWorkers] = useState([]);
-  const [showShortageForm, setShowShortageForm] = useState(false);
-  const [showOffenceForm,  setShowOffenceForm ] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(null);
+  const navigate = useNavigate();
+  const [tab,         setTab        ] = useState('home');
+  const [data,        setData       ] = useState(null);
+  const [loading,     setLoading    ] = useState(true);
+  const [selBranch,   setSelBranch  ] = useState('');
+  const [selDate,     setSelDate    ] = useState(todayUTC);
+  const [allWorkers,  setAllWorkers ] = useState([]);
+  const [showShortage, setShowShortage] = useState(false);
+  const [showOffence,  setShowOffence ] = useState(false);
+  const [lastRefresh,  setLastRefresh ] = useState(null);
+  const [shortageView, setShortageView] = useState('day');   // 'day' | 'month'
+  const [offenceView,  setOffenceView ] = useState('day');   // 'day' | 'month'
 
   const user = useMemo(() => {
     try { return JSON.parse(sessionStorage.getItem('adminUser') || 'null'); }
     catch { return null; }
   }, []);
-
   const isAdmin = ['super_admin', 'admin'].includes(user?.role);
 
-  // Guard — redirect if no token
   useEffect(() => {
-    if (!sessionStorage.getItem('adminToken')) {
-      navigate('/login', { replace: true });
-    }
+    if (!sessionStorage.getItem('adminToken')) navigate('/login', { replace: true });
   }, [navigate]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (date = selDate) => {
     setLoading(true);
     try {
-      const { data: res } = await adminApi.get('/dashboard/admin-summary');
+      const { data: res } = await adminApi.get(`/dashboard/admin-summary?date=${date}`);
       setData(res.data);
       setLastRefresh(new Date());
-      // Auto-select first branch if not admin
       if (!isAdmin && user?.branchId) {
         setSelBranch(user.branchId);
       } else if (!selBranch && res.data.summary?.length > 0) {
@@ -332,9 +528,9 @@ export default function AdminDashboard() {
     } catch (e) {
       if (e.response?.status === 401) navigate('/login', { replace: true });
     } finally { setLoading(false); }
-  }, [isAdmin, user, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, user, navigate, selBranch]);
 
-  // Load workers for add forms
   const loadWorkers = useCallback(async () => {
     if (!selBranch) return;
     try {
@@ -343,14 +539,13 @@ export default function AdminDashboard() {
     } catch {}
   }, [selBranch]);
 
-  useEffect(() => { load(); }, [load]);
+  // Load when date changes
+  useEffect(() => { load(selDate); }, [selDate]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadWorkers(); }, [loadWorkers]);
-
-  // Auto-refresh every 5 min
   useEffect(() => {
-    const t = setInterval(load, 5 * 60 * 1000);
+    const t = setInterval(() => { if (selDate === todayUTC()) load(selDate); }, 5 * 60 * 1000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [selDate, load]);
 
   const logout = () => {
     sessionStorage.removeItem('adminToken');
@@ -358,18 +553,21 @@ export default function AdminDashboard() {
     navigate('/login', { replace: true });
   };
 
-  // Current branch data
+  const changeDate = (delta) => {
+    const next = addDays(selDate, delta);
+    if (next > todayUTC()) return;  // can't go into future
+    setSelDate(next);
+    setShortageView('day');
+    setOffenceView('day');
+  };
+
   const branch = useMemo(() =>
     data?.summary?.find(b => String(b._id) === selBranch) || data?.summary?.[0] || null,
     [data, selBranch]
   );
 
-  const todayStr = data?.date || new Date().toISOString().split('T')[0];
-  const [yr, mo, dy] = todayStr.split('-').map(Number);
-  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dateObj = new Date(Date.UTC(yr, mo - 1, dy));
-  const dateLabel = `${dayNames[dateObj.getDay()]}, ${dy} ${monthNames[mo-1]} ${yr}`;
+  const isFuture = selDate > todayUTC();
+  const isToday  = selDate === todayUTC();
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -377,7 +575,7 @@ export default function AdminDashboard() {
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="bg-green-800 text-white px-4 pt-5 pb-3 sticky top-0 z-40 shadow-lg">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-green-300 text-xs font-semibold uppercase tracking-widest">
               {user?.company?.name || 'Dashboard'}
@@ -385,10 +583,12 @@ export default function AdminDashboard() {
             <h1 className="text-lg font-black leading-tight">{user?.name}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={load} title="Refresh"
-              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-lg transition-all">
-              🔄
-            </button>
+            {isToday && (
+              <button onClick={() => load(selDate)} title="Refresh"
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-lg transition-all">
+                🔄
+              </button>
+            )}
             <button onClick={logout} title="Sign out"
               className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
               <span className="text-sm font-bold">↩</span>
@@ -396,28 +596,45 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <p className="text-green-200 text-xs">{dateLabel}</p>
-          {lastRefresh && (
-            <p className="text-green-400 text-[10px]">
-              Updated {lastRefresh.toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'})}
+        {/* Date navigation */}
+        <div className="flex items-center justify-between bg-white/10 rounded-xl px-2 py-1.5">
+          <button onClick={() => changeDate(-1)}
+            className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold text-lg active:scale-90 transition-all">
+            ‹
+          </button>
+          <div className="text-center flex-1">
+            <p className={`font-black text-base ${isToday ? 'text-white' : 'text-green-200'}`}>
+              {isToday ? '📅 Today' : `📅 ${fmtDateLabel(selDate)}`}
             </p>
-          )}
+            {!isToday && (
+              <button onClick={() => { setSelDate(todayUTC()); setShortageView('day'); setOffenceView('day'); }}
+                className="text-green-300 text-xs underline mt-0.5">
+                Back to Today
+              </button>
+            )}
+          </div>
+          <button onClick={() => changeDate(1)} disabled={isToday}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-lg transition-all
+              ${isToday ? 'opacity-30 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20 text-white active:scale-90'}`}>
+            ›
+          </button>
         </div>
 
         {/* Branch selector */}
         {isAdmin && data?.summary?.length > 1 && (
-          <select
-            value={selBranch}
-            onChange={e => setSelBranch(e.target.value)}
-            className="mt-2 w-full bg-white/15 border border-white/30 text-white rounded-xl px-3 py-1.5 text-sm font-semibold appearance-none"
-          >
+          <select value={selBranch} onChange={e => setSelBranch(e.target.value)}
+            className="mt-2 w-full bg-white/15 border border-white/30 text-white rounded-xl px-3 py-1.5 text-sm font-semibold appearance-none">
             {data.summary.map(b => (
-              <option key={b._id} value={String(b._id)} className="text-gray-900 bg-white">
-                {b.name}
-              </option>
+              <option key={b._id} value={String(b._id)} className="text-gray-900 bg-white">{b.name}</option>
             ))}
           </select>
+        )}
+
+        {/* Last refresh */}
+        {lastRefresh && isToday && (
+          <p className="text-green-400/70 text-[10px] text-right mt-1">
+            Updated {lastRefresh.toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'})}
+          </p>
         )}
       </div>
 
@@ -435,217 +652,307 @@ export default function AdminDashboard() {
       {!loading && branch && (
         <div className="flex-1 overflow-y-auto pb-24">
 
-          {/* ════ HOME TAB ══════════════════════════════════════════════════ */}
+          {/* ════ HOME TAB ══════════════════════════════════════════════════════ */}
           {tab === 'home' && (
             <div className="p-4 space-y-4">
 
-              {/* 4 big stat cards */}
+              {/* 4 stat cards */}
               <div className="grid grid-cols-2 gap-3">
-                <StatCard
-                  emoji="✅" value={branch.clockedIn?.length ?? 0}
-                  label="Clocked In" color="green"
-                  onClick={() => setTab('staff')}
-                />
-                <StatCard
-                  emoji="❌" value={branch.absent?.length ?? 0}
-                  label="Absent Today" color="red"
-                  onClick={() => setTab('staff')}
-                />
-                <StatCard
-                  emoji="💸"
-                  value={`₦${(branch.todayShortageTotal || 0).toLocaleString()}`}
-                  label="Today's Shortage" color="amber"
-                  onClick={() => setTab('shortage')}
-                />
-                <StatCard
-                  emoji="⚠️" value={branch.todayOffences?.length ?? 0}
-                  label="Today's Bookings" color="orange"
-                  onClick={() => setTab('bookings')}
-                />
+                <StatCard emoji="✅" value={branch.clockedIn?.length ?? 0}
+                  label="Clocked In" color="green" onClick={() => setTab('staff')} />
+                <StatCard emoji="❌" value={branch.absent?.length ?? 0}
+                  label="Absent" color="red" onClick={() => setTab('staff')} />
+                <StatCard emoji="💸"
+                  value={`₦${(branch.dayShortageTotal || 0).toLocaleString()}`}
+                  label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Shortage`}
+                  color="amber" onClick={() => setTab('shortage')} />
+                <StatCard emoji="⚠️" value={branch.dayOffences?.length ?? 0}
+                  label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Bookings`}
+                  color="orange" onClick={() => setTab('bookings')} />
               </div>
 
-              {/* Progress bar */}
+              {/* Attendance bar */}
               {branch.totalActive > 0 && (
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                   <div className="flex justify-between items-center mb-2">
-                    <p className="font-bold text-gray-800 text-sm">Attendance</p>
+                    <p className="font-bold text-gray-800 text-sm">
+                      Attendance {!isToday && `· ${fmtDateLabel(selDate)}`}
+                    </p>
                     <p className="text-sm font-semibold text-gray-600">
-                      {branch.clockedIn?.length} / {branch.totalActive} workers
+                      {branch.clockedIn?.length} / {branch.totalActive}
                     </p>
                   </div>
                   <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500
-                        ${branch.clockedIn?.length / branch.totalActive >= 0.8 ? 'bg-green-500'
-                          : branch.clockedIn?.length / branch.totalActive >= 0.5 ? 'bg-amber-500'
-                          : 'bg-red-500'}`}
-                      style={{ width: `${branch.totalActive > 0 ? Math.round(branch.clockedIn?.length / branch.totalActive * 100) : 0}%` }}
-                    />
+                    {(() => {
+                      const pct = branch.totalActive > 0
+                        ? Math.round((branch.clockedIn?.length / branch.totalActive) * 100) : 0;
+                      return (
+                        <div className={`h-full rounded-full transition-all duration-500
+                          ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                          style={{ width: `${pct}%` }} />
+                      );
+                    })()}
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5 text-right">
-                    {branch.totalActive > 0 ? Math.round((branch.clockedIn?.length / branch.totalActive) * 100) : 0}% present
+                    {branch.totalActive > 0
+                      ? Math.round((branch.clockedIn?.length / branch.totalActive) * 100)
+                      : 0}% present
                   </p>
                 </div>
               )}
 
-              {/* Quick actions */}
-              <div className="grid grid-cols-2 gap-3">
-                <BigActionBtn
-                  emoji="💸" label="Record Shortage"
-                  color="green" onClick={() => { setTab('add'); setShowShortageForm(true); }}
-                />
-                <BigActionBtn
-                  emoji="⚠️" label="Book Offence"
-                  color="orange" onClick={() => { setTab('add'); setShowOffenceForm(true); }}
-                />
-              </div>
+              {/* All-present celebration */}
+              {branch.totalActive > 0 && branch.absent?.length === 0 && branch.clockedIn?.length > 0 && (
+                <div className="bg-green-500 rounded-2xl p-4 text-center text-white shadow-md">
+                  <p className="text-3xl mb-1">🎉</p>
+                  <p className="font-black text-lg">All {branch.totalActive} Workers Present!</p>
+                  <p className="text-green-100 text-sm">Great attendance {isToday ? 'today' : 'on this day'}!</p>
+                </div>
+              )}
 
               {/* Absent alert */}
               {branch.absent?.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
                   <p className="font-black text-red-700 text-base mb-2">
-                    ❌ {branch.absent.length} Worker{branch.absent.length > 1 ? 's' : ''} Not In Today
+                    ❌ {branch.absent.length} Worker{branch.absent.length !== 1 ? 's' : ''} Absent
                   </p>
-                  {branch.absent.slice(0, 3).map(w => (
-                    <p key={w._id} className="text-red-600 font-semibold text-sm">
-                      • {w.fullName} <span className="font-normal capitalize">({roleLabel(w.role)})</span>
+                  {branch.absent.slice(0, 4).map((w, i) => (
+                    <p key={i} className="text-red-600 font-semibold text-sm">
+                      • {w.fullName} <span className="font-normal opacity-70">({roleLabel(w.role)})</span>
                     </p>
                   ))}
-                  {branch.absent.length > 3 && (
-                    <button onClick={() => setTab('staff')} className="text-red-500 text-xs font-bold mt-1 underline">
-                      + {branch.absent.length - 3} more — tap to see all
+                  {branch.absent.length > 4 && (
+                    <button onClick={() => setTab('staff')} className="text-red-400 text-xs font-bold mt-1 underline">
+                      +{branch.absent.length - 4} more — see Staff tab
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* Quick actions */}
+              {isToday && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => { setTab('add'); setShowShortage(true); }}
+                    className="rounded-2xl bg-green-600 text-white p-4 text-center shadow active:scale-95 transition-all">
+                    <div className="text-3xl mb-1">💸</div>
+                    <div className="text-sm font-black">Record Shortage</div>
+                  </button>
+                  <button onClick={() => { setTab('add'); setShowOffence(true); }}
+                    className="rounded-2xl bg-orange-500 text-white p-4 text-center shadow active:scale-95 transition-all">
+                    <div className="text-3xl mb-1">⚠️</div>
+                    <div className="text-sm font-black">Book Offence</div>
+                  </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* ════ STAFF TAB ═════════════════════════════════════════════════ */}
+          {/* ════ STAFF TAB ═════════════════════════════════════════════════════ */}
           {tab === 'staff' && (
-            <div className="p-4 space-y-5">
+            <div className="p-4">
+              <p className="text-sm font-bold text-gray-500 mb-4">
+                📅 {fmtDateLabel(selDate)} · {branch.name}
+              </p>
 
-              {/* Clocked in */}
-              <div>
-                <SectionHeader
-                  emoji="✅"
-                  title={`Clocked In (${branch.clockedIn?.length || 0})`}
-                  color="green"
-                />
-                {branch.clockedIn?.length === 0 ? (
-                  <EmptyState msg="Nobody has clocked in yet" />
-                ) : (
-                  branch.clockedIn.map((w, i) => (
-                    <WorkerRow key={i}
-                      name={w.fullName} role={w.role}
-                      time={fmtTime(w.clockInTime)}
-                      hasOut={w.hasClockOut}
-                    />
-                  ))
-                )}
-              </div>
+              {/* All-present banner */}
+              {branch.totalActive > 0 && branch.absent?.length === 0 && (
+                <div className="bg-green-500 text-white rounded-2xl px-4 py-3 mb-4 flex items-center gap-3">
+                  <span className="text-2xl">🎉</span>
+                  <p className="font-black">All {branch.totalActive} workers present!</p>
+                </div>
+              )}
 
-              {/* Absent */}
-              <div>
-                <SectionHeader
-                  emoji="❌"
-                  title={`Not In — Absent (${branch.absent?.length || 0})`}
-                  color="red"
-                />
-                {branch.absent?.length === 0 ? (
-                  <EmptyState msg="All workers are present 🎉" />
-                ) : (
-                  branch.absent.map((w, i) => (
-                    <WorkerRow key={i}
-                      name={w.fullName} role={w.role}
-                      absent
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ════ SHORTAGE TAB ══════════════════════════════════════════════ */}
-          {tab === 'shortage' && (
-            <div className="p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <SectionHeader emoji="💸" title="Today's Shortages" color="amber" />
-                <BigActionBtn emoji="+" label="Add" color="green" small
-                  onClick={() => setShowShortageForm(true)} />
-              </div>
-
-              {branch.todayShortages?.length === 0 ? (
-                <EmptyState msg="No shortages recorded today 👍" />
+              {/* Shift groups */}
+              {branch.shiftGroups?.length > 0 ? (
+                <>
+                  <SectionHeader emoji="🏷️" title="By Shift" color="gray" />
+                  {branch.shiftGroups.map((g, i) => (
+                    <ShiftGroup key={i} group={g} />
+                  ))}
+                </>
               ) : (
                 <>
-                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
-                    <p className="text-3xl font-black text-amber-700">
-                      ₦{(branch.todayShortageTotal || 0).toLocaleString()}
-                    </p>
-                    <p className="text-amber-600 text-sm font-semibold">Total today</p>
+                  {/* Fallback: flat list */}
+                  <div className="mb-6">
+                    <SectionHeader emoji="✅" title={`Clocked In (${branch.clockedIn?.length || 0})`} color="green" />
+                    {branch.clockedIn?.length === 0
+                      ? <EmptyState msg="Nobody clocked in yet" />
+                      : branch.clockedIn.map((w, i) => (
+                          <WorkerRow key={i} name={w.fullName} role={w.role}
+                            time={fmtTime(w.clockInTime)} hasOut={w.hasClockOut} />
+                        ))}
                   </div>
-                  {branch.todayShortages.map((s, i) => (
-                    <ShortageRow key={i} shortage={s} />
-                  ))}
+                  <div>
+                    <SectionHeader emoji="❌" title={`Absent (${branch.absent?.length || 0})`} color="red" />
+                    {branch.absent?.length === 0
+                      ? <EmptyState msg="All workers present 🎉" />
+                      : branch.absent.map((w, i) => (
+                          <WorkerRow key={i} name={w.fullName} role={w.role} absent />
+                        ))}
+                  </div>
                 </>
               )}
             </div>
           )}
 
-          {/* ════ BOOKINGS TAB ══════════════════════════════════════════════ */}
-          {tab === 'bookings' && (
-            <div className="p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <SectionHeader emoji="⚠️" title="Today's Bookings" color="orange" />
-                <BigActionBtn emoji="+" label="Book" color="orange" small
-                  onClick={() => setShowOffenceForm(true)} />
+          {/* ════ SHORTAGE TAB ══════════════════════════════════════════════════ */}
+          {tab === 'shortage' && (
+            <div className="p-4 space-y-3">
+
+              {/* Day / Month toggle */}
+              <div className="flex gap-2 bg-gray-100 rounded-xl p-1">
+                {[['day', `📅 ${fmtDateLabel(selDate)}`], ['month', `📆 This Month`]].map(([v, lbl]) => (
+                  <button key={v} onClick={() => setShortageView(v)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-black transition-all
+                      ${shortageView === v ? 'bg-white text-green-800 shadow-sm' : 'text-gray-500'}`}>
+                    {lbl}
+                  </button>
+                ))}
               </div>
 
-              {branch.todayOffences?.length === 0 ? (
-                <EmptyState msg="No disciplinary bookings today" />
-              ) : (
-                branch.todayOffences.map((o, i) => (
-                  <OffenceRow key={i} offence={o} />
-                ))
+              {shortageView === 'day' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <SectionHeader emoji="💸" title="Shortages" color="amber" />
+                    {isToday && (
+                      <button onClick={() => setShowShortage(true)}
+                        className="px-3 py-1.5 rounded-xl bg-green-600 text-white text-xs font-bold">
+                        + Add
+                      </button>
+                    )}
+                  </div>
+
+                  {branch.dayShortages?.length === 0
+                    ? <EmptyState msg={`No shortages on ${fmtDateLabel(selDate)}`} />
+                    : (
+                      <>
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
+                          <p className="text-3xl font-black text-amber-700">
+                            ₦{(branch.dayShortageTotal || 0).toLocaleString()}
+                          </p>
+                          <p className="text-amber-600 text-sm font-semibold">Total for {fmtDateLabel(selDate)}</p>
+                        </div>
+                        {branch.dayShortages.map((s, i) => <ShortageCard key={i} s={s} />)}
+                      </>
+                    )}
+                </>
+              )}
+
+              {shortageView === 'month' && (
+                <>
+                  <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-red-600 font-semibold uppercase">Month Total</p>
+                      <p className="text-3xl font-black text-red-700">
+                        ₦{(branch.monthShortageTotal || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-red-600">{branch.monthShortageHistory?.length || 0}</p>
+                      <p className="text-xs text-red-500">days with shortages</p>
+                    </div>
+                  </div>
+
+                  {(branch.monthShortageHistory || []).length === 0
+                    ? <EmptyState msg="No shortages this month 🎉" />
+                    : (branch.monthShortageHistory || []).map((g, i) => (
+                        <HistoryDateGroup key={i} group={g} type="shortage" />
+                      ))}
+                </>
               )}
             </div>
           )}
 
-          {/* ════ ADD TAB ════════════════════════════════════════════════════ */}
+          {/* ════ BOOKINGS TAB ══════════════════════════════════════════════════ */}
+          {tab === 'bookings' && (
+            <div className="p-4 space-y-3">
+
+              {/* Day / Month toggle */}
+              <div className="flex gap-2 bg-gray-100 rounded-xl p-1">
+                {[['day', `📅 ${fmtDateLabel(selDate)}`], ['month', `📆 This Month`]].map(([v, lbl]) => (
+                  <button key={v} onClick={() => setOffenceView(v)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-black transition-all
+                      ${offenceView === v ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-500'}`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              {offenceView === 'day' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <SectionHeader emoji="⚠️" title="Bookings" color="orange" />
+                    {isToday && (
+                      <button onClick={() => setShowOffence(true)}
+                        className="px-3 py-1.5 rounded-xl bg-orange-500 text-white text-xs font-bold">
+                        + Book
+                      </button>
+                    )}
+                  </div>
+
+                  {branch.dayOffences?.length === 0
+                    ? <EmptyState msg={`No bookings on ${fmtDateLabel(selDate)}`} />
+                    : branch.dayOffences.map((o, i) => <OffenceCard key={i} o={o} />)}
+                </>
+              )}
+
+              {offenceView === 'month' && (
+                <>
+                  <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-orange-600 font-semibold uppercase">This Month</p>
+                      <p className="text-3xl font-black text-orange-700">{branch.monthOffenceCount || 0}</p>
+                      <p className="text-xs text-orange-500">total bookings</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-orange-600">{branch.monthOffenceHistory?.length || 0}</p>
+                      <p className="text-xs text-orange-500">days with bookings</p>
+                    </div>
+                  </div>
+
+                  {(branch.monthOffenceHistory || []).length === 0
+                    ? <EmptyState msg="No bookings this month" />
+                    : (branch.monthOffenceHistory || []).map((g, i) => (
+                        <HistoryDateGroup key={i} group={g} type="offence" />
+                      ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ════ ADD TAB ════════════════════════════════════════════════════════ */}
           {tab === 'add' && (
             <div className="p-4 space-y-4">
               <p className="text-center text-gray-500 font-semibold text-sm pt-2">What do you want to do?</p>
 
-              <button onClick={() => setShowShortageForm(true)}
+              <button onClick={() => setShowShortage(true)}
                 className="w-full bg-white border-2 border-green-400 rounded-2xl p-6 flex items-center gap-5 shadow-sm hover:bg-green-50 active:scale-95 transition-all">
                 <span className="text-5xl">💸</span>
                 <div className="text-left">
                   <p className="text-xl font-black text-gray-900">Record Shortage</p>
-                  <p className="text-gray-500 text-sm">Report a cash or fuel shortage by a worker</p>
+                  <p className="text-gray-500 text-sm">Report a cash or fuel shortage</p>
                 </div>
               </button>
 
-              <button onClick={() => setShowOffenceForm(true)}
+              <button onClick={() => setShowOffence(true)}
                 className="w-full bg-white border-2 border-orange-400 rounded-2xl p-6 flex items-center gap-5 shadow-sm hover:bg-orange-50 active:scale-95 transition-all">
                 <span className="text-5xl">⚠️</span>
                 <div className="text-left">
                   <p className="text-xl font-black text-gray-900">Book a Worker</p>
-                  <p className="text-gray-500 text-sm">Record a disciplinary offence for a worker</p>
+                  <p className="text-gray-500 text-sm">Record a disciplinary offence</p>
                 </div>
               </button>
 
-              <div className="mt-6 border-t border-gray-200 pt-4">
+              <div className="mt-2 border-t border-gray-200 pt-4">
                 <p className="text-xs text-gray-400 text-center font-medium uppercase tracking-widest mb-3">More options</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { emoji: '👥', label: 'All Workers',  path: '/workers'    },
-                    { emoji: '📊', label: 'Full Dashboard', path: '/dashboard' },
-                    { emoji: '📋', label: 'Attendance',   path: '/attendance' },
-                    { emoji: '🏢', label: 'Branches',     path: '/branches'   },
+                    { emoji: '👥', label: 'All Workers',    path: '/workers'    },
+                    { emoji: '📊', label: 'Full Dashboard', path: '/dashboard'  },
+                    { emoji: '📋', label: 'Attendance',     path: '/attendance' },
+                    { emoji: '🏢', label: 'Branches',       path: '/branches'   },
                   ].map(item => (
-                    <button key={item.path}
-                      onClick={() => navigate(item.path)}
+                    <button key={item.path} onClick={() => navigate(item.path)}
                       className="bg-white border border-gray-200 rounded-xl p-3 flex items-center gap-2 shadow-sm hover:bg-gray-50 active:scale-95 transition-all">
                       <span className="text-2xl">{item.emoji}</span>
                       <span className="text-sm font-semibold text-gray-700">{item.label}</span>
@@ -658,25 +965,24 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ── Empty state if no branch ─────────────────────────────────────────── */}
+      {/* ── Empty state ──────────────────────────────────────────────────────── */}
       {!loading && !branch && (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
             <p className="text-5xl mb-4">🏢</p>
             <p className="text-gray-600 font-semibold">No branch data available</p>
-            <button onClick={load} className="mt-4 px-6 py-2 bg-green-600 text-white rounded-xl font-bold">
-              Refresh
-            </button>
+            <button onClick={() => load(selDate)}
+              className="mt-4 px-6 py-2 bg-green-600 text-white rounded-xl font-bold">Refresh</button>
           </div>
         </div>
       )}
 
-      {/* ── Bottom navigation ─────────────────────────────────────────────────── */}
+      {/* ── Bottom navigation ────────────────────────────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white border-t border-gray-200 z-40 shadow-lg">
         <div className="flex">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-all
+              className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-all relative
                 ${tab === t.id ? 'text-green-700' : 'text-gray-400'}`}>
               <span className="text-xl">{t.icon}</span>
               <span className={`text-[10px] font-bold ${tab === t.id ? 'text-green-700' : 'text-gray-400'}`}>
@@ -690,143 +996,17 @@ export default function AdminDashboard() {
         </div>
       </nav>
 
-      {/* ── Modals ─────────────────────────────────────────────────────────────── */}
-      {showShortageForm && (
-        <ShortageModal
-          workers={allWorkers}
-          branchId={selBranch}
-          onClose={() => setShowShortageForm(false)}
-          onSaved={() => { setShowShortageForm(false); load(); setTab('shortage'); }}
-        />
+      {/* ── Modals ───────────────────────────────────────────────────────────── */}
+      {showShortage && (
+        <ShortageModal workers={allWorkers} branchId={selBranch}
+          onClose={() => setShowShortage(false)}
+          onSaved={() => { setShowShortage(false); load(selDate); setTab('shortage'); }} />
       )}
-      {showOffenceForm && (
-        <OffenceModal
-          workers={allWorkers}
-          branchId={selBranch}
-          onClose={() => setShowOffenceForm(false)}
-          onSaved={() => { setShowOffenceForm(false); load(); setTab('bookings'); }}
-        />
+      {showOffence && (
+        <OffenceModal workers={allWorkers} branchId={selBranch}
+          onClose={() => setShowOffence(false)}
+          onSaved={() => { setShowOffence(false); load(selDate); setTab('bookings'); }} />
       )}
-    </div>
-  );
-}
-
-// ── Small re-usable components ────────────────────────────────────────────────
-function StatCard({ emoji, value, label, color, onClick }) {
-  const colors = {
-    green:  'bg-green-50  border-green-100  text-green-700',
-    red:    'bg-red-50    border-red-100    text-red-700',
-    amber:  'bg-amber-50  border-amber-100  text-amber-700',
-    orange: 'bg-orange-50 border-orange-100 text-orange-700',
-  };
-  return (
-    <button onClick={onClick}
-      className={`rounded-2xl border-2 p-4 text-left w-full shadow-sm active:scale-95 transition-all ${colors[color]}`}>
-      <div className="text-3xl mb-1">{emoji}</div>
-      <div className={`text-3xl font-black ${colors[color].split(' ')[2]}`}>{value}</div>
-      <div className="text-xs font-semibold mt-0.5 opacity-70">{label}</div>
-    </button>
-  );
-}
-
-function BigActionBtn({ emoji, label, color, onClick, small }) {
-  const colors = {
-    green:  'bg-green-600 hover:bg-green-700 text-white',
-    orange: 'bg-orange-500 hover:bg-orange-600 text-white',
-    red:    'bg-red-500 hover:bg-red-600 text-white',
-  };
-  if (small) return (
-    <button onClick={onClick}
-      className={`px-3 py-1.5 rounded-xl font-bold text-sm ${colors[color]} active:scale-95 transition-all`}>
-      {emoji} {label}
-    </button>
-  );
-  return (
-    <button onClick={onClick}
-      className={`rounded-2xl p-4 text-center shadow active:scale-95 transition-all ${colors[color]}`}>
-      <div className="text-3xl mb-1">{emoji}</div>
-      <div className="text-sm font-black">{label}</div>
-    </button>
-  );
-}
-
-function SectionHeader({ emoji, title, color }) {
-  const colors = {
-    green:  'text-green-700 bg-green-50 border-green-200',
-    red:    'text-red-700   bg-red-50   border-red-200',
-    amber:  'text-amber-700 bg-amber-50 border-amber-200',
-    orange: 'text-orange-700 bg-orange-50 border-orange-200',
-  };
-  return (
-    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border font-black text-base mb-3 ${colors[color]}`}>
-      {emoji} {title}
-    </div>
-  );
-}
-
-function EmptyState({ msg }) {
-  return (
-    <div className="text-center py-8 text-gray-400">
-      <p className="text-4xl mb-2">😊</p>
-      <p className="font-semibold">{msg}</p>
-    </div>
-  );
-}
-
-function ShortageRow({ shortage }) {
-  const reasonMap = {
-    cash_shortage: '💵 Cash', fuel_shortage: '⛽ Fuel',
-    equipment_damage: '🔧 Equipment', late_arrival: '🕐 Late',
-    absent: '🚫 Absent', other: '📝 Other',
-  };
-  return (
-    <div className="bg-white border border-gray-100 rounded-xl p-4 mb-2 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-bold text-gray-900">{shortage.workerName}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{reasonMap[shortage.reason] || shortage.reason}</p>
-          {shortage.notes && <p className="text-xs text-gray-400 mt-1 italic">{shortage.notes}</p>}
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-lg font-black text-red-600">₦{(shortage.amount || 0).toLocaleString()}</p>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full
-            ${shortage.source !== 'manual' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
-            {shortage.source === 'manual' ? 'Manual' : 'Auto'}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OffenceRow({ offence }) {
-  const sev = {
-    minor:    'bg-yellow-100 text-yellow-800',
-    moderate: 'bg-orange-100 text-orange-800',
-    serious:  'bg-red-100 text-red-700',
-    gross:    'bg-red-900 text-white',
-  };
-  const typeMap = {
-    late_arrival: '🕐', absent_without_notice: '🚫', mobile_phone_misuse: '📵',
-    rude_to_customer: '😤', cash_shortage: '💵', fuel_shortage: '⛽',
-    improper_uniform: '👕', negligence: '😴', sleeping_on_duty: '💤',
-    abandoning_post: '🏃', fighting_misconduct: '👊', damage_to_property: '💥',
-    theft_fraud: '🚨', other: '📝',
-  };
-  return (
-    <div className="bg-white border border-gray-100 rounded-xl p-4 mb-2 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-bold text-gray-900">{offence.workerName}</p>
-          <p className="text-sm text-gray-600 mt-0.5">
-            {typeMap[offence.offenceType] || '⚠️'} {(offence.offenceType || '').replace(/_/g, ' ')}
-          </p>
-          {offence.description && <p className="text-xs text-gray-400 mt-1 italic">{offence.description}</p>}
-        </div>
-        <span className={`text-xs font-bold px-2 py-1 rounded-full capitalize shrink-0 ${sev[offence.severity] || 'bg-gray-100 text-gray-700'}`}>
-          {offence.severity}
-        </span>
-      </div>
     </div>
   );
 }
