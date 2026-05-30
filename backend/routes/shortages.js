@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
-const { protect } = require('../middleware/auth');
+const { protect }           = require('../middleware/auth');
+const { checkSubscription } = require('../middleware/subscription');
 const { requirePermission } = require('../middleware/permissions');
 const {
   submitShortage, getShortages,
@@ -15,7 +16,7 @@ router.get('/worker/dashboard', workerDashboard);
 router.post('/worker',          workerPinSubmit);
 
 // ── Protected routes ──────────────────────────────────────────────────────────
-router.use(protect);
+router.use(protect, checkSubscription);
 
 router.get('/summary', requirePermission('manageBranches'), getShortagesSummary);
 

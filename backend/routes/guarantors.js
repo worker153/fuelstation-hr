@@ -1,13 +1,14 @@
 const express = require('express');
 const router  = express.Router();
-const { protect } = require('../middleware/auth');
-const { upload }  = require('../middleware/upload');
+const { protect }           = require('../middleware/auth');
+const { checkSubscription } = require('../middleware/subscription');
+const { upload }            = require('../middleware/upload');
 const {
   getGuarantors, getGuarantor, addGuarantor, updateGuarantor, deleteGuarantor,
   uploadGuarantorSignature, addGuarantorHousePhotos
 } = require('../controllers/guarantorController');
 
-router.use(protect);
+router.use(protect, checkSubscription);
 
 const guarantorFiles = upload.fields([
   { name: 'passportPhoto', maxCount: 1 },

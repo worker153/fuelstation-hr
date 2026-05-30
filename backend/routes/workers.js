@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const { protect, adminOnly } = require('../middleware/auth');
+const { checkSubscription }  = require('../middleware/subscription');
 const { upload }   = require('../middleware/upload');
 const { requirePermission } = require('../middleware/permissions');
 const {
@@ -23,7 +24,7 @@ const {
 router.get('/search-by-name', searchByName);
 router.post('/self-reset-pin', selfResetPin);
 
-router.use(protect);
+router.use(protect, checkSubscription);
 
 // ── Named routes BEFORE /:id ──────────────────────────────────────────────────
 router.get('/stats',           getStats);

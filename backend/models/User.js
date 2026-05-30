@@ -16,13 +16,26 @@ const permissionsSchema = new mongoose.Schema({
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
-  company:     { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
+  // Platform-level admin flag — these users manage ALL companies (no company required)
+  isPlatformAdmin: { type: Boolean, default: false },
+
+  company:     {
+    type:     mongoose.Schema.Types.ObjectId,
+    ref:      'Company',
+    required: function () { return !this.isPlatformAdmin; },
+  },
   name:        { type: String, required: [true, 'Name is required'],  trim: true },
   email:       { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, trim: true },
   password:    { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
   role: {
     type: String,
-    enum: ['super_admin', 'admin', 'verification_officer', 'supervisor', 'record_supervisor', 'hr_staff'],
+    enum: [
+      // Platform level
+      'platform_admin',
+      // Company level
+      'super_admin', 'admin',
+      'verification_officer', 'supervisor', 'record_supervisor', 'hr_staff'
+    ],
     default: 'hr_staff'
   },
   permissions: { type: permissionsSchema, default: () => ({}) },
@@ -48,7 +61,7 @@ userSchema.methods.comparePassword = function (candidate) {
 
 // Convenience: does this user have a specific permission?
 userSchema.methods.can = function (perm) {
-  if (['super_admin', 'admin'].includes(this.role)) return true;
+  if (this.isPlatformAdmin || ['super_admin', 'admin'].includes(this.role)) return true;
   return !!this.permissions?.[perm];
 };
 

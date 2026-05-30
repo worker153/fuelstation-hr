@@ -1,12 +1,13 @@
 const express    = require('express');
 const router     = express.Router();
 const { protect }            = require('../middleware/auth');
+const { checkSubscription }  = require('../middleware/subscription');
 const { requirePermission, superAdminOnly } = require('../middleware/permissions');
 const {
   getOffences, createOffence, resolveOffence, deleteOffence, getWorkerOffences
 } = require('../controllers/offenceController');
 
-router.use(protect);
+router.use(protect, checkSubscription);
 
 // Any staff with bookOffences permission (or admin) can list + create
 router.get('/',                   requirePermission('bookOffences'), getOffences);

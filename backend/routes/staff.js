@@ -1,12 +1,13 @@
 const express    = require('express');
 const router     = express.Router();
-const { protect }      = require('../middleware/auth');
-const { superAdminOnly } = require('../middleware/permissions');
+const { protect }            = require('../middleware/auth');
+const { checkSubscription }  = require('../middleware/subscription');
+const { superAdminOnly }     = require('../middleware/permissions');
 const {
   getStaff, getRoleDefaults, createStaff, updateStaff, deleteStaff, resetPassword
 } = require('../controllers/staffController');
 
-router.use(protect);
+router.use(protect, checkSubscription);
 router.use(superAdminOnly);
 
 router.get('/role-defaults/:role', getRoleDefaults);

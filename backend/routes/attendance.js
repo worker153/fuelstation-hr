@@ -1,5 +1,6 @@
 const router = require('express').Router();
-const { protect } = require('../middleware/auth');
+const { protect }           = require('../middleware/auth');
+const { checkSubscription } = require('../middleware/subscription');
 const { requirePermission } = require('../middleware/permissions');
 const { terminalClock, getAttendance, getWorkerAttendance,
         todaySummary, processAbsences, getMonthlySummary, debugSettings } = require('../controllers/attendanceController');
@@ -8,7 +9,7 @@ const { terminalClock, getAttendance, getWorkerAttendance,
 router.post('/clock', terminalClock);
 
 // ── Protected ─────────────────────────────────────────────────────────────────
-router.use(protect);
+router.use(protect, checkSubscription);
 
 router.get('/',                   getAttendance);
 router.get('/today',              todaySummary);

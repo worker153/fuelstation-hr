@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const { protect }            = require('../middleware/auth');
+const { checkSubscription }  = require('../middleware/subscription');
 const { requirePermission, superAdminOnly } = require('../middleware/permissions');
 const { upload } = require('../middleware/upload');
 const {
@@ -8,7 +9,7 @@ const {
   uploadBranchPhoto, deleteBranchPhoto,
 } = require('../controllers/branchController');
 
-router.use(protect);
+router.use(protect, checkSubscription);
 
 // ── Named routes BEFORE /:id ──────────────────────────────────────────────────
 router.post('/resolve-url', resolveMapsUrl);   // Google Maps URL → coordinates

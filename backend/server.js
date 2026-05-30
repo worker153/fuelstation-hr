@@ -18,6 +18,7 @@ const attendanceRoutes = require('./routes/attendance');
 const breakRoutes      = require('./routes/breaks');
 const offenceRoutes    = require('./routes/offences');
 const dashboardRoutes  = require('./routes/dashboard');
+const platformRoutes   = require('./routes/platform');
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/breaks',     breakRoutes);
 app.use('/api/offences',   offenceRoutes);
 app.use('/api/dashboard',  dashboardRoutes);
+app.use('/api/platform',   platformRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });
