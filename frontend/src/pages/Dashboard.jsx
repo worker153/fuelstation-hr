@@ -4,6 +4,7 @@ import {
   Users, CheckCircle, Clock, ShieldCheck, AlertCircle,
   Plus, ChevronRight, TrendingUp, Briefcase, Activity,
   UserCheck, UserX, Building2, ArrowUpRight,
+  LogIn, AlertOctagon, AlertTriangle, RefreshCw, Banknote,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -87,14 +88,28 @@ function BarTip({ active, payload, label }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user, isSuperAdmin } = useAuth();
-  const [stats,   setStats ]   = useState(null);
-  const [recent,  setRecent]   = useState([]);
-  const [loading, setLoading]  = useState(true);
+  const [stats,       setStats     ] = useState(null);
+  const [recent,      setRecent    ] = useState([]);
+  const [loading,     setLoading   ] = useState(true);
+  const [ops,         setOps       ] = useState(null);
+  const [opsLoading,  setOpsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState('');
+  const [selBranch,   setSelBranch ] = useState('all');
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const wave     = hour < 12 ? '☀️' : hour < 17 ? '👋' : '🌙';
   const firstName = user?.name?.split(' ')[0];
+
+  const loadOps = async () => {
+    setOpsLoading(true);
+    try {
+      const { data } = await api.get('/dashboard/ops');
+      setOps(data);
+      setLastUpdated(new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' }));
+    } catch { /* silent */ }
+    finally { setOpsLoading(false); }
+  };
 
   useEffect(() => {
     (async () => {
@@ -108,6 +123,10 @@ export default function Dashboard() {
       } catch { /* silent */ }
       finally { setLoading(false); }
     })();
+    loadOps();
+    // Auto-refresh ops every 5 minutes
+    const interval = setInterval(loadOps, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // ── Verification pie data ────────────────────────────────────────────────────
@@ -204,6 +223,175 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* ══ OPERATIONS TODAY — mobile-first mini-dashboard ══════════════════ */}
+      <div className="space-y-3">
+        {/* Header row */}
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="font-bold text-gray-900 text-base">Operations Today</h2>
+            {lastUpdated && <p className="text-[11px] text-gray-400">Updated {lastUpdated}</p>}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Branch filter */}
+            {ops?.branches?.length > 1 && (
+              <select value={selBranch} onChange={e => setSelBranch(e.target.value)}
+                className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-400 bg-white">
+                <option value="all">All Branches</option>
+                {ops.branches.map(b => (
+                  <option key={String(b._id)} value={String(b._id)}>{b.name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={loadOps} disabled={opsLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-40">
+              <RefreshCw size={12} className={opsLoading ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ── Big stat cards ── */}
+        {(() => {
+          const b = selBranch === 'all'
+            ? null
+            : ops?.branches?.find(br => String(br._id) === selBranch);
+
+          const clockedIn    = b ? b.clockedIn    : (ops?.today?.clockedIn    ?? '—');
+          const notClockedIn = b ? b.notClockedIn : (ops?.today?.notClockedIn ?? '—');
+          const totalActive  = b ? b.total        : (ops?.today?.totalActive  ?? '—');
+          const shortageCnt  = b ? b.shortageCount  : (ops?.month?.shortageCount  ?? '—');
+          const shortageAmt  = b ? b.shortageAmount : (ops?.month?.shortageAmount ?? null);
+          const offences     = selBranch === 'all' ? (ops?.offences?.active ?? '—') : '—';
+
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* Clocked In */}
+              <Link to="/attendance"
+                className="flex flex-col justify-between bg-green-50 border border-green-100 rounded-2xl p-4 hover:bg-green-100 transition-colors active:scale-95">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="w-9 h-9 rounded-xl bg-green-600 flex items-center justify-center">
+                    <LogIn size={16} className="text-white" />
+                  </div>
+                  <ArrowUpRight size={13} className="text-green-400" />
+                </div>
+                <p className="text-3xl font-extrabold text-green-700 tabular-nums leading-none">{opsLoading ? '…' : clockedIn}</p>
+                <p className="text-xs font-semibold text-green-600 mt-1">Clocked In</p>
+                <p className="text-[11px] text-green-400 mt-0.5">of {opsLoading ? '…' : totalActive} active</p>
+              </Link>
+
+              {/* Not Clocked In */}
+              <Link to="/attendance"
+                className="flex flex-col justify-between bg-red-50 border border-red-100 rounded-2xl p-4 hover:bg-red-100 transition-colors active:scale-95">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="w-9 h-9 rounded-xl bg-red-500 flex items-center justify-center">
+                    <UserX size={16} className="text-white" />
+                  </div>
+                  <ArrowUpRight size={13} className="text-red-300" />
+                </div>
+                <p className="text-3xl font-extrabold text-red-600 tabular-nums leading-none">{opsLoading ? '…' : notClockedIn}</p>
+                <p className="text-xs font-semibold text-red-500 mt-1">Not Clocked In</p>
+                <p className="text-[11px] text-red-300 mt-0.5">possible no-show</p>
+              </Link>
+
+              {/* Shortages */}
+              <Link to="/shortages"
+                className="flex flex-col justify-between bg-amber-50 border border-amber-100 rounded-2xl p-4 hover:bg-amber-100 transition-colors active:scale-95">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center">
+                    <AlertTriangle size={16} className="text-white" />
+                  </div>
+                  <ArrowUpRight size={13} className="text-amber-400" />
+                </div>
+                <p className="text-3xl font-extrabold text-amber-700 tabular-nums leading-none">{opsLoading ? '…' : shortageCnt}</p>
+                <p className="text-xs font-semibold text-amber-600 mt-1">Shortages</p>
+                <p className="text-[11px] text-amber-400 mt-0.5">
+                  {shortageAmt != null ? `₦${Number(shortageAmt).toLocaleString()} this month` : 'this month'}
+                </p>
+              </Link>
+
+              {/* Active Offences */}
+              <Link to="/offences"
+                className="flex flex-col justify-between bg-orange-50 border border-orange-100 rounded-2xl p-4 hover:bg-orange-100 transition-colors active:scale-95">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center">
+                    <AlertOctagon size={16} className="text-white" />
+                  </div>
+                  <ArrowUpRight size={13} className="text-orange-300" />
+                </div>
+                <p className="text-3xl font-extrabold text-orange-700 tabular-nums leading-none">{opsLoading ? '…' : offences}</p>
+                <p className="text-xs font-semibold text-orange-600 mt-1">Active Offences</p>
+                <p className="text-[11px] text-orange-300 mt-0.5">disciplinary</p>
+              </Link>
+            </div>
+          );
+        })()}
+
+        {/* ── Per-branch breakdown ── */}
+        {ops?.branches?.length > 0 && selBranch === 'all' && (
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+              <Building2 size={13} className="text-brand-500" />
+              <p className="text-sm font-semibold text-gray-800">Per Branch — Today</p>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {ops.branches.map(b => {
+                const pct = b.total > 0 ? Math.round((b.clockedIn / b.total) * 100) : 0;
+                return (
+                  <div key={String(b._id)} className="px-4 py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{b.name}</p>
+                        <p className="text-xs text-gray-500 shrink-0 ml-2">
+                          <span className="text-green-600 font-bold">{b.clockedIn}</span>
+                          <span className="text-gray-300"> / </span>
+                          <span className="font-medium">{b.total}</span>
+                          <span className="text-gray-400"> in</span>
+                        </p>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-green-500 rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-[11px] text-gray-400">{pct}% present</p>
+                        {b.shortageAmount > 0 && (
+                          <p className="text-[11px] text-amber-600 font-medium">
+                            ₦{Number(b.shortageAmount).toLocaleString()} shortages
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Quick navigation — large touch targets for mobile ── */}
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Quick Navigation</p>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {[
+              { to: '/attendance',  icon: Clock,         label: 'Attendance', cls: 'text-blue-600   bg-blue-50   hover:bg-blue-100'   },
+              { to: '/shortages',   icon: AlertTriangle, label: 'Shortages',  cls: 'text-amber-600  bg-amber-50  hover:bg-amber-100'  },
+              { to: '/offences',    icon: AlertOctagon,  label: 'Disciplinary',cls:'text-orange-600 bg-orange-50 hover:bg-orange-100' },
+              { to: '/workers',     icon: Users,         label: 'Workers',    cls: 'text-brand-600  bg-brand-50  hover:bg-brand-100'  },
+              { to: '/payroll',     icon: Banknote,      label: 'Payroll',    cls: 'text-purple-600 bg-purple-50 hover:bg-purple-100' },
+              { to: '/branches',    icon: Building2,     label: 'Branches',   cls: 'text-green-600  bg-green-50  hover:bg-green-100'  },
+            ].map(({ to, icon: Icon, label, cls }) => (
+              <Link key={to} to={to}
+                className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl py-3.5 px-2 transition-colors active:scale-95 ${cls}`}>
+                <Icon size={20} />
+                <span className="text-[11px] font-semibold text-center leading-tight">{label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* ══ END OPERATIONS ══════════════════════════════════════════════════ */}
 
       {/* ── Stat cards ──────────────────────────────────────────────────────── */}
       {loading ? (

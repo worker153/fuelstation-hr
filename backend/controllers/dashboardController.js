@@ -1,0 +1,142 @@
+/**
+ * dashboardController — quick ops stats for the admin mini-dashboard.
+ * Single endpoint: GET /api/dashboard/ops
+ * Returns today's attendance, this-month shortages, active offences, and
+ * per-branch breakdown — all in one fast round-trip for mobile admins.
+ */
+const Attendance = require('../models/Attendance');
+const Worker     = require('../models/Worker');
+const Branch     = require('../models/Branch');
+const Shortage   = require('../models/Shortage');
+const Offence    = require('../models/Offence');
+
+const getOpsStats = async (req, res) => {
+  const cid = req.user.company._id;
+
+  const now       = new Date();
+  const todayStr  = now.toISOString().split('T')[0];          // YYYY-MM-DD UTC
+  const month     = now.getMonth() + 1;
+  const year      = now.getFullYear();
+
+  // ── Run all queries in parallel ───────────────────────────────────────────
+  const [
+    todayAttendance,
+    activeWorkers,
+    branches,
+    monthShortages,
+    activeOffences,
+    recentOffences,
+    recentShortages,
+  ] = await Promise.all([
+    // Today's clock-in records
+    Attendance.find({ company: cid, date: todayStr }).lean(),
+
+    // All active workers
+    Worker.find({ company: cid, employmentStatus: 'active' }, { _id:1, branch:1, branchId:1, role:1 }).lean(),
+
+    // All branches
+    Branch.find({ company: cid, isActive: true }, { _id:1, name:1 }).lean(),
+
+    // This month's shortages
+    Shortage.find({ company: cid, month, year }).lean(),
+
+    // Active disciplinary offences
+    Offence.countDocuments({ company: cid, status: 'active' }),
+
+    // 5 most recent offences
+    Offence.find({ company: cid })
+      .sort({ createdAt: -1 }).limit(5).lean(),
+
+    // 5 most recent shortages
+    Shortage.find({ company: cid })
+      .sort({ createdAt: -1 }).limit(5).lean(),
+  ]);
+
+  // ── Today's attendance summary ────────────────────────────────────────────
+  const clockedInSet = new Set();
+  todayAttendance.forEach(r => {
+    if (r.type === 'clock_in') clockedInSet.add(String(r.worker));
+  });
+
+  const totalActive  = activeWorkers.length;
+  const clockedIn    = clockedInSet.size;
+  const notClockedIn = totalActive - clockedIn;    // potential no-shows (rough)
+
+  // ── Per-branch breakdown ──────────────────────────────────────────────────
+  const branchMap = {};
+  branches.forEach(b => {
+    branchMap[String(b._id)] = {
+      _id:          b._id,
+      name:         b.name,
+      total:        0,
+      clockedIn:    0,
+      notClockedIn: 0,
+      shortageCount:  0,
+      shortageAmount: 0,
+    };
+  });
+
+  activeWorkers.forEach(w => {
+    const bid = String(w.branchId || '');
+    if (branchMap[bid]) branchMap[bid].total++;
+  });
+
+  todayAttendance.forEach(r => {
+    if (r.type !== 'clock_in') return;
+    // find branch by branchId from the record
+    const bid = String(r.branch || '');
+    // r.branch is stored as ObjectId string in attendance records
+    // find the matching branch key
+    const key = Object.keys(branchMap).find(k =>
+      branchMap[k].name === r.branchName || k === bid
+    );
+    if (key && !branchMap[key]._clockedSet) branchMap[key]._clockedSet = new Set();
+    if (key) branchMap[key]._clockedSet?.add(String(r.worker));
+  });
+
+  Object.values(branchMap).forEach(b => {
+    b.clockedIn    = b._clockedSet?.size || 0;
+    b.notClockedIn = Math.max(0, b.total - b.clockedIn);
+    delete b._clockedSet;
+  });
+
+  // ── Shortage breakdown ────────────────────────────────────────────────────
+  let totalShortageAmount = 0;
+  let totalShortageCount  = 0;
+
+  monthShortages.forEach(s => {
+    totalShortageAmount += s.amount || 0;
+    totalShortageCount++;
+    const bid = String(s.branchId || '');
+    if (branchMap[bid]) {
+      branchMap[bid].shortageCount++;
+      branchMap[bid].shortageAmount += s.amount || 0;
+    }
+  });
+
+  // ── Response ──────────────────────────────────────────────────────────────
+  res.json({
+    success: true,
+    date:    todayStr,
+    today: {
+      clockedIn,
+      notClockedIn,
+      totalActive,
+    },
+    month: {
+      shortageCount:  totalShortageCount,
+      shortageAmount: totalShortageAmount,
+      month, year,
+    },
+    offences: {
+      active: activeOffences,
+    },
+    branches: Object.values(branchMap),
+    recent: {
+      offences:  recentOffences,
+      shortages: recentShortages,
+    },
+  });
+};
+
+module.exports = { getOpsStats };
