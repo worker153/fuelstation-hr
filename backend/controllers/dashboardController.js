@@ -244,8 +244,8 @@ const getAdminSummary = async (req, res) => {
 
     // Populate shift for grouping
     Worker.find({ company: cid, employmentStatus: 'active' })
-          .select('_id fullName role branchId shiftId')
-          .populate('shiftId', '_id name startTime endTime shiftType')
+          .select('_id fullName role branchId shiftId clockInRequired rotationSchedule resumptionDate')
+          .populate('shiftId', '_id name startTime endTime shiftType days rotationPattern')
           .lean(),
 
     // Day-specific shortages — use date field OR createdAt fallback
