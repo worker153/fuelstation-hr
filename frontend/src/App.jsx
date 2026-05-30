@@ -28,6 +28,7 @@ import Attendance         from './pages/Attendance';
 import Breaks             from './pages/Breaks';
 import StaffPolicy        from './pages/StaffPolicy';
 import Offences           from './pages/Offences';
+import OpsView            from './pages/OpsView';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -72,6 +73,7 @@ export default function App() {
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/shortage"        element={<WorkerShortage />} />
             <Route path="/policy"          element={<StaffPolicy />} />
+            <Route path="/ops"             element={<PrivateRoute><OpsView /></PrivateRoute>} />
             <Route path="/my-dashboard"    element={<WorkerDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />
             <Route path="/my-pin"   element={<WorkerPinReset />} />
