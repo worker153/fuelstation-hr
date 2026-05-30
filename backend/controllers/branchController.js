@@ -1,6 +1,7 @@
 const Branch = require('../models/Branch');
 const Worker = require('../models/Worker');
 const User   = require('../models/User');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../middleware/upload');
 
 // ─── Parse lat/lng from any Google Maps URL format ────────────────────────────
 function parseMapsCoords(url) {
@@ -280,4 +281,40 @@ const deactivateBranch = async (req, res) => {
   });
 };
 
-module.exports = { getBranches, getBranch, createBranch, updateBranch, deactivateBranch, resolveMapsUrl };
+// ─── POST /api/branches/:id/photo  (upload station picture) ──────────────────
+const uploadBranchPhoto = async (req, res) => {
+  const branch = await Branch.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
+  if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+  // Delete old photo from Cloudinary if it exists
+  if (branch.photo?.publicId) {
+    await deleteFromCloudinary(branch.photo.publicId).catch(() => {});
+  }
+
+  const result = await uploadToCloudinary(
+    req.file.buffer,
+    `${req.user.company._id}/branches/photos`,
+    'image'
+  );
+
+  branch.photo = { url: result.secure_url, publicId: result.public_id };
+  await branch.save();
+
+  res.json({ success: true, data: { url: branch.photo.url, publicId: branch.photo.publicId } });
+};
+
+// ─── DELETE /api/branches/:id/photo  (remove station picture) ────────────────
+const deleteBranchPhoto = async (req, res) => {
+  const branch = await Branch.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
+
+  if (branch.photo?.publicId) {
+    await deleteFromCloudinary(branch.photo.publicId).catch(() => {});
+  }
+  branch.photo = undefined;
+  await branch.save();
+  res.json({ success: true });
+};
+
+module.exports = { getBranches, getBranch, createBranch, updateBranch, deactivateBranch, resolveMapsUrl, uploadBranchPhoto, deleteBranchPhoto };

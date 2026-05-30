@@ -29,7 +29,11 @@ const userSchema = new mongoose.Schema({
   branchId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },  // assigned branch for supervisors
   shiftId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Shift'  },  // assigned shift (optional)
   isActive:    { type: Boolean, default: true },
-  createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+  // PIN for simple admin dashboard login
+  pin:          { type: String, select: false },
+  pinUpdatedAt: { type: Date },
 }, { timestamps: true });
 
 userSchema.pre('save', async function (next) {

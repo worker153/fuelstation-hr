@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   GitBranch, Plus, Edit2, Phone, MapPin, User, Users,
   CheckCircle, XCircle, X, Save, Loader, ToggleLeft, ToggleRight,
-  Building2, Navigation, Link2, AlertCircle, Clock, ChevronDown
+  Building2, Navigation, Link2, AlertCircle, Clock, ChevronDown,
+  Camera, Trash2,
 } from 'lucide-react';
 import api from '../utils/api';
 import NumInput from '../components/NumInput';
@@ -156,12 +157,16 @@ function RuleCard({ rule, isDefault, onChange, onRemove }) {
 // ─── Branch Form Modal ────────────────────────────────────────────────────────
 function BranchModal({ branch, staff, onClose, onSaved }) {
   const notify = useNotify();
-  const [saving,      setSaving    ] = useState(false);
-  const [showMap,     setShowMap   ] = useState(!!branch?.location?.lat);
-  const [mapsLink,    setMapsLink  ] = useState('');
-  const [importing,   setImporting ] = useState(false);
-  const [importError, setImportError] = useState('');
-  const [imported,    setImported  ] = useState(false);
+  const [saving,       setSaving     ] = useState(false);
+  const [showMap,      setShowMap    ] = useState(!!branch?.location?.lat);
+  const [mapsLink,     setMapsLink   ] = useState('');
+  const [importing,    setImporting  ] = useState(false);
+  const [importError,  setImportError] = useState('');
+  const [imported,     setImported   ] = useState(false);
+  // Photo state
+  const [photoFile,    setPhotoFile  ] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(branch?.photo?.url || '');
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   // Migrate legacy attendanceSettings → attendanceRules on first edit
   const getInitialRules = () => {
@@ -311,6 +316,35 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     setImported(false);
   };
 
+  // Handle photo file selection
+  const handlePhotoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  // Delete photo — local preview or server photo
+  const handleDeletePhoto = async () => {
+    if (photoFile) {
+      // Only a local preview — just discard it; restore server photo if any
+      setPhotoFile(null);
+      setPhotoPreview(branch?.photo?.url || '');
+      return;
+    }
+    if (branch?._id && branch?.photo?.url) {
+      try {
+        await api.delete(`/branches/${branch._id}/photo`);
+        setPhotoPreview('');
+        notify('Photo removed');
+      } catch {
+        notify('Could not remove photo', 'error');
+      }
+    } else {
+      setPhotoPreview('');
+    }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return notify('Branch name is required', 'error');
@@ -327,8 +361,25 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
       const res = branch
         ? await api.put(`/branches/${branch._id}`, payload)
         : await api.post('/branches', payload);
+
+      const saved = res.data.data;
+
+      // Upload photo if a new one was selected
+      if (photoFile) {
+        setPhotoUploading(true);
+        try {
+          const fd = new FormData();
+          fd.append('photo', photoFile);
+          const photoRes = await api.post(`/branches/${saved._id}/photo`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          saved.photo = photoRes.data.data;
+        } catch { notify('Branch saved but photo upload failed', 'error'); }
+        finally { setPhotoUploading(false); }
+      }
+
       notify(branch ? 'Branch updated' : 'Branch created ✓');
-      onSaved(res.data.data);
+      onSaved(saved);
     } catch (err) {
       notify(err.response?.data?.message || 'Failed to save branch', 'error');
     } finally {
@@ -363,6 +414,64 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
           </div>
 
           <form onSubmit={submit} className="divide-y divide-gray-100">
+
+            {/* ── Section 0: Station Photo ──────────────────────────────────── */}
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Station Photo</p>
+
+              {/* Hidden file input */}
+              <input
+                type="file"
+                id="branch-photo-input"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoSelect}
+              />
+
+              {photoPreview ? (
+                <div className="relative rounded-xl overflow-hidden group">
+                  <img
+                    src={photoPreview}
+                    alt="Station preview"
+                    className="w-full h-40 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                  <div className="absolute bottom-2.5 right-2.5 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('branch-photo-input').click()}
+                      className="flex items-center gap-1.5 bg-white/90 hover:bg-white text-gray-700 text-xs font-semibold px-3 py-1.5 rounded-lg shadow transition-colors"
+                    >
+                      <Camera size={12} />
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeletePhoto}
+                      className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow transition-colors"
+                    >
+                      <Trash2 size={12} />
+                      Remove
+                    </button>
+                  </div>
+                  {photoFile && (
+                    <span className="absolute top-2 left-2 bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      New — save to upload
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('branch-photo-input').click()}
+                  className="w-full h-32 rounded-xl border-2 border-dashed border-gray-200 hover:border-brand-400 hover:bg-brand-50/30 transition-colors flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-brand-500"
+                >
+                  <Camera size={22} />
+                  <span className="text-sm font-medium">Add Station Photo</span>
+                  <span className="text-xs">JPG or PNG · shows as banner on branch card</span>
+                </button>
+              )}
+            </div>
 
             {/* ── Section 1: Branch Details ─────────────────────────────────── */}
             <div className="px-6 py-5 space-y-4">
@@ -554,8 +663,22 @@ function BranchCard({ branch, canManage, onEdit, onToggle }) {
 
   return (
     <div className={`card overflow-hidden transition-all ${!branch.isActive ? 'opacity-60' : ''}`}>
-      {/* Colour bar */}
-      <div className={`h-1 ${branch.isActive ? 'bg-brand-500' : 'bg-gray-300'}`} />
+      {/* Station photo — full width banner if present, else colour bar */}
+      {branch.photo?.url ? (
+        <div className="relative h-36 overflow-hidden">
+          <img src={branch.photo.url} alt={branch.name}
+            className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+          {/* Active badge over photo */}
+          <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium backdrop-blur
+            ${branch.isActive ? 'bg-green-500/80 text-white' : 'bg-gray-500/80 text-white'}`}>
+            {branch.isActive ? <CheckCircle size={10} /> : <XCircle size={10} />}
+            {branch.isActive ? 'Active' : 'Inactive'}
+          </span>
+        </div>
+      ) : (
+        <div className={`h-1 ${branch.isActive ? 'bg-brand-500' : 'bg-gray-300'}`} />
+      )}
 
       <div className="p-5 space-y-3">
         {/* Top row */}
@@ -563,11 +686,13 @@ function BranchCard({ branch, canManage, onEdit, onToggle }) {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-gray-900 text-lg">{branch.name}</h3>
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
-                ${branch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                {branch.isActive ? <CheckCircle size={10} /> : <XCircle size={10} />}
-                {branch.isActive ? 'Active' : 'Inactive'}
-              </span>
+              {!branch.photo?.url && (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
+                  ${branch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {branch.isActive ? <CheckCircle size={10} /> : <XCircle size={10} />}
+                  {branch.isActive ? 'Active' : 'Inactive'}
+                </span>
+              )}
             </div>
             {/* Worker count badge */}
             <div className="flex items-center gap-1.5 mt-1">

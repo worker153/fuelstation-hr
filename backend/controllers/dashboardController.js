@@ -139,4 +139,121 @@ const getOpsStats = async (req, res) => {
   });
 };
 
-module.exports = { getOpsStats };
+// ── GET /api/dashboard/admin-summary ─────────────────────────────────────────
+// Returns per-branch breakdown WITH worker names — for the PIN admin dashboard.
+const getAdminSummary = async (req, res) => {
+  const cid      = req.user.company._id;
+  const now      = new Date();
+  const todayStr = now.toISOString().split('T')[0];   // YYYY-MM-DD
+  const month    = now.getMonth() + 1;
+  const year     = now.getFullYear();
+
+  const dayStart = new Date(todayStr + 'T00:00:00.000Z');
+  const dayEnd   = new Date(todayStr + 'T23:59:59.999Z');
+
+  // Limit to assigned branch if supervisor/non-admin
+  const userBranchId = req.user.branchId ? String(req.user.branchId) : null;
+  const isAdmin = ['super_admin', 'admin'].includes(req.user.role);
+
+  const branchFilter = { company: cid, isActive: true };
+  if (!isAdmin && userBranchId) branchFilter._id = userBranchId;
+
+  const [branches, clockIns, clockOuts, activeWorkers, todayShortages, todayOffences] =
+    await Promise.all([
+      Branch.find(branchFilter).lean(),
+
+      Attendance.find({ company: cid, date: todayStr, type: 'clock_in' }).lean(),
+      Attendance.find({ company: cid, date: todayStr, type: 'clock_out' }).lean(),
+
+      Worker.find({ company: cid, employmentStatus: 'active' })
+            .select('_id fullName role branchId').lean(),
+
+      Shortage.find({ company: cid, createdAt: { $gte: dayStart, $lte: dayEnd } }).lean(),
+
+      Offence.find({ company: cid, createdAt: { $gte: dayStart, $lte: dayEnd } }).lean(),
+    ]);
+
+  // Build lookup sets
+  const clockOutSet = new Set(clockOuts.map(a => String(a.worker)));
+
+  // Group by branch
+  const mkMap = () => {
+    const m = {};
+    branches.forEach(b => { m[String(b._id)] = []; });
+    return m;
+  };
+
+  const ciByBranch  = mkMap();
+  const wkByBranch  = mkMap();
+  const shByBranch  = mkMap();
+  const ofByBranch  = mkMap();
+
+  clockIns.forEach(a => {
+    const bid = String(a.branch);
+    if (ciByBranch[bid] !== undefined)
+      ciByBranch[bid].push({
+        workerId:    String(a.worker),
+        fullName:    a.workerName || 'Unknown',
+        role:        a.workerRole || '',
+        clockInTime: a.timestamp,
+        hasClockOut: clockOutSet.has(String(a.worker)),
+      });
+  });
+
+  activeWorkers.forEach(w => {
+    const bid = String(w.branchId);
+    if (wkByBranch[bid] !== undefined) wkByBranch[bid].push(w);
+  });
+
+  todayShortages.forEach(s => {
+    const bid = String(s.branchId);
+    if (shByBranch[bid] !== undefined)
+      shByBranch[bid].push({
+        _id:        s._id,
+        workerName: s.workerName,
+        amount:     s.amount,
+        reason:     s.reason,
+        source:     s.source,
+        status:     s.status,
+        notes:      s.notes,
+      });
+  });
+
+  todayOffences.forEach(o => {
+    const bid = String(o.branchId);
+    if (ofByBranch[bid] !== undefined)
+      ofByBranch[bid].push({
+        _id:         o._id,
+        workerName:  o.workerName,
+        offenceType: o.offenceType,
+        severity:    o.severity,
+        action:      o.action,
+        description: o.description,
+      });
+  });
+
+  const summary = branches.map(b => {
+    const bid     = String(b._id);
+    const workers = wkByBranch[bid];
+    const ci      = ciByBranch[bid];
+    const ciIds   = new Set(ci.map(w => w.workerId));
+    const absent  = workers
+      .filter(w => !ciIds.has(String(w._id)))
+      .map(w => ({ _id: w._id, fullName: w.fullName, role: w.role }));
+
+    return {
+      _id:              b._id,
+      name:             b.name,
+      totalActive:      workers.length,
+      clockedIn:        ci,
+      absent,
+      todayShortages:   shByBranch[bid],
+      todayShortageTotal: shByBranch[bid].reduce((s, x) => s + (x.amount || 0), 0),
+      todayOffences:    ofByBranch[bid],
+    };
+  });
+
+  res.json({ success: true, data: { date: todayStr, month, year, summary } });
+};
+
+module.exports = { getOpsStats, getAdminSummary };

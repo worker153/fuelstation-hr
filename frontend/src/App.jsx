@@ -29,6 +29,8 @@ import Breaks             from './pages/Breaks';
 import StaffPolicy        from './pages/StaffPolicy';
 import Offences           from './pages/Offences';
 import OpsView            from './pages/OpsView';
+import AdminPinLogin      from './pages/AdminPinLogin';
+import AdminDashboard     from './pages/AdminDashboard';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -77,6 +79,8 @@ export default function App() {
             <Route path="/my-dashboard"    element={<WorkerDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />
             <Route path="/my-pin"   element={<WorkerPinReset />} />
+            <Route path="/admin/:userId"  element={<AdminPinLogin />} />
+            <Route path="/admin-dashboard" element={<AdminDashboard />} />
 
             <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route path="/dashboard"     element={<Dashboard />} />

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Users, Plus, Edit2, Trash2, Key, ToggleLeft, ToggleRight,
   Shield, ShieldCheck, UserCheck, Briefcase, ChevronDown, ChevronUp,
-  X, Save, Eye, EyeOff, Check
+  X, Save, Eye, EyeOff, Check, Hash, Link2,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -260,6 +260,91 @@ function ResetPwdModal({ staff, onClose }) {
   );
 }
 
+// ─── Set PIN Modal ────────────────────────────────────────────────────────────
+function SetPinModal({ staff, onClose }) {
+  const notify  = useNotify();
+  const [pin,   setPin  ] = useState('');
+  const [saving,setSaving] = useState(false);
+  const [copied,setCopied] = useState(false);
+
+  const dashLink = `${window.location.origin}/admin/${staff._id}`;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!/^\d{4,6}$/.test(pin)) return notify('PIN must be 4–6 digits', 'error');
+    setSaving(true);
+    try {
+      await api.put(`/auth/pin/${staff._id}`, { pin });
+      notify(`PIN set for ${staff.name} ✓`);
+      onClose();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(dashLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <Hash size={16} className="text-brand-600" />
+            Dashboard PIN — {staff.name}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        {/* Set PIN form */}
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label className="label">Set 4–6 digit PIN</label>
+            <input
+              type="number" inputMode="numeric"
+              className="input text-2xl tracking-widest text-center font-black"
+              placeholder="e.g. 1234"
+              value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,6))}
+              required
+            />
+            <p className="text-xs text-gray-400 mt-1">Numbers only. Keep it simple — the admin should remember it.</p>
+          </div>
+          <div className="flex gap-3">
+            <button type="submit" disabled={saving} className="btn-primary flex-1 justify-center">
+              {saving ? 'Saving…' : <><Check size={14} className="mr-1" />Save PIN</>}
+            </button>
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          </div>
+        </form>
+
+        {/* Dashboard link */}
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-500 mb-2">📱 Dashboard Link for {staff.name}</p>
+          <div className="flex gap-2">
+            <input readOnly
+              className="input text-xs text-gray-600 flex-1 bg-gray-50"
+              value={dashLink}
+            />
+            <button onClick={copyLink}
+              className={`px-3 rounded-xl border text-xs font-bold transition-all
+                ${copied ? 'bg-green-100 border-green-300 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700'}`}>
+              {copied ? <><Check size={12} className="inline mr-1" />Copied!</> : <><Link2 size={12} className="inline mr-1" />Copy</>}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1.5">
+            Share this link with {staff.name.split(' ')[0]}. They bookmark it and enter their PIN to access the dashboard.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function StaffManagement() {
   const notify      = useNotify();
@@ -269,6 +354,7 @@ export default function StaffManagement() {
   const [showForm, setShowForm]   = useState(false);
   const [editing, setEditing]     = useState(null);
   const [resetFor, setResetFor]   = useState(null);
+  const [pinFor,   setPinFor  ]   = useState(null);
   const [expanded, setExpanded]   = useState(null);
 
   const load = async () => {
@@ -405,8 +491,14 @@ export default function StaffManagement() {
                           <Edit2 size={15} />
                         </button>
                         <button onClick={() => setResetFor(s)}
-                          className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-lg">
+                          className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-lg"
+                          title="Reset password">
                           <Key size={15} />
+                        </button>
+                        <button onClick={() => setPinFor(s)}
+                          className="p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 rounded-lg"
+                          title="Set dashboard PIN / copy link">
+                          <Hash size={15} />
                         </button>
                         {!isSelf && (
                           <button onClick={() => handleDelete(s)}
@@ -451,6 +543,7 @@ export default function StaffManagement() {
       )}
 
       {resetFor && <ResetPwdModal staff={resetFor} onClose={() => { setResetFor(null); load(); }} />}
+      {pinFor   && <SetPinModal   staff={pinFor}   onClose={() => setPinFor(null) } />}
     </div>
   );
 }

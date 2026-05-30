@@ -8,6 +8,7 @@ const branchSchema = new mongoose.Schema({
   },
   name:    { type: String, required: [true, 'Branch name is required'], trim: true },
   address: { type: String, trim: true },
+  photo:   { url: String, publicId: String },   // station picture
   location: {
     lat:       Number,
     lng:       Number,
