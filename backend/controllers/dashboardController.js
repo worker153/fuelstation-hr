@@ -35,44 +35,48 @@ function isOnRotation(pattern, startDate, checkDate) {
 //   'off'  = worker is on a scheduled day off
 //   'skip' = clockInRequired=false (salary/no-attendance workers)
 function workerDutyStatus(worker, shift, dateUTC) {
-  // Salary / no-clock-in workers — never shown in attendance
+  // Salary / no-clock-in workers — never shown
   if (worker.clockInRequired === false) return 'skip';
 
-  // No shift assigned → assume they work every day
-  if (!shift) return 'on';
+  // ── STEP 1: Worker-level rotation always wins ────────────────────────────
+  // Checked FIRST regardless of what the shift says.
+  // Workers like "1 day in / 1 day out" or "5 days in / 2 days out"
+  // store their individual cycle on the Worker document itself.
+  const workerPattern = worker.rotationSchedule?.pattern || 'none';
+  if (workerPattern !== 'none') {
+    // Best anchor: explicit startDate → resumptionDate → activatedAt
+    const anchor = worker.rotationSchedule?.startDate
+                || worker.resumptionDate
+                || worker.activatedAt;
+    if (anchor) {
+      return isOnRotation(workerPattern, new Date(anchor), dateUTC) ? 'on' : 'off';
+    }
+    // Pattern set but no anchor — can't calculate.
+    // Conservative: mark 'off' so we don't falsely accuse.
+    return 'off';
+  }
+
+  // ── STEP 2: No worker-level rotation — use the shift configuration ───────
+  if (!shift) return 'on';   // no shift → works every day
 
   const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const dayName   = DAY_NAMES[dateUTC.getUTCDay()];
 
-  // ── Fixed shift ──────────────────────────────────────────────────────────
   if (shift.shiftType === 'fixed') {
     const workDays = shift.days || [];
-    // Default = all 7 days → treat as "every day" only if it literally has all 7
-    // If it has fewer than 7 days, respect the configuration
+    // All 7 days in array means "no specific day off configured" → every day
     if (workDays.length === 0 || workDays.length === 7) return 'on';
     return workDays.includes(dayName) ? 'on' : 'off';
   }
 
-  // ── Rotation shift ───────────────────────────────────────────────────────
   if (shift.shiftType === 'rotation') {
-    // 1. Worker-level rotation schedule takes priority
-    const rp = worker.rotationSchedule?.pattern || 'none';
-    const sd = worker.rotationSchedule?.startDate;
-    if (rp !== 'none' && sd) {
-      return isOnRotation(rp, new Date(sd), dateUTC) ? 'on' : 'off';
-    }
-
-    // 2. Shift-level pattern + best available anchor
-    const sp = shift.rotationPattern;
-    const anchor = worker.rotationSchedule?.startDate
-                || worker.resumptionDate
-                || worker.activatedAt;   // last-resort: date worker was activated
+    // Shift-level rotation + worker anchor
+    const sp     = shift.rotationPattern;
+    const anchor = worker.resumptionDate || worker.activatedAt;
     if (sp && sp !== 'custom' && anchor) {
       return isOnRotation(sp, new Date(anchor), dateUTC) ? 'on' : 'off';
     }
-
-    // 3. No anchor at all — cannot calculate rotation
-    //    Return 'off' (conservative: do NOT falsely mark as absent)
+    // No way to calculate → conservative 'off'
     return 'off';
   }
 
