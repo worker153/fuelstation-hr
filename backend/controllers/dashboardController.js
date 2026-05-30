@@ -10,6 +10,66 @@ const Branch     = require('../models/Branch');
 const Shortage   = require('../models/Shortage');
 const Offence    = require('../models/Offence');
 
+// ── Rotation maths ────────────────────────────────────────────────────────────
+// Returns true if on-duty, false if off, given pattern like '1_1'|'2_2'|'3_3'
+// and an anchor startDate that is a known ON-duty day.
+function isOnRotation(pattern, startDate, checkDate) {
+  const parts = pattern.split('_').map(Number);
+  if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return true;
+  const [daysOn, daysOff] = parts;
+  const cycleLen = daysOn + daysOff;
+  const startUTC = Date.UTC(
+    startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()
+  );
+  const checkUTC = Date.UTC(
+    checkDate.getUTCFullYear(), checkDate.getUTCMonth(), checkDate.getUTCDate()
+  );
+  const daysDiff = Math.round((checkUTC - startUTC) / 86400000);
+  if (daysDiff < 0) return true;        // before start — include by default
+  return (daysDiff % cycleLen) < daysOn;
+}
+
+// ── Core duty check ───────────────────────────────────────────────────────────
+// Returns: 'on' | 'off' | 'skip'
+//   'on'   = worker should be at work on this date
+//   'off'  = worker is on a scheduled day off
+//   'skip' = clockInRequired=false (salary/no-attendance workers)
+function workerDutyStatus(worker, shift, dateUTC) {
+  // Salary workers — never shown in attendance
+  if (worker.clockInRequired === false) return 'skip';
+
+  // No shift assigned → assume they work every day
+  if (!shift) return 'on';
+
+  const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dayName   = DAY_NAMES[dateUTC.getUTCDay()];
+
+  if (shift.shiftType === 'fixed') {
+    const workDays = shift.days || [];
+    if (workDays.length === 0) return 'on';        // no restriction → every day
+    return workDays.includes(dayName) ? 'on' : 'off';
+  }
+
+  if (shift.shiftType === 'rotation') {
+    // Worker-level rotation schedule takes priority
+    const rp = worker.rotationSchedule?.pattern || 'none';
+    const sd = worker.rotationSchedule?.startDate;
+    if (rp !== 'none' && sd) {
+      return isOnRotation(rp, new Date(sd), dateUTC) ? 'on' : 'off';
+    }
+    // Fall back to shift pattern with worker's resumptionDate (or rotationSchedule.startDate) as anchor
+    const sp     = shift.rotationPattern;
+    const anchor = worker.rotationSchedule?.startDate || worker.resumptionDate;
+    if (sp && sp !== 'custom' && anchor) {
+      return isOnRotation(sp, new Date(anchor), dateUTC) ? 'on' : 'off';
+    }
+    // Cannot determine — include as on-duty (safer than hiding someone)
+    return 'on';
+  }
+
+  return 'on';
+}
+
 const getOpsStats = async (req, res) => {
   const cid = req.user.company._id;
 
@@ -316,6 +376,13 @@ const getAdminSummary = async (req, res) => {
       }));
   };
 
+  // Build a quick shiftId→shift lookup
+  const shiftById = Object.fromEntries(shifts.map(s => [String(s._id), s]));
+
+  // Date as UTC object for duty checks
+  const [chkYr, chkMo, chkDy] = date.split('-').map(Number);
+  const dateUTC = new Date(Date.UTC(chkYr, chkMo - 1, chkDy));
+
   // ── Build per-branch summary ──────────────────────────────────────────────
   const summary = branches.map(b => {
     const bid     = String(b._id);
@@ -323,59 +390,123 @@ const getAdminSummary = async (req, res) => {
     const ci      = ciByBranch[bid];
     const ciIds   = new Set(ci.map(w => w.workerId));
 
-    // Full absent list
-    const absent = workers
-      .filter(w => !ciIds.has(String(w._id)))
-      .map(w => ({
+    // ── Categorise every worker by duty status ────────────────────────────
+    // 'on'   = should be at work → present or absent
+    // 'off'  = scheduled day off   → shown as "Off Today"
+    // 'skip' = no clock-in required → not shown at all
+    const presentWorkers  = [];   // on-duty AND clocked in
+    const absentWorkers   = [];   // on-duty AND NOT clocked in
+    const offTodayWorkers = [];   // scheduled off today
+
+    workers.forEach(w => {
+      const shift  = w.shiftId ? shiftById[String(w.shiftId._id || w.shiftId)] : null;
+      const status = workerDutyStatus(w, shift, dateUTC);
+
+      if (status === 'skip') return;   // salary / no-attendance workers
+
+      const wBase = {
         _id:       w._id,
         fullName:  w.fullName,
         role:      w.role,
-        shiftName: w.shiftId?.name || null,
-      }));
+        shiftName: shift?.name || null,
+      };
 
-    // ── Shift groups ─────────────────────────────────────────────────────
-    const shiftGroupMap = {};
-
-    workers.forEach(w => {
-      const sid   = w.shiftId ? String(w.shiftId._id) : '__none__';
-      const sName = w.shiftId?.name || 'No Shift';
-      const sStart= w.shiftId?.startTime || '';
-      const sEnd  = w.shiftId?.endTime   || '';
-
-      if (!shiftGroupMap[sid]) {
-        shiftGroupMap[sid] = {
-          shiftId:    sid === '__none__' ? null : sid,
-          shiftName:  sName,
-          startTime:  sStart,
-          endTime:    sEnd,
-          total:      0,
-          present:    [],
-          absent:     [],
-        };
+      if (status === 'off') {
+        offTodayWorkers.push(wBase);
+        return;
       }
-      shiftGroupMap[sid].total++;
 
+      // status === 'on'
       if (ciIds.has(String(w._id))) {
         const rec = ci.find(c => c.workerId === String(w._id));
-        shiftGroupMap[sid].present.push({
-          _id:         w._id,
-          fullName:    w.fullName,
-          role:        w.role,
+        presentWorkers.push({
+          ...wBase,
           clockInTime: rec?.clockInTime,
           hasClockOut: rec?.hasClockOut,
         });
       } else {
-        shiftGroupMap[sid].absent.push({ _id: w._id, fullName: w.fullName, role: w.role });
+        absentWorkers.push(wBase);
       }
+    });
+
+    // Workers who clocked in but are technically "off" today (came in voluntarily)
+    // — include in presentWorkers so they're not lost, mark with voluntaryIn flag
+    ci.forEach(ciRec => {
+      const alreadyListed = presentWorkers.some(p => String(p._id) === ciRec.workerId);
+      if (alreadyListed) return;
+      // Find worker in the workers array
+      const w = workers.find(x => String(x._id) === ciRec.workerId);
+      if (!w) return;
+      const shift = w.shiftId ? shiftById[String(w.shiftId._id || w.shiftId)] : null;
+      const status = workerDutyStatus(w, shift, dateUTC);
+      if (status === 'skip') return;
+      // They clocked in despite being 'off' → show them as present but flagged
+      presentWorkers.push({
+        _id:         w._id,
+        fullName:    w.fullName,
+        role:        w.role,
+        shiftName:   shift?.name || null,
+        clockInTime: ciRec.clockInTime,
+        hasClockOut: ciRec.hasClockOut,
+        voluntaryIn: status === 'off',  // came in on their day off
+      });
+      // Remove from offToday since they're here
+      const idx = offTodayWorkers.findIndex(x => String(x._id) === ciRec.workerId);
+      if (idx !== -1) offTodayWorkers.splice(idx, 1);
+    });
+
+    const totalExpected = presentWorkers.length + absentWorkers.length;
+
+    // ── Shift groups (only on-duty + off workers, grouped) ────────────────
+    const shiftGroupMap = {};
+    const ensureGroup = (sid, shift) => {
+      if (!shiftGroupMap[sid]) {
+        shiftGroupMap[sid] = {
+          shiftId:    sid === '__none__' ? null : sid,
+          shiftName:  shift?.name  || 'No Shift',
+          startTime:  shift?.startTime || '',
+          endTime:    shift?.endTime   || '',
+          present:    [],
+          absent:     [],
+          offToday:   [],
+        };
+      }
+    };
+
+    [...presentWorkers, ...absentWorkers, ...offTodayWorkers].forEach(w => {
+      const worker  = workers.find(x => String(x._id) === String(w._id));
+      const shift   = worker?.shiftId ? shiftById[String(worker.shiftId._id || worker.shiftId)] : null;
+      const sid     = shift ? String(shift._id) : '__none__';
+      ensureGroup(sid, shift);
+    });
+
+    presentWorkers.forEach(w => {
+      const worker = workers.find(x => String(x._id) === String(w._id));
+      const shift  = worker?.shiftId ? shiftById[String(worker.shiftId._id || worker.shiftId)] : null;
+      const sid    = shift ? String(shift._id) : '__none__';
+      shiftGroupMap[sid]?.present.push(w);
+    });
+    absentWorkers.forEach(w => {
+      const worker = workers.find(x => String(x._id) === String(w._id));
+      const shift  = worker?.shiftId ? shiftById[String(worker.shiftId._id || worker.shiftId)] : null;
+      const sid    = shift ? String(shift._id) : '__none__';
+      shiftGroupMap[sid]?.absent.push(w);
+    });
+    offTodayWorkers.forEach(w => {
+      const worker = workers.find(x => String(x._id) === String(w._id));
+      const shift  = worker?.shiftId ? shiftById[String(worker.shiftId._id || worker.shiftId)] : null;
+      const sid    = shift ? String(shift._id) : '__none__';
+      shiftGroupMap[sid]?.offToday.push(w);
     });
 
     const shiftGroups = Object.values(shiftGroupMap).map(g => ({
       ...g,
-      allPresent:   g.absent.length === 0 && g.total > 0,
+      total:        g.present.length + g.absent.length,
       presentCount: g.present.length,
       absentCount:  g.absent.length,
+      offCount:     g.offToday.length,
+      allPresent:   g.absent.length === 0 && g.present.length > 0,
     })).sort((a, b) => {
-      // Sort shifts by startTime, unknowns last
       if (!a.startTime && !b.startTime) return 0;
       if (!a.startTime) return 1;
       if (!b.startTime) return -1;
@@ -383,23 +514,42 @@ const getAdminSummary = async (req, res) => {
     });
 
     // Month history grouped by date
+    const groupByDate = (arr, getDate) => {
+      const map = {};
+      arr.forEach(item => {
+        const d = new Date(getDate(item)).toISOString().slice(0, 10);
+        if (!map[d]) map[d] = [];
+        map[d].push(item);
+      });
+      return Object.entries(map)
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([dt, items]) => ({
+          date:  dt,
+          count: items.length,
+          total: items.reduce((s, x) => s + (x.amount || 0), 0),
+          items: items.slice(0, 20),
+        }));
+    };
+
     const monthShortageHistory = groupByDate(
-      mshByBranch[bid],
-      s => s.date || s.attendanceDate || s.createdAt
+      mshByBranch[bid], s => s.date || s.attendanceDate || s.createdAt
     );
     const monthOffenceHistory = groupByDate(
-      mofByBranch[bid],
-      o => o.date || o.createdAt
+      mofByBranch[bid], o => o.date || o.createdAt
     );
 
     return {
-      _id:          b._id,
-      name:         b.name,
-      totalActive:  workers.length,
+      _id:           b._id,
+      name:          b.name,
+      totalActive:   workers.length,   // all active (for info)
+      totalExpected, // on-duty today (present + absent, excluding skip/off)
+      offCount:      offTodayWorkers.length,
 
-      // Day data
-      clockedIn:          ci,
-      absent,
+      // Day data — only on-duty workers
+      clockedIn:    presentWorkers,
+      absent:       absentWorkers,
+      offToday:     offTodayWorkers,
+
       dayShortages:       shByBranch[bid],
       dayShortageTotal:   shByBranch[bid].reduce((s, x) => s + (x.amount || 0), 0),
       dayOffences:        ofByBranch[bid],
@@ -410,8 +560,8 @@ const getAdminSummary = async (req, res) => {
       // Month history
       monthShortageHistory,
       monthOffenceHistory,
-      monthShortageTotal:  mshByBranch[bid].reduce((s, x) => s + (x.amount || 0), 0),
-      monthOffenceCount:   mofByBranch[bid].length,
+      monthShortageTotal: mshByBranch[bid].reduce((s, x) => s + (x.amount || 0), 0),
+      monthOffenceCount:  mofByBranch[bid].length,
     };
   });
 

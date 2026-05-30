@@ -280,41 +280,74 @@ function FieldLabel({ children }) {
 }
 
 // ── Worker row ────────────────────────────────────────────────────────────────
-function WorkerRow({ name, role, time, hasOut, absent }) {
+// variant: 'present' | 'absent' | 'off'
+function WorkerRow({ name, role, time, hasOut, variant = 'present', voluntaryIn }) {
+  const cfg = {
+    present: {
+      wrap:   'bg-gray-50 border-gray-100',
+      avatar: 'bg-green-100 text-green-700',
+      name:   'text-gray-900',
+      badge:  null,
+    },
+    absent: {
+      wrap:   'bg-red-50 border-red-100',
+      avatar: 'bg-red-100 text-red-700',
+      name:   'text-red-800',
+      badge:  '❌',
+    },
+    off: {
+      wrap:   'bg-gray-50 border-gray-100 opacity-60',
+      avatar: 'bg-gray-100 text-gray-500',
+      name:   'text-gray-500',
+      badge:  '📅',
+    },
+  }[variant] || {};
+
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-2
-      ${absent ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'}`}>
-      <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base font-black
-        ${absent ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-2 border ${cfg.wrap}`}>
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base font-black ${cfg.avatar}`}>
         {(name || '?')[0].toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={`font-bold leading-tight truncate ${absent ? 'text-red-800' : 'text-gray-900'}`}>{name}</p>
-        <p className="text-xs text-gray-500 capitalize">{roleLabel(role)}</p>
+        <p className={`font-bold leading-tight truncate ${cfg.name}`}>{name}</p>
+        <p className="text-xs text-gray-500 capitalize">
+          {roleLabel(role)}
+          {variant === 'off' && <span className="ml-1 text-gray-400">· Off Today</span>}
+          {voluntaryIn && <span className="ml-1 text-purple-500">· Came in on day off</span>}
+        </p>
       </div>
-      {time && (
+      {time && variant === 'present' && (
         <div className="text-right shrink-0">
           <p className="text-xs font-semibold text-gray-700">IN {time}</p>
           {hasOut && <p className="text-xs text-green-600 font-semibold">OUT ✓</p>}
         </div>
       )}
-      {absent && <span className="text-red-500 text-xl shrink-0">❌</span>}
+      {cfg.badge && <span className="text-xl shrink-0">{cfg.badge}</span>}
     </div>
   );
 }
 
 // ── Shift group card ──────────────────────────────────────────────────────────
 function ShiftGroup({ group }) {
-  const [open, setOpen] = useState(true);
+  const [open,    setOpen   ] = useState(true);
+  const [showOff, setShowOff] = useState(false);
+
+  const hasExpected = group.total > 0;
+  const allOff      = hasExpected === false && (group.offCount || 0) > 0;
 
   return (
     <div className={`rounded-2xl border-2 mb-4 overflow-hidden
-      ${group.allPresent ? 'border-green-300' : group.absentCount > 0 ? 'border-amber-300' : 'border-gray-200'}`}>
+      ${group.allPresent && hasExpected ? 'border-green-300'
+        : group.absentCount > 0        ? 'border-red-200'
+        : allOff                       ? 'border-gray-200'
+        : 'border-gray-200'}`}>
 
-      {/* Header — tap to expand/collapse */}
+      {/* Header */}
       <button onClick={() => setOpen(o => !o)}
         className={`w-full px-4 py-3 flex items-center justify-between text-left
-          ${group.allPresent ? 'bg-green-50' : group.absentCount > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+          ${group.allPresent && hasExpected ? 'bg-green-50'
+            : group.absentCount > 0        ? 'bg-red-50'
+            : 'bg-gray-50'}`}>
         <div>
           <p className="font-black text-gray-900 text-base">{group.shiftName}</p>
           {(group.startTime || group.endTime) && (
@@ -324,15 +357,25 @@ function ShiftGroup({ group }) {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {group.allPresent && group.total > 0 ? (
+          {/* All expected workers off today */}
+          {!hasExpected && (group.offCount || 0) > 0 ? (
+            <span className="bg-gray-200 text-gray-600 text-xs font-bold px-3 py-1 rounded-full">
+              📅 All Off Today
+            </span>
+          ) : group.allPresent && hasExpected ? (
             <span className="bg-green-500 text-white text-xs font-black px-3 py-1 rounded-full">
               ✅ All Present
             </span>
           ) : (
             <div className="text-right">
-              <p className="text-xs font-black text-green-700">✅ {group.presentCount} in</p>
+              {group.presentCount > 0 && (
+                <p className="text-xs font-black text-green-700">✅ {group.presentCount} in</p>
+              )}
               {group.absentCount > 0 && (
                 <p className="text-xs font-black text-red-600">❌ {group.absentCount} absent</p>
+              )}
+              {group.offCount > 0 && (
+                <p className="text-xs font-semibold text-gray-400">📅 {group.offCount} off</p>
               )}
             </div>
           )}
@@ -342,16 +385,35 @@ function ShiftGroup({ group }) {
 
       {/* Workers */}
       {open && (
-        <div className="px-3 py-3 space-y-1">
+        <div className="px-3 py-3">
+          {/* Present */}
           {group.present.map((w, i) => (
-            <WorkerRow key={i} name={w.fullName} role={w.role}
-              time={fmtTime(w.clockInTime)} hasOut={w.hasClockOut} />
+            <WorkerRow key={`p${i}`} name={w.fullName} role={w.role}
+              time={fmtTime(w.clockInTime)} hasOut={w.hasClockOut}
+              variant="present" voluntaryIn={w.voluntaryIn} />
           ))}
+          {/* Absent (on duty but not here) */}
           {group.absent.map((w, i) => (
-            <WorkerRow key={i} name={w.fullName} role={w.role} absent />
+            <WorkerRow key={`a${i}`} name={w.fullName} role={w.role} variant="absent" />
           ))}
-          {group.total === 0 && (
+
+          {/* No expected workers — show nothing or empty */}
+          {group.total === 0 && (group.offCount || 0) === 0 && (
             <p className="text-center text-gray-400 text-sm py-2">No workers in this shift</p>
+          )}
+
+          {/* Off Today — collapsible sub-section */}
+          {(group.offToday?.length > 0 || group.offCount > 0) && (
+            <div className="mt-2">
+              <button onClick={() => setShowOff(o => !o)}
+                className="w-full text-left text-xs font-bold text-gray-400 py-1.5 flex items-center gap-1 hover:text-gray-600">
+                <span>{showOff ? '▲' : '▼'}</span>
+                📅 {group.offCount || group.offToday?.length} worker{(group.offCount || group.offToday?.length) !== 1 ? 's' : ''} off today
+              </button>
+              {showOff && (group.offToday || []).map((w, i) => (
+                <WorkerRow key={`o${i}`} name={w.fullName} role={w.role} variant="off" />
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -656,12 +718,13 @@ export default function AdminDashboard() {
           {tab === 'home' && (
             <div className="p-4 space-y-4">
 
-              {/* 4 stat cards */}
+              {/* 4 stat cards — counts only workers expected today */}
               <div className="grid grid-cols-2 gap-3">
                 <StatCard emoji="✅" value={branch.clockedIn?.length ?? 0}
-                  label="Clocked In" color="green" onClick={() => setTab('staff')} />
+                  label={`Present (of ${branch.totalExpected ?? branch.totalActive})`}
+                  color="green" onClick={() => setTab('staff')} />
                 <StatCard emoji="❌" value={branch.absent?.length ?? 0}
-                  label="Absent" color="red" onClick={() => setTab('staff')} />
+                  label="Absent Today" color="red" onClick={() => setTab('staff')} />
                 <StatCard emoji="💸"
                   value={`₦${(branch.dayShortageTotal || 0).toLocaleString()}`}
                   label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Shortage`}
@@ -671,21 +734,31 @@ export default function AdminDashboard() {
                   color="orange" onClick={() => setTab('bookings')} />
               </div>
 
-              {/* Attendance bar */}
-              {branch.totalActive > 0 && (
+              {/* "Off today" info strip */}
+              {(branch.offCount || 0) > 0 && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 flex items-center gap-2">
+                  <span className="text-base">📅</span>
+                  <p className="text-sm text-gray-500 font-medium">
+                    <strong className="text-gray-700">{branch.offCount}</strong> worker{branch.offCount !== 1 ? 's' : ''} scheduled off today — not counted in absent
+                  </p>
+                </div>
+              )}
+
+              {/* Attendance bar — uses totalExpected (on-duty workers only) */}
+              {(branch.totalExpected ?? branch.totalActive) > 0 && (
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                   <div className="flex justify-between items-center mb-2">
                     <p className="font-bold text-gray-800 text-sm">
                       Attendance {!isToday && `· ${fmtDateLabel(selDate)}`}
                     </p>
                     <p className="text-sm font-semibold text-gray-600">
-                      {branch.clockedIn?.length} / {branch.totalActive}
+                      {branch.clockedIn?.length} / {branch.totalExpected ?? branch.totalActive} expected
                     </p>
                   </div>
                   <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
                     {(() => {
-                      const pct = branch.totalActive > 0
-                        ? Math.round((branch.clockedIn?.length / branch.totalActive) * 100) : 0;
+                      const exp = branch.totalExpected ?? branch.totalActive;
+                      const pct = exp > 0 ? Math.round((branch.clockedIn?.length / exp) * 100) : 0;
                       return (
                         <div className={`h-full rounded-full transition-all duration-500
                           ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
@@ -694,31 +767,37 @@ export default function AdminDashboard() {
                     })()}
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5 text-right">
-                    {branch.totalActive > 0
-                      ? Math.round((branch.clockedIn?.length / branch.totalActive) * 100)
-                      : 0}% present
+                    {(() => {
+                      const exp = branch.totalExpected ?? branch.totalActive;
+                      return exp > 0 ? Math.round((branch.clockedIn?.length / exp) * 100) : 0;
+                    })()}% of expected workers present
                   </p>
                 </div>
               )}
 
               {/* All-present celebration */}
-              {branch.totalActive > 0 && branch.absent?.length === 0 && branch.clockedIn?.length > 0 && (
+              {(branch.totalExpected ?? 0) > 0 && branch.absent?.length === 0 && branch.clockedIn?.length > 0 && (
                 <div className="bg-green-500 rounded-2xl p-4 text-center text-white shadow-md">
                   <p className="text-3xl mb-1">🎉</p>
-                  <p className="font-black text-lg">All {branch.totalActive} Workers Present!</p>
-                  <p className="text-green-100 text-sm">Great attendance {isToday ? 'today' : 'on this day'}!</p>
+                  <p className="font-black text-lg">All {branch.totalExpected} Expected Workers Present!</p>
+                  <p className="text-green-100 text-sm">
+                    Great attendance {isToday ? 'today' : 'on this day'}!
+                    {(branch.offCount || 0) > 0 && ` (${branch.offCount} on scheduled day off)`}
+                  </p>
                 </div>
               )}
 
-              {/* Absent alert */}
+              {/* Absent alert — only on-duty workers who didn't show up */}
               {branch.absent?.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
                   <p className="font-black text-red-700 text-base mb-2">
                     ❌ {branch.absent.length} Worker{branch.absent.length !== 1 ? 's' : ''} Absent
+                    <span className="font-normal text-red-500 text-sm"> (supposed to work today)</span>
                   </p>
                   {branch.absent.slice(0, 4).map((w, i) => (
                     <p key={i} className="text-red-600 font-semibold text-sm">
-                      • {w.fullName} <span className="font-normal opacity-70">({roleLabel(w.role)})</span>
+                      • {w.fullName}
+                      {w.shiftName && <span className="font-normal opacity-60"> · {w.shiftName}</span>}
                     </p>
                   ))}
                   {branch.absent.length > 4 && (
@@ -750,15 +829,36 @@ export default function AdminDashboard() {
           {/* ════ STAFF TAB ═════════════════════════════════════════════════════ */}
           {tab === 'staff' && (
             <div className="p-4">
-              <p className="text-sm font-bold text-gray-500 mb-4">
-                📅 {fmtDateLabel(selDate)} · {branch.name}
-              </p>
+              {/* Summary strip */}
+              <div className="flex gap-2 mb-4 flex-wrap">
+                <span className="text-xs bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded-full">
+                  ✅ {branch.clockedIn?.length || 0} present
+                </span>
+                {branch.absent?.length > 0 && (
+                  <span className="text-xs bg-red-100 text-red-700 font-bold px-2.5 py-1 rounded-full">
+                    ❌ {branch.absent.length} absent
+                  </span>
+                )}
+                {(branch.offCount || 0) > 0 && (
+                  <span className="text-xs bg-gray-100 text-gray-500 font-bold px-2.5 py-1 rounded-full">
+                    📅 {branch.offCount} off today
+                  </span>
+                )}
+                <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-2.5 py-1 rounded-full">
+                  {fmtDateLabel(selDate)}
+                </span>
+              </div>
 
               {/* All-present banner */}
-              {branch.totalActive > 0 && branch.absent?.length === 0 && (
+              {(branch.totalExpected ?? 0) > 0 && branch.absent?.length === 0 && branch.clockedIn?.length > 0 && (
                 <div className="bg-green-500 text-white rounded-2xl px-4 py-3 mb-4 flex items-center gap-3">
                   <span className="text-2xl">🎉</span>
-                  <p className="font-black">All {branch.totalActive} workers present!</p>
+                  <div>
+                    <p className="font-black">All {branch.totalExpected} expected workers present!</p>
+                    {(branch.offCount || 0) > 0 && (
+                      <p className="text-green-100 text-xs">{branch.offCount} others on scheduled day off</p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -772,24 +872,33 @@ export default function AdminDashboard() {
                 </>
               ) : (
                 <>
-                  {/* Fallback: flat list */}
+                  {/* Fallback: flat list when no shifts configured */}
                   <div className="mb-6">
                     <SectionHeader emoji="✅" title={`Clocked In (${branch.clockedIn?.length || 0})`} color="green" />
                     {branch.clockedIn?.length === 0
                       ? <EmptyState msg="Nobody clocked in yet" />
                       : branch.clockedIn.map((w, i) => (
                           <WorkerRow key={i} name={w.fullName} role={w.role}
-                            time={fmtTime(w.clockInTime)} hasOut={w.hasClockOut} />
+                            time={fmtTime(w.clockInTime)} hasOut={w.hasClockOut}
+                            variant="present" voluntaryIn={w.voluntaryIn} />
                         ))}
                   </div>
-                  <div>
-                    <SectionHeader emoji="❌" title={`Absent (${branch.absent?.length || 0})`} color="red" />
+                  <div className="mb-6">
+                    <SectionHeader emoji="❌" title={`Absent — Should Be Here (${branch.absent?.length || 0})`} color="red" />
                     {branch.absent?.length === 0
-                      ? <EmptyState msg="All workers present 🎉" />
+                      ? <EmptyState msg="All expected workers present 🎉" />
                       : branch.absent.map((w, i) => (
-                          <WorkerRow key={i} name={w.fullName} role={w.role} absent />
+                          <WorkerRow key={i} name={w.fullName} role={w.role} variant="absent" />
                         ))}
                   </div>
+                  {(branch.offToday?.length || 0) > 0 && (
+                    <div>
+                      <SectionHeader emoji="📅" title={`Off Today (${branch.offToday.length})`} color="gray" />
+                      {branch.offToday.map((w, i) => (
+                        <WorkerRow key={i} name={w.fullName} role={w.role} variant="off" />
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>
