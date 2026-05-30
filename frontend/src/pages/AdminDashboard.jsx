@@ -682,16 +682,6 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Branch selector */}
-        {isAdmin && data?.summary?.length > 1 && (
-          <select value={selBranch} onChange={e => setSelBranch(e.target.value)}
-            className="mt-2 w-full bg-white/15 border border-white/30 text-white rounded-xl px-3 py-1.5 text-sm font-semibold appearance-none">
-            {data.summary.map(b => (
-              <option key={b._id} value={String(b._id)} className="text-gray-900 bg-white">{b.name}</option>
-            ))}
-          </select>
-        )}
-
         {/* Last refresh */}
         {lastRefresh && isToday && (
           <p className="text-green-400/70 text-[10px] text-right mt-1">
@@ -699,6 +689,38 @@ export default function AdminDashboard() {
           </p>
         )}
       </div>
+
+      {/* ── Branch tab strip — always visible if multiple branches ───────────── */}
+      {data?.summary?.length > 1 && (
+        <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[calc(var(--header-h,140px))] z-30">
+          <div className="flex overflow-x-auto gap-0 scrollbar-none">
+            {data.summary.map(b => {
+              const active  = String(b._id) === selBranch;
+              const present = b.clockedIn?.length ?? 0;
+              const absent  = b.absent?.length ?? 0;
+              return (
+                <button
+                  key={b._id}
+                  onClick={() => setSelBranch(String(b._id))}
+                  className={`flex-shrink-0 px-4 py-3 text-left transition-all border-b-[3px]
+                    ${active
+                      ? 'border-green-600 bg-green-50'
+                      : 'border-transparent bg-white hover:bg-gray-50'}`}
+                >
+                  <p className={`text-sm font-black leading-tight whitespace-nowrap
+                    ${active ? 'text-green-800' : 'text-gray-700'}`}>
+                    {b.name}
+                  </p>
+                  <p className="text-[11px] font-semibold mt-0.5 whitespace-nowrap">
+                    <span className="text-green-600">✅ {present}</span>
+                    {absent > 0 && <span className="text-red-500 ml-2">❌ {absent}</span>}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Loading ──────────────────────────────────────────────────────────── */}
       {loading && (
