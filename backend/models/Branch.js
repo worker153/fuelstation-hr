@@ -21,12 +21,13 @@ const branchSchema = new mongoose.Schema({
 
   // Legacy single-rule (kept for backward compat — controller prefers attendanceRules)
   attendanceSettings: {
-    clockInDeadline:              { type: String, default: '' },
-    absentThreshold:              { type: String, default: '' },
-    shiftEnd:                     { type: String, default: '' },
-    lateDeductionAmount:          { type: Number, default: 0 },
-    absentDeductionAmount:        { type: Number, default: 0 },
-    earlyDepartureDeductionAmount:{ type: Number, default: 0 },
+    clockInDeadline:              { type: String,  default: '' },
+    absentThreshold:              { type: String,  default: '' },
+    shiftEnd:                     { type: String,  default: '' },
+    shiftEndNextDay:              { type: Boolean, default: false },
+    lateDeductionAmount:          { type: Number,  default: 0 },
+    absentDeductionAmount:        { type: Number,  default: 0 },
+    earlyDepartureDeductionAmount:{ type: Number,  default: 0 },
     workDays:                     { type: [Number], default: [1,2,3,4,5,6] },
   },
 

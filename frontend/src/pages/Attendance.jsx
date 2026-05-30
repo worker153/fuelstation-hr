@@ -98,24 +98,29 @@ function isMissingClockOut(clockInRecord, clockOutRecord, settings, filterDate) 
   if (clockOutRecord) return false;   // already clocked out — fine
   if (!settings?.shiftEnd) return false; // no shift end configured — can't tell
 
-  const now     = new Date();
-  const nowMins = now.getHours() * 60 + now.getMinutes(); // browser local time (WAT)
+  const [seH, seM] = settings.shiftEnd.split(':').map(Number);
+  if (isNaN(seH)) return false;
+  const shiftEndMins = seH * 60 + seM;
 
-  const [seH, seM]    = settings.shiftEnd.split(':').map(Number);
-  const shiftEndMins  = seH * 60 + seM;
-
-  // For past dates: always flag (shift is definitely over)
+  const now      = new Date();
+  const nowMins  = now.getHours() * 60 + now.getMinutes(); // browser local time (WAT)
   const todayStr = now.toISOString().split('T')[0];
-  if (filterDate < todayStr) return true;
 
-  // For today: only flag if shift end has passed
   if (settings.shiftEndNextDay) {
-    // Next-day shift — shift end is tomorrow; only flag if it's now past midnight
-    // and the shift-end time has passed. Simplified: if we're past shiftEnd WAT today
-    // and it's early morning (shift ran overnight), flag it.
-    return nowMins >= shiftEndMins;
+    // ── Overnight shift: clock-out falls on the calendar day AFTER filterDate ──
+    // e.g. worker clocks in on May 30, shift ends 06:00 on May 31.
+    // Only flag AFTER we've passed 06:00 on May 31.
+    const [y, m, d] = filterDate.split('-').map(Number);
+    const nextDayStr = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().split('T')[0];
+
+    if (todayStr < nextDayStr) return false;  // next day hasn't arrived → still on shift
+    if (todayStr > nextDayStr) return true;   // 2+ days later → definitely over
+    return nowMins >= shiftEndMins;           // it's the next day — check if past 06:00
   }
-  return nowMins >= shiftEndMins;
+
+  // ── Same-day shift ───────────────────────────────────────────────────────────
+  if (filterDate < todayStr) return true;     // past date → shift is long over
+  return nowMins >= shiftEndMins;             // today → only flag if shift end has passed
 }
 
 const STATUS_CFG = {
