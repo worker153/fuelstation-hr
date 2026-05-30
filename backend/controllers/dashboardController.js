@@ -9,6 +9,7 @@ const Worker     = require('../models/Worker');
 const Branch     = require('../models/Branch');
 const Shortage   = require('../models/Shortage');
 const Offence    = require('../models/Offence');
+const Shift      = require('../models/Shift');
 
 // ── Rotation maths ────────────────────────────────────────────────────────────
 // Returns true if on-duty, false if off, given pattern like '1_1'|'2_2'|'3_3'
@@ -91,6 +92,10 @@ const getOpsStats = async (req, res) => {
   const month     = now.getMonth() + 1;
   const year      = now.getFullYear();
 
+  // dateUTC used for rotation duty checks
+  const [dy, dm, dd] = todayStr.split('-').map(Number);
+  const dateUTC = new Date(Date.UTC(dy, dm - 1, dd));
+
   // ── Run all queries in parallel ───────────────────────────────────────────
   const [
     todayAttendance,
@@ -100,12 +105,16 @@ const getOpsStats = async (req, res) => {
     activeOffences,
     recentOffences,
     recentShortages,
+    shifts,
   ] = await Promise.all([
     // Today's clock-in records
     Attendance.find({ company: cid, date: todayStr }).lean(),
 
-    // All active workers
-    Worker.find({ company: cid, employmentStatus: 'active' }, { _id:1, branch:1, branchId:1, role:1 }).lean(),
+    // All active workers — include rotation fields so duty check works
+    Worker.find({ company: cid, employmentStatus: 'active' })
+      .select('_id branchId shiftId clockInRequired rotationSchedule resumptionDate activatedAt')
+      .populate('shiftId', '_id shiftType days rotationPattern')
+      .lean(),
 
     // All branches
     Branch.find({ company: cid, isActive: true }, { _id:1, name:1 }).lean(),
@@ -123,25 +132,40 @@ const getOpsStats = async (req, res) => {
     // 5 most recent shortages
     Shortage.find({ company: cid })
       .sort({ createdAt: -1 }).limit(5).lean(),
+
+    // Shifts for duty check lookup
+    Shift.find({ company: cid, isActive: true }).lean(),
   ]);
 
-  // ── Today's attendance summary ────────────────────────────────────────────
+  // Build shift lookup
+  const shiftById = Object.fromEntries(shifts.map(s => [String(s._id), s]));
+
+  // ── Filter to only workers expected today (rotation-aware) ───────────────
   const clockedInSet = new Set();
   todayAttendance.forEach(r => {
     if (r.type === 'clock_in') clockedInSet.add(String(r.worker));
   });
 
-  const totalActive  = activeWorkers.length;
-  const clockedIn    = clockedInSet.size;
-  const notClockedIn = totalActive - clockedIn;    // potential no-shows (rough)
+  // Separate workers into expected-today vs off-today
+  const expectedWorkers = [];
+  activeWorkers.forEach(w => {
+    const shift  = w.shiftId ? shiftById[String(w.shiftId._id || w.shiftId)] : null;
+    const status = workerDutyStatus(w, shift, dateUTC);
+    if (status !== 'skip' && status !== 'off') expectedWorkers.push(w);
+  });
 
-  // ── Per-branch breakdown ──────────────────────────────────────────────────
+  const totalActive  = activeWorkers.length;
+  const totalExpected = expectedWorkers.length;
+  const clockedIn    = expectedWorkers.filter(w => clockedInSet.has(String(w._id))).length;
+  const notClockedIn = totalExpected - clockedIn;
+
+  // ── Per-branch breakdown (rotation-aware) ────────────────────────────────
   const branchMap = {};
   branches.forEach(b => {
     branchMap[String(b._id)] = {
       _id:          b._id,
       name:         b.name,
-      total:        0,
+      total:        0,   // expected today (on duty)
       clockedIn:    0,
       notClockedIn: 0,
       shortageCount:  0,
@@ -149,17 +173,14 @@ const getOpsStats = async (req, res) => {
     };
   });
 
-  activeWorkers.forEach(w => {
+  expectedWorkers.forEach(w => {
     const bid = String(w.branchId || '');
     if (branchMap[bid]) branchMap[bid].total++;
   });
 
   todayAttendance.forEach(r => {
     if (r.type !== 'clock_in') return;
-    // find branch by branchId from the record
     const bid = String(r.branch || '');
-    // r.branch is stored as ObjectId string in attendance records
-    // find the matching branch key
     const key = Object.keys(branchMap).find(k =>
       branchMap[k].name === r.branchName || k === bid
     );
@@ -168,7 +189,12 @@ const getOpsStats = async (req, res) => {
   });
 
   Object.values(branchMap).forEach(b => {
-    b.clockedIn    = b._clockedSet?.size || 0;
+    // Only count clock-ins from workers expected today
+    const bid = String(b._id);
+    const expectedInBranch = new Set(
+      expectedWorkers.filter(w => String(w.branchId) === bid).map(w => String(w._id))
+    );
+    b.clockedIn    = [...(b._clockedSet || [])].filter(id => expectedInBranch.has(id)).length;
     b.notClockedIn = Math.max(0, b.total - b.clockedIn);
     delete b._clockedSet;
   });
@@ -195,6 +221,7 @@ const getOpsStats = async (req, res) => {
       clockedIn,
       notClockedIn,
       totalActive,
+      totalExpected,   // on-duty workers only
     },
     month: {
       shortageCount:  totalShortageCount,
@@ -215,8 +242,6 @@ const getOpsStats = async (req, res) => {
 // ── GET /api/dashboard/admin-summary ─────────────────────────────────────────
 // Returns per-branch breakdown WITH worker names, shift groups, and month history.
 // Query params: date (YYYY-MM-DD, default today)
-const Shift = require('../models/Shift');
-
 const getAdminSummary = async (req, res) => {
   const cid      = req.user.company._id;
   const now      = new Date();

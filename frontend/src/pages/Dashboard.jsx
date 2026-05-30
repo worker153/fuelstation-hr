@@ -259,7 +259,7 @@ export default function Dashboard() {
 
           const clockedIn    = b ? b.clockedIn    : (ops?.today?.clockedIn    ?? '—');
           const notClockedIn = b ? b.notClockedIn : (ops?.today?.notClockedIn ?? '—');
-          const totalActive  = b ? b.total        : (ops?.today?.totalActive  ?? '—');
+          const totalActive  = b ? b.total        : (ops?.today?.totalExpected ?? ops?.today?.totalActive ?? '—');
           const shortageCnt  = b ? b.shortageCount  : (ops?.month?.shortageCount  ?? '—');
           const shortageAmt  = b ? b.shortageAmount : (ops?.month?.shortageAmount ?? null);
           const offences     = selBranch === 'all' ? (ops?.offences?.active ?? '—') : '—';
@@ -277,7 +277,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-3xl font-extrabold text-green-700 tabular-nums leading-none">{opsLoading ? '…' : clockedIn}</p>
                 <p className="text-xs font-semibold text-green-600 mt-1">Clocked In</p>
-                <p className="text-[11px] text-green-400 mt-0.5">of {opsLoading ? '…' : totalActive} active</p>
+                <p className="text-[11px] text-green-400 mt-0.5">of {opsLoading ? '…' : totalActive} expected</p>
               </Link>
 
               {/* Not Clocked In */}

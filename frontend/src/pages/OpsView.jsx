@@ -48,7 +48,7 @@ export default function OpsView() {
   const branch = selBranch === 'all' ? null : ops?.branches?.find(b => String(b._id) === selBranch);
   const clockedIn    = branch ? branch.clockedIn    : (ops?.today?.clockedIn    ?? '—');
   const notClockedIn = branch ? branch.notClockedIn : (ops?.today?.notClockedIn ?? '—');
-  const totalActive  = branch ? branch.total        : (ops?.today?.totalActive  ?? '—');
+  const totalActive  = branch ? branch.total        : (ops?.today?.totalExpected ?? ops?.today?.totalActive ?? '—');
   const shortageCnt  = branch ? branch.shortageCount  : (ops?.month?.shortageCount  ?? '—');
   const shortageAmt  = branch ? branch.shortageAmount : (ops?.month?.shortageAmount ?? null);
   const offences     = selBranch === 'all' ? (ops?.offences?.active ?? '—') : '—';
@@ -120,7 +120,7 @@ export default function OpsView() {
               {loading ? <span className="text-2xl text-gray-300">…</span> : clockedIn}
             </p>
             <p className="text-sm font-bold text-gray-700">Clocked In</p>
-            <p className="text-xs text-gray-400">of {loading ? '…' : totalActive} active workers</p>
+            <p className="text-xs text-gray-400">of {loading ? '…' : totalActive} expected today</p>
           </Link>
 
           {/* Not Clocked In */}
