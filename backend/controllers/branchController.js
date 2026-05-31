@@ -253,6 +253,13 @@ const updateBranch = async (req, res) => {
     };
     branch.markModified('breakSettings');
   }
+  if (req.body.restroomSettings) {
+    branch.restroomSettings = {
+      ...(branch.restroomSettings?.toObject?.() || {}),
+      ...req.body.restroomSettings,
+    };
+    branch.markModified('restroomSettings');
+  }
 
   await branch.save();
   await branch.populate('manager', 'name email role');

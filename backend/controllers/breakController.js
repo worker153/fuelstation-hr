@@ -280,6 +280,10 @@ const getBreakStatus = async (req, res) => {
       clockedOut,
       clockInTime: clockIn?.timestamp || null,
       serverTimeWAT,
+      restroomConfig: {
+        allowedMinutes:  branch?.restroomSettings?.allowedMinutes  ?? 2,
+        deductionPerMin: branch?.restroomSettings?.deductionPerMin ?? 500,
+      },
       activeBreak: activeBreak ? {
         _id:            activeBreak._id,
         breakType:      activeBreak.breakType,

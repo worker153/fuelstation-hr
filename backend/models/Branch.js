@@ -75,6 +75,10 @@ const branchSchema = new mongoose.Schema({
       missedDeductionAmount:   { type: Number,  default: 0     },
     },
   },
+  restroomSettings: {
+    allowedMinutes:  { type: Number, default: 2   },  // minutes allowed before deduction kicks in
+    deductionPerMin: { type: Number, default: 500 },  // ₦ per extra minute
+  },
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });

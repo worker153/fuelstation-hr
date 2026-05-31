@@ -1399,8 +1399,10 @@ function BreakView({ session, onBack }) {
 
                 {/* ── Restroom Break ────────────────────────────── */}
                 {(() => {
+                  const rstCfg       = status.restroomConfig || {};
                   const rstActive    = restroomData?.active;
-                  const rstAllowed   = rstActive?.allowedMinutes || 2;
+                  const rstAllowed   = rstActive?.allowedMinutes ?? rstCfg.allowedMinutes ?? 2;
+                  const rstDedRate   = rstActive?.deductionPerMin ?? rstCfg.deductionPerMin ?? 500;
                   const rstAllowedSec = rstAllowed * 60;
                   const rstRemaining  = rstAllowedSec - rstElapsedSec;
                   const rstIsOver    = rstRemaining < 0;
@@ -1418,7 +1420,7 @@ function BreakView({ session, onBack }) {
                             <div>
                               <p className="text-blue-200 font-bold">Restroom Break Active</p>
                               <p className="text-blue-300/60 text-xs">
-                                Started {fmtT(rstActive.startTime)} · {rstAllowed} min allowed · ₦{rstActive.deductionPerMin || 500}/min extra
+                                Started {fmtT(rstActive.startTime)} · {rstAllowed} min allowed · ₦{rstDedRate.toLocaleString()}/min extra
                               </p>
                             </div>
                           </div>
@@ -1427,7 +1429,7 @@ function BreakView({ session, onBack }) {
                               <span className="text-blue-300/70">Elapsed: {fmtSecs(rstElapsedSec)}</span>
                               <span className={`font-black text-base ${rstIsOver ? 'text-red-300' : rstRemaining < 30 ? 'text-amber-300' : 'text-green-300'}`}>
                                 {rstIsOver
-                                  ? `⚠️ +${fmtSecs(-rstRemaining)} over · ₦${(Math.ceil(-rstRemaining / 60) * (rstActive.deductionPerMin || 500)).toLocaleString()}`
+                                  ? `⚠️ +${fmtSecs(-rstRemaining)} over · ₦${(Math.ceil(-rstRemaining / 60) * rstDedRate).toLocaleString()}`
                                   : `${fmtSecs(rstRemaining)} left`}
                               </span>
                             </div>
@@ -1451,7 +1453,7 @@ function BreakView({ session, onBack }) {
                               <span className="text-xl">🚻</span>
                               <div>
                                 <p className="text-white font-medium text-sm">Restroom Break</p>
-                                <p className="text-white/40 text-xs">2 min · ₦500/min extra</p>
+                                <p className="text-white/40 text-xs">{rstAllowed} min · ₦{rstDedRate.toLocaleString()}/min extra</p>
                               </div>
                             </div>
                             <button

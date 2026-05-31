@@ -2,10 +2,12 @@ const RestroomBreak    = require('../models/RestroomBreak');
 const AttendanceDevice = require('../models/AttendanceDevice');
 const Worker           = require('../models/Worker');
 const Attendance       = require('../models/Attendance');
+const Branch           = require('../models/Branch');
 const { createAttendanceShortage } = require('./shortageController');
 
-const ALLOWED_MINUTES   = 2;
-const DEDUCTION_PER_MIN = 500;
+// Fallback defaults — overridden by branch.restroomSettings
+const DEFAULT_ALLOWED_MINUTES   = 2;
+const DEFAULT_DEDUCTION_PER_MIN = 500;
 
 function todayUtcStr() {
   return new Date().toISOString().split('T')[0];
@@ -47,6 +49,11 @@ const startRestroom = async (req, res) => {
   if (existing)
     return res.status(400).json({ success: false, message: 'You already have an active restroom break — clock back in first' });
 
+  // Fetch branch settings for configured restroom limits
+  const branch         = await Branch.findById(device.branch).lean();
+  const allowedMinutes  = branch?.restroomSettings?.allowedMinutes  ?? DEFAULT_ALLOWED_MINUTES;
+  const deductionPerMin = branch?.restroomSettings?.deductionPerMin ?? DEFAULT_DEDUCTION_PER_MIN;
+
   const now = new Date();
   const rb  = await RestroomBreak.create({
     company:         device.company,
@@ -57,19 +64,19 @@ const startRestroom = async (req, res) => {
     workerRole:      worker.role,
     date:            dateStr,
     startTime:       now,
-    allowedMinutes:  ALLOWED_MINUTES,
-    deductionPerMin: DEDUCTION_PER_MIN,
+    allowedMinutes,
+    deductionPerMin,
     status:          'active',
   });
 
   res.json({
     success: true,
-    message: `Restroom break started — you have ${ALLOWED_MINUTES} minutes`,
+    message: `Restroom break started — you have ${allowedMinutes} minute${allowedMinutes !== 1 ? 's' : ''}`,
     data: {
       _id:             rb._id,
       startTime:       now,
-      allowedMinutes:  ALLOWED_MINUTES,
-      deductionPerMin: DEDUCTION_PER_MIN,
+      allowedMinutes,
+      deductionPerMin,
     },
   });
 };

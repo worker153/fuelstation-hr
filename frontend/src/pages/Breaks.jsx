@@ -182,13 +182,15 @@ const BREAK_TYPES = [
 ];
 
 function BreakSettingsModal({ branch, onClose, onSaved }) {
-  const [form,   setForm  ] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [err,    setErr   ] = useState('');
+  const [form,        setForm       ] = useState(null);
+  const [rstForm,     setRstForm    ] = useState(null);
+  const [saving,      setSaving     ] = useState(false);
+  const [err,         setErr        ] = useState('');
 
   // Load branch settings — convert stored UTC times → WAT for display
   useEffect(() => {
-    const bs = branch.breakSettings || {};
+    const bs  = branch.breakSettings    || {};
+    const rst = branch.restroomSettings || {};
     const init = (stored, defStart, defEnd, defMins) => ({
       enabled:                 stored?.enabled                 ?? true,
       allowedMinutes:          stored?.allowedMinutes          ?? defMins,
@@ -198,15 +200,18 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
       missedDeductionAmount:   stored?.missedDeductionAmount   ?? 0,
     });
     setForm({
-      morning:   init(bs.morning,   '07:00', '09:30', 5 ),   // shows 08:00–10:30 WAT
-      afternoon: init(bs.afternoon, '12:00', '14:00', 10),   // shows 13:00–15:00 WAT
-      night:     init(bs.night,     '19:00', '21:00', 5 ),   // shows 20:00–22:00 WAT
+      morning:   init(bs.morning,   '07:00', '09:30', 5 ),
+      afternoon: init(bs.afternoon, '12:00', '14:00', 10),
+      night:     init(bs.night,     '19:00', '21:00', 5 ),
+    });
+    setRstForm({
+      allowedMinutes:  rst.allowedMinutes  ?? 2,
+      deductionPerMin: rst.deductionPerMin ?? 500,
     });
   }, [branch]);
 
-  const set = (type, field, val) => setForm(f => ({
-    ...f, [type]: { ...f[type], [field]: val },
-  }));
+  const set    = (type, field, val) => setForm(f => ({ ...f, [type]: { ...f[type], [field]: val } }));
+  const setRst = (field, val)       => setRstForm(f => ({ ...f, [field]: val }));
 
   const save = async () => {
     setSaving(true); setErr('');
@@ -220,8 +225,11 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
           windowEnd:   watToUtc(form[key].windowEnd),
         };
       }
-      await api.put(`/branches/${branch._id}`, { breakSettings: payload });
-      onSaved(payload);
+      await api.put(`/branches/${branch._id}`, {
+        breakSettings:    payload,
+        restroomSettings: rstForm,
+      });
+      onSaved(payload, rstForm);
     } catch (e) {
       setErr(e.response?.data?.message || 'Save failed');
     } finally { setSaving(false); }
@@ -321,6 +329,40 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
               </div>
             );
           })}
+
+          {/* ── Restroom Break Settings ──────────────────────────────── */}
+          {rstForm && (
+            <div className="rounded-2xl border-2 border-blue-200 bg-blue-50/30 p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🚻</span>
+                <span className="font-semibold text-gray-800">Restroom Break</span>
+                <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Anytime while clocked in</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">Allowed Time (min)</label>
+                  <NumInput min={1} max={30}
+                    value={rstForm.allowedMinutes}
+                    onChange={v => setRst('allowedMinutes', v || 1)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-blue-400" />
+                  <p className="text-[10px] text-gray-400 mt-0.5">Minutes before deduction starts</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">Deduction per Extra Minute (₦)</label>
+                  <NumInput min={0}
+                    value={rstForm.deductionPerMin}
+                    onChange={v => setRst('deductionPerMin', v)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-blue-400" />
+                  <p className="text-[10px] text-gray-400 mt-0.5">₦0 = no deduction</p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-blue-700 bg-blue-50 rounded-lg px-3 py-1.5 font-medium border border-blue-200">
+                🚻 {rstForm.allowedMinutes} min free · ₦{Number(rstForm.deductionPerMin || 0).toLocaleString()}/min after · auto-ends after {rstForm.allowedMinutes + 28} min
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -580,12 +622,11 @@ export default function Breaks() {
         <BreakSettingsModal
           branch={selBranch}
           onClose={() => setShowSettings(false)}
-          onSaved={(newSettings) => {
-            // Update local branch copy so WAT preview refreshes
+          onSaved={(newBreakSettings, newRstSettings) => {
             setBranches(bs => bs.map(b => b._id === selBranch._id
-              ? { ...b, breakSettings: newSettings } : b));
+              ? { ...b, breakSettings: newBreakSettings, restroomSettings: newRstSettings } : b));
             setShowSettings(false);
-            setMsg('✅ Break settings saved');
+            setMsg('✅ Break & restroom settings saved');
           }}
         />
       )}
