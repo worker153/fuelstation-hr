@@ -7,6 +7,13 @@
  * Usage:
  *   <PWAInstallBanner manifest="/terminal-manifest.json" />
  *   <PWAInstallBanner manifest="/shortage-manifest.json" dark />
+ *
+ * Visibility logic:
+ *   - Android + beforeinstallprompt fired  → "Install" button (one tap)
+ *   - Android + no prompt (common)         → "How?" → Chrome menu instructions
+ *   - iOS Safari                           → "How?" → Share sheet instructions
+ *   - Already standalone / installed       → hidden
+ *   - Desktop (no prompt)                 → hidden
  */
 import { useState, useEffect } from 'react';
 import { Download } from 'lucide-react';
@@ -15,6 +22,7 @@ function usePWAInstall(manifest) {
   const [prompt,       setPrompt      ] = useState(null);
   const [installed,    setInstalled   ] = useState(false);
   const [isIOS,        setIsIOS       ] = useState(false);
+  const [isAndroid,    setIsAndroid   ] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
@@ -24,7 +32,9 @@ function usePWAInstall(manifest) {
     if (link && manifest) link.setAttribute('href', manifest);
 
     // Detect platform
-    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    const ua = navigator.userAgent;
+    setIsIOS(/iphone|ipad|ipod/i.test(ua));
+    setIsAndroid(/android/i.test(ua));
     setIsStandalone(
       window.matchMedia('(display-mode: standalone)').matches ||
       window.navigator.standalone === true
@@ -50,27 +60,88 @@ function usePWAInstall(manifest) {
     setPrompt(null);
   };
 
-  return { prompt, installed, isIOS, isStandalone, triggerInstall };
+  return { prompt, installed, isIOS, isAndroid, isStandalone, triggerInstall };
+}
+
+// ── Step-by-step guide modal ──────────────────────────────────────────────────
+function InstallGuideModal({ platform, onClose, onDismiss }) {
+  const isIOS = platform === 'ios';
+
+  const steps = isIOS
+    ? [
+        { step: '1', text: 'Tap the Share button',     sub: '⬆️ at the bottom of Safari' },
+        { step: '2', text: 'Tap "Add to Home Screen"', sub: 'Scroll down in the share sheet' },
+        { step: '3', text: 'Tap "Add" to confirm',     sub: 'The app icon appears on your home screen' },
+      ]
+    : [
+        { step: '1', text: 'Tap the menu icon',            sub: '⋮ at the top-right of Chrome' },
+        { step: '2', text: 'Tap "Add to Home screen"',     sub: 'Scroll down the menu if needed' },
+        { step: '3', text: 'Tap "Add" to confirm',         sub: 'The app icon appears on your home screen' },
+      ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <p className="font-black text-gray-900 text-lg mb-1 text-center">
+          {isIOS ? 'Install on iPhone / iPad' : 'Install on Android'}
+        </p>
+        <p className="text-gray-400 text-xs text-center mb-5">
+          {isIOS ? 'Must be opened in Safari' : 'Must be opened in Chrome'}
+        </p>
+        <div className="space-y-4">
+          {steps.map(({ step, text, sub }) => (
+            <div key={step} className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
+                <span className="text-white font-bold text-sm">{step}</span>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 text-sm">{text}</p>
+                <p className="text-gray-500 text-xs">{sub}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onDismiss}
+          className="w-full mt-6 py-3 bg-brand-600 text-white font-bold rounded-2xl text-sm"
+        >
+          Got it!
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function PWAInstallBanner({ manifest, dark = false }) {
-  const { prompt, installed, isIOS, isStandalone, triggerInstall } = usePWAInstall(manifest);
-  const [showIOSGuide, setShowIOSGuide] = useState(false);
-  const [dismissed,    setDismissed   ] = useState(false);
+  const { prompt, installed, isIOS, isAndroid, isStandalone, triggerInstall } = usePWAInstall(manifest);
+  const [showGuide, setShowGuide] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
-  // Hide if already installed, already standalone, or dismissed
+  // Already running as an app — hide everything
   if (isStandalone || installed || dismissed) return null;
-  // Hide if nothing to show
-  if (!prompt && !isIOS) return null;
+
+  // Only show on mobile devices (Android or iOS), or when browser triggers the prompt
+  const isMobile = isIOS || isAndroid;
+  if (!isMobile && !prompt) return null;
 
   const bannerCls = dark
     ? 'bg-black/30 backdrop-blur border border-white/20'
     : 'bg-white/15 backdrop-blur border border-white/25';
 
+  // Which guide to show (ios = Safari steps, android = Chrome menu steps)
+  const guidePlatform = isIOS ? 'ios' : 'android';
+
   return (
     <>
       {/* ── Install Banner ──────────────────────────────────────────────────── */}
-      <div className={`w-full px-3 py-2`}>
+      <div className="w-full px-3 py-2">
         <div className={`${bannerCls} rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl`}>
           <div className="bg-white/20 rounded-xl p-2 shrink-0">
             <Download size={18} className="text-white" />
@@ -86,6 +157,8 @@ export default function PWAInstallBanner({ manifest, dark = false }) {
             >
               Later
             </button>
+
+            {/* Android: browser-native one-tap install */}
             {prompt && (
               <button
                 onClick={triggerInstall}
@@ -94,9 +167,11 @@ export default function PWAInstallBanner({ manifest, dark = false }) {
                 Install
               </button>
             )}
-            {isIOS && !prompt && (
+
+            {/* iOS Safari or Android without native prompt: show guide */}
+            {!prompt && isMobile && (
               <button
-                onClick={() => setShowIOSGuide(true)}
+                onClick={() => setShowGuide(true)}
                 className="bg-white text-brand-800 font-bold text-xs px-3 py-1.5 rounded-xl hover:bg-brand-50 transition-colors shadow-md"
               >
                 How?
@@ -106,48 +181,13 @@ export default function PWAInstallBanner({ manifest, dark = false }) {
         </div>
       </div>
 
-      {/* ── iOS Step-by-step guide modal ─────────────────────────────────────── */}
-      {showIOSGuide && (
-        <div
-          className="fixed inset-0 z-[60] flex items-end justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.7)' }}
-          onClick={() => setShowIOSGuide(false)}
-        >
-          <div
-            className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          >
-            <p className="font-black text-gray-900 text-lg mb-1 text-center">
-              Install on iPhone / iPad
-            </p>
-            <p className="text-gray-400 text-xs text-center mb-5">
-              Must be opened in Safari
-            </p>
-            <div className="space-y-4">
-              {[
-                { step: '1', text: 'Tap the Share button',        sub: '⬆️ at the bottom of Safari' },
-                { step: '2', text: 'Tap "Add to Home Screen"',    sub: 'Scroll down in the share sheet' },
-                { step: '3', text: 'Tap "Add" to confirm',        sub: 'The app icon appears on your home screen' },
-              ].map(({ step, text, sub }) => (
-                <div key={step} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
-                    <span className="text-white font-bold text-sm">{step}</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">{text}</p>
-                    <p className="text-gray-500 text-xs">{sub}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => { setShowIOSGuide(false); setDismissed(true); }}
-              className="w-full mt-6 py-3 bg-brand-600 text-white font-bold rounded-2xl text-sm"
-            >
-              Got it!
-            </button>
-          </div>
-        </div>
+      {/* ── Platform guide modal ─────────────────────────────────────────────── */}
+      {showGuide && (
+        <InstallGuideModal
+          platform={guidePlatform}
+          onClose={() => setShowGuide(false)}
+          onDismiss={() => { setShowGuide(false); setDismissed(true); }}
+        />
       )}
     </>
   );
