@@ -4,7 +4,7 @@
  * offline fallback to cached shell for navigation.
  */
 
-const CACHE_VERSION  = 'v3';
+const CACHE_VERSION  = 'v4';
 const SHELL_CACHE    = `fuelstation-shell-${CACHE_VERSION}`;
 const ASSET_CACHE    = `fuelstation-assets-${CACHE_VERSION}`;
 const API_BASE       = '/api';
@@ -13,8 +13,8 @@ const API_BASE       = '/api';
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(SHELL_CACHE).then(cache =>
-      cache.addAll(['/index.html', '/terminal', '/'])
-        .catch(() => cache.add('/index.html'))  // /terminal may 404 on SPA — that's OK
+      cache.addAll(['/index.html', '/terminal', '/worker', '/'])
+        .catch(() => cache.add('/index.html'))  // SPA routes may 404 — that's OK
     )
   );
   self.skipWaiting();

@@ -25,6 +25,7 @@ import WorkerShortage      from './pages/WorkerShortage';
 import WorkerDashboard     from './pages/WorkerDashboard';
 import AttendanceDevices   from './pages/AttendanceDevices';
 import AttendanceTerminal  from './pages/AttendanceTerminal';
+import WorkerPortal        from './pages/WorkerPortal';
 import WorkerPins          from './pages/WorkerPins';
 import WorkerPinReset     from './pages/WorkerPinReset';
 import Attendance         from './pages/Attendance';
@@ -110,6 +111,7 @@ export default function App() {
             <Route path="/ops"             element={<PrivateRoute><OpsView /></PrivateRoute>} />
             <Route path="/my-dashboard"    element={<WorkerDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />
+            <Route path="/worker"   element={<WorkerPortal />} />
             <Route path="/my-pin"   element={<WorkerPinReset />} />
             <Route path="/admin/:userId"  element={<AdminPinLogin />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
