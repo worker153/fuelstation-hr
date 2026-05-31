@@ -8,14 +8,7 @@ import {
 } from 'lucide-react';
 
 const PENALTY_REASON_OPTIONS = [
-  { value: 'cash_shortage',      label: 'Cash Shortage'      },
-  { value: 'fuel_shortage',      label: 'Fuel Shortage'      },
-  { value: 'equipment_damage',   label: 'Equipment Damage'   },
-  { value: 'customer_complaint', label: 'Customer Complaint' },
-  { value: 'late_arrival',       label: 'Late Arrival'       },
-  { value: 'absent',             label: 'Absent'             },
-  { value: 'early_departure',    label: 'Early Departure'    },
-  { value: 'other',              label: 'Other'              },
+  { value: 'cash_shortage', label: 'Sales Shortage' },
 ];
 import api from '../utils/api';
 import NumInput from '../components/NumInput';

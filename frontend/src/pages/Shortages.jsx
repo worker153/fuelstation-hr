@@ -15,7 +15,7 @@ const MONTHS = ['January','February','March','April','May','June',
 const fmt = n => `₦${Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
 const REASON_OPTIONS = [
-  { value: 'cash_shortage',      label: 'Cash Shortage'      },
+  { value: 'cash_shortage',      label: 'Sales Shortage'     },
   { value: 'fuel_shortage',      label: 'Fuel Shortage'      },
   { value: 'equipment_damage',   label: 'Equipment Damage'   },
   { value: 'customer_complaint', label: 'Customer Complaint' },
