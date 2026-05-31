@@ -15,7 +15,7 @@ import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
   Key, ChevronLeft, ChevronRight, CheckCircle, XCircle,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
-  RotateCcw, MapPin, Coffee, Play, Square, FileWarning, Droplets,
+  RotateCcw, MapPin, Coffee, Play, Square, FileWarning,
 } from 'lucide-react';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
@@ -335,12 +335,10 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
   return (
     <div className="space-y-3">
       <WorkerBadge worker={worker} sub={
-        type === 'clock_in'       ? '🟢 Clocking IN'
-        : type === 'clock_out'    ? '🔴 Clocking OUT'
-        : type === 'break_start'  ? '☕ Going on Break'
-        : type === 'break_end'    ? '✅ Returning from Break'
-        : type === 'restroom_start'? '🚻 Going to Restroom'
-        : type === 'restroom_end'  ? '🚻 Back from Restroom'
+        type === 'clock_in'      ? '🟢 Clocking IN'
+        : type === 'clock_out'   ? '🔴 Clocking OUT'
+        : type === 'break_start' ? '☕ Going on Break'
+        : type === 'break_end'   ? '✅ Returning from Break'
         : ''
       } />
 
@@ -397,19 +395,15 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
           <button
             onClick={() => onVerified(capturedB64, liveScore)}
             className={`w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2
-              ${type === 'clock_in'        ? 'bg-green-600 hover:bg-green-500'
-              : type === 'clock_out'       ? 'bg-red-500 hover:bg-red-400'
-              : type === 'break_start'     ? 'bg-orange-500 hover:bg-orange-400'
-              : type === 'restroom_start'  ? 'bg-blue-600 hover:bg-blue-500'
-              : type === 'restroom_end'    ? 'bg-blue-600 hover:bg-blue-500'
-              :                              'bg-green-600 hover:bg-green-500'}`}
+              ${type === 'clock_in'    ? 'bg-green-600 hover:bg-green-500'
+              : type === 'clock_out'   ? 'bg-red-500 hover:bg-red-400'
+              : type === 'break_start' ? 'bg-orange-500 hover:bg-orange-400'
+              :                          'bg-green-600 hover:bg-green-500'}`}
           >
-            {type === 'clock_in'       ? <><LogIn       size={20} /> Confirm Clock In</>
-            : type === 'clock_out'     ? <><LogOut      size={20} /> Confirm Clock Out</>
-            : type === 'break_start'   ? <><Coffee      size={20} /> Confirm Break Start</>
-            : type === 'restroom_start'? <><CheckCircle size={20} /> Confirm Restroom</>
-            : type === 'restroom_end'  ? <><CheckCircle size={20} /> Confirm Return</>
-            :                            <><CheckCircle size={20} /> Confirm Return</>}
+            {type === 'clock_in'     ? <><LogIn       size={20} /> Confirm Clock In</>
+            : type === 'clock_out'   ? <><LogOut      size={20} /> Confirm Clock Out</>
+            : type === 'break_start' ? <><Coffee      size={20} /> Confirm Break Start</>
+            :                          <><CheckCircle size={20} /> Confirm Return</>}
           </button>
           <button onClick={onBack} className="w-full py-2.5 rounded-xl border border-white/20 text-white/50 text-sm hover:bg-white/10">← Back</button>
         </div>
@@ -581,20 +575,13 @@ function MenuView({ session, onNavigate }) {
           />
         )}
 
-        {/* Breaks + Restroom — any phone (GPS required) */}
+        {/* Breaks — any phone (GPS required) */}
         <MenuCard
           icon={Coffee}
           label="Breaks"
           sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end your break' : 'View your break history'}
           color="bg-orange-500"
           onClick={() => onNavigate('break')}
-        />
-        <MenuCard
-          icon={Droplets}
-          label="Restroom Break"
-          sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end a restroom break' : 'View restroom break history'}
-          color="bg-blue-500"
-          onClick={() => onNavigate('restroom')}
         />
 
         {/* Book Offence + Shortage — approved device only */}
@@ -1085,7 +1072,10 @@ function Row({ label, value }) {
 }
 
 // ── Break View ─────────────────────────────────────────────────────────────────
-const BREAK_EMOJI = { morning: '🌅', afternoon: '☀️', night: '🌙' };
+const BREAK_EMOJI = {
+  morning: '🌅', afternoon: '☀️', night: '🌙',
+  break_4: '⭐', break_5: '💫', break_6: '🔔',
+};
 
 function fmtSecs(s) {
   const m = Math.floor(Math.abs(s) / 60), sec = Math.abs(s) % 60;
@@ -1104,7 +1094,7 @@ function getGPS() {
   });
 }
 
-function BreakView({ session, onBack, directRestroom = false }) {
+function BreakView({ session, onBack }) {
   const { worker, deviceInfo, shiftWorkers } = session;
   const isSup = worker.isSupervisor;
   const isPersonalPhone = !deviceInfo?.deviceToken;
@@ -1118,9 +1108,6 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const [result,          setResult         ] = useState(null);
   const [elapsedSec,      setElapsedSec     ] = useState(0);
   const [pendingBreakType,setPendingBreakType] = useState(null);
-  // Restroom
-  const [restroomData,    setRestroomData   ] = useState(null);
-  const [rstElapsedSec,   setRstElapsedSec  ] = useState(0);
 
   // Is the selected worker the logged-in worker? (face required for self only)
   const isSelf = !selWorker || String(selWorker._id) === String(worker._id);
@@ -1149,29 +1136,6 @@ function BreakView({ session, onBack, directRestroom = false }) {
     if (bStep === 'status' && selWorker) loadStatus(selWorker._id);
   }, [selWorker, bStep]);
 
-  const loadRestroom = useCallback(async (wId) => {
-    try {
-      const { data } = await axios.get(`${BASE}/restroom/status`, {
-        params: breakAuthParams(wId),
-      });
-      setRestroomData(data.data);
-    } catch { /* silent — restroom status is supplementary */ }
-  }, [breakAuthParams]);
-
-  useEffect(() => {
-    if (bStep === 'status' && selWorker) loadRestroom(selWorker._id);
-  }, [selWorker, bStep, loadRestroom]);
-
-  // Restroom countdown
-  useEffect(() => {
-    if (!restroomData?.active) { setRstElapsedSec(0); return; }
-    const start = new Date(restroomData.active.startTime).getTime();
-    const tick  = () => setRstElapsedSec(Math.floor((Date.now() - start) / 1000));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [restroomData?.active?._id]);
-
   // Auto-refresh every 60 s so windows open/close without manual tap
   useEffect(() => {
     if (bStep !== 'status' || !selWorker) return;
@@ -1188,39 +1152,6 @@ function BreakView({ session, onBack, directRestroom = false }) {
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [status?.activeBreak?._id]);
-
-  const doStartRestroom = async () => {
-    setActLoading(true); setError('');
-    try {
-      const gps = isPersonalPhone ? await getGPS() : null;
-      const body = isPersonalPhone
-        ? { pin: session.pin, workerId: selWorker._id, gps }
-        : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
-      await axios.post(`${BASE}/restroom/start`, body);
-      await loadRestroom(selWorker._id);
-      setBStep('status');
-    } catch (e) {
-      setError(e.response?.data?.message || 'Failed to start restroom break');
-      setBStep('status'); // return to status so error is visible
-    } finally { setActLoading(false); }
-  };
-
-  const doEndRestroom = async () => {
-    setActLoading(true); setError('');
-    try {
-      const gps = isPersonalPhone ? await getGPS() : null;
-      const body = isPersonalPhone
-        ? { pin: session.pin, workerId: selWorker._id, gps }
-        : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
-      const { data } = await axios.post(`${BASE}/restroom/end`, body);
-      setResult({ action: 'restroom_ended', ...data.data });
-      await loadRestroom(selWorker._id);
-      setBStep('result_restroom');
-    } catch (e) {
-      setError(e.response?.data?.message || 'Failed to end restroom break');
-      setBStep('status'); // return to status so error is visible
-    } finally { setActLoading(false); }
-  };
 
   const doStart = async (breakType) => {
     setActLoading(true); setError('');
@@ -1264,10 +1195,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
     if (bStep === 'face_start' || bStep === 'face_end') {
       setBStep('status'); setPendingBreakType(null); return;
     }
-    if (bStep === 'face_restroom_start' || bStep === 'face_restroom_end') {
-      setBStep('status'); return;
-    }
-    if (bStep === 'result' || bStep === 'result_restroom') {
+    if (bStep === 'result') {
       setResult(null); setStatus(null); setBStep('status');
     }
   };
@@ -1275,14 +1203,14 @@ function BreakView({ session, onBack, directRestroom = false }) {
   return (
     <div className="p-4 max-w-sm mx-auto">
       {/* Header — hidden during face scan and result */}
-      {bStep !== 'face_start' && bStep !== 'face_end' && bStep !== 'face_restroom_start' && bStep !== 'face_restroom_end' && bStep !== 'result' && bStep !== 'result_restroom' && (
+      {bStep !== 'face_start' && bStep !== 'face_end' && bStep !== 'result' && (
       <div className="flex items-center gap-3 mb-4">
         <button onClick={handleBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors">
           <ChevronLeft size={20} />
         </button>
         <div>
           <h2 className="text-white font-bold text-lg">
-            {bStep === 'pick' ? 'Select Worker' : directRestroom ? 'Restroom Break' : 'Breaks'}
+            {bStep === 'pick' ? 'Select Worker' : 'Breaks'}
           </h2>
           {isPersonalPhone && bStep === 'status' && (
             <p className="text-white/40 text-[10px] flex items-center gap-1 mt-0.5">
@@ -1408,7 +1336,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
                 })()}
 
                 {/* ── Available breaks ──────────────────────────── */}
-                {!status.activeBreak && !directRestroom && (
+                {!status.activeBreak && (
                   <div className="space-y-2">
                     <p className="text-white/40 text-xs font-semibold uppercase tracking-wider">Available Breaks</p>
                     {status.availableBreaks?.map(br => {
@@ -1456,124 +1384,6 @@ function BreakView({ session, onBack, directRestroom = false }) {
                     })}
                   </div>
                 )}
-
-                {/* ── Restroom Break ────────────────────────────── */}
-                {(() => {
-                  const rstCfg       = status.restroomConfig || {};
-                  const rstActive    = restroomData?.active;
-                  const rstAllowed   = rstActive?.allowedMinutes ?? rstCfg.allowedMinutes ?? 2;
-                  const rstDedRate   = rstActive?.deductionPerMin ?? rstCfg.deductionPerMin ?? 500;
-                  const rstAllowedSec = rstAllowed * 60;
-                  const rstRemaining  = rstAllowedSec - rstElapsedSec;
-                  const rstIsOver    = rstRemaining < 0;
-                  const rstPct       = Math.min(100, Math.round((rstElapsedSec / rstAllowedSec) * 100));
-                  const canRestroom  = status.attendanceStatus === 'active' && !status.activeBreak;
-                  return (
-                    <div className="space-y-2">
-                      <p className="text-white/40 text-xs font-semibold uppercase tracking-wider">Restroom Break</p>
-
-                      {/* Active restroom countdown */}
-                      {rstActive ? (
-                        <div className="bg-blue-900/30 border border-blue-500/50 rounded-2xl p-4 space-y-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">🚻</span>
-                            <div>
-                              <p className="text-blue-200 font-bold">Restroom Break Active</p>
-                              <p className="text-blue-300/60 text-xs">
-                                Started {fmtT(rstActive.startTime)} · {rstAllowed} min allowed · ₦{rstDedRate.toLocaleString()}/min extra
-                              </p>
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-blue-300/70">Elapsed: {fmtSecs(rstElapsedSec)}</span>
-                              <span className={`font-black text-base ${rstIsOver ? 'text-red-300' : rstRemaining < 30 ? 'text-amber-300' : 'text-green-300'}`}>
-                                {rstIsOver
-                                  ? `⚠️ +${fmtSecs(-rstRemaining)} over · ₦${(Math.ceil(-rstRemaining / 60) * rstDedRate).toLocaleString()}`
-                                  : `${fmtSecs(rstRemaining)} left`}
-                              </span>
-                            </div>
-                            <div className="bg-white/10 rounded-full h-2.5 overflow-hidden">
-                              <div className={`h-full rounded-full transition-all duration-1000 ${rstIsOver ? 'bg-red-500' : 'bg-blue-400'}`}
-                                style={{ width: `${rstPct}%` }} />
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => { if (isSelf) setBStep('face_restroom_end'); else doEndRestroom(); }}
-                            disabled={actLoading}
-                            className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
-                            {actLoading ? <Loader size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                            Clock Back In
-                          </button>
-                        </div>
-                      ) : canRestroom ? (
-                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xl">🚻</span>
-                              <div>
-                                <p className="text-white font-medium text-sm">Restroom Break</p>
-                                <p className="text-white/40 text-xs">{rstAllowed} min · ₦{rstDedRate.toLocaleString()}/min extra</p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => { if (isSelf) setBStep('face_restroom_start'); else doStartRestroom(); }}
-                              disabled={actLoading}
-                              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 shrink-0 disabled:opacity-50 transition-colors">
-                              {actLoading ? <Loader size={12} className="animate-spin" /> : <Play size={12} />}
-                              Go
-                            </button>
-                          </div>
-                          {restroomData?.todayCount > 0 && (
-                            <p className="text-white/30 text-xs mt-2 pt-2 border-t border-white/10">
-                              Today: {restroomData.todayCount} trip{restroomData.todayCount !== 1 ? 's' : ''}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="bg-white/5 border border-white/5 rounded-2xl p-3 opacity-40">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">🚻</span>
-                            <div>
-                              <p className="text-white/60 text-sm">Restroom Break</p>
-                              <p className="text-white/40 text-xs">
-                                {status.activeBreak ? 'Finish regular break first' : 'Clock in to use restroom break'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Today's restroom history */}
-                      {restroomData?.todayBreaks?.length > 0 && !rstActive && (
-                        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-                          <div className="divide-y divide-white/5">
-                            {restroomData.todayBreaks.map((rb, i) => {
-                              const sc = {
-                                completed:  { cls: 'bg-green-500/20 text-green-300', label: 'Done ✓' },
-                                overstayed: { cls: 'bg-red-500/20 text-red-300',     label: rb.deductionAmount ? `-₦${rb.deductionAmount?.toLocaleString()}` : 'Overstay' },
-                              }[rb.status] || { cls: 'bg-white/10 text-white/40', label: rb.status };
-                              return (
-                                <div key={i} className="px-3 py-2.5 flex items-center gap-2">
-                                  <span className="text-sm shrink-0">🚻</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-white/60 text-xs">
-                                      {fmtT(rb.startTime)}{rb.endTime ? ` → ${fmtT(rb.endTime)}` : ''}
-                                      {rb.actualMinutes > 0 ? ` · ${rb.actualMinutes} min` : ''}
-                                    </p>
-                                  </div>
-                                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold shrink-0 ${sc.cls}`}>
-                                    {sc.label}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
 
                 {/* ── Today's break history ─────────────────────── */}
                 {status.todayBreaks?.length > 0 && (
@@ -1669,46 +1479,6 @@ function BreakView({ session, onBack, directRestroom = false }) {
         )
       )}
 
-      {/* ── Face verification — restroom start ─────────────────── */}
-      {bStep === 'face_restroom_start' && selWorker && (
-        !selWorker.hasFace ? (
-          <FaceRegister
-            worker={selWorker}
-            token={deviceInfo?.deviceToken}
-            onDone={() => doStartRestroom()}
-            onBack={() => setBStep('status')}
-          />
-        ) : (
-          <FaceVerify
-            worker={selWorker}
-            storedDescriptor={selWorker.faceDescriptor}
-            type="restroom_start"
-            onVerified={() => doStartRestroom()}
-            onBack={() => setBStep('status')}
-          />
-        )
-      )}
-
-      {/* ── Face verification — restroom end ────────────────────── */}
-      {bStep === 'face_restroom_end' && selWorker && (
-        !selWorker.hasFace ? (
-          <FaceRegister
-            worker={selWorker}
-            token={deviceInfo?.deviceToken}
-            onDone={() => doEndRestroom()}
-            onBack={() => setBStep('status')}
-          />
-        ) : (
-          <FaceVerify
-            worker={selWorker}
-            storedDescriptor={selWorker.faceDescriptor}
-            type="restroom_end"
-            onVerified={() => doEndRestroom()}
-            onBack={() => setBStep('status')}
-          />
-        )
-      )}
-
       {/* ── Result ──────────────────────────────────────────────── */}
       {bStep === 'result' && result && (
         <div className="flex flex-col items-center py-8 gap-5">
@@ -1732,53 +1502,6 @@ function BreakView({ session, onBack, directRestroom = false }) {
               <p className="text-green-300 text-sm mt-1">✓ On time · {result.actualMinutes} min used</p>
             )}
           </div>
-          {isSup && (
-            <button onClick={() => { setResult(null); setStatus(null); setBStep('pick'); setSelWorker(null); }}
-              className="w-full py-3 rounded-2xl border border-white/20 text-white hover:bg-white/10 text-sm">
-              Another Worker
-            </button>
-          )}
-          <button onClick={handleBack}
-            className="w-full py-3 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/20">
-            Back
-          </button>
-        </div>
-      )}
-      {/* ── Restroom result ─────────────────────────────────────── */}
-      {bStep === 'result_restroom' && result && (
-        <div className="flex flex-col items-center py-8 gap-5">
-          <div className={`w-24 h-24 rounded-full flex items-center justify-center ${result.overstayed ? 'bg-red-500' : 'bg-blue-600'}`}>
-            {result.overstayed
-              ? <AlertTriangle size={48} className="text-white" />
-              : <CheckCircle   size={48} className="text-white" />}
-          </div>
-          <div className="text-center">
-            <p className="text-white font-black text-2xl">
-              {result.overstayed ? 'Restroom Overstay!' : 'Back from Restroom'}
-            </p>
-            <p className="text-white/60 mt-1">{result.actualMinutes || 0} min used</p>
-            {result.overstayed ? (
-              <>
-                <p className="text-red-300 text-sm mt-1">⚠️ {result.excessMinutes} min over limit</p>
-                {result.deductionAmount > 0 && (
-                  <p className="text-red-300 text-sm font-bold mt-0.5">₦{result.deductionAmount?.toLocaleString()} deducted from salary</p>
-                )}
-              </>
-            ) : (
-              <p className="text-green-300 text-sm mt-1">✓ Back on time — no deduction</p>
-            )}
-          </div>
-
-          {result.deductionAmount > 0 && (
-            <div className="bg-red-900/30 border border-red-600/50 rounded-2xl p-4 w-full text-center">
-              <p className="text-red-300/60 text-xs mb-1">Salary Deduction Applied</p>
-              <p className="text-red-300 font-black text-2xl">-₦{result.deductionAmount?.toLocaleString()}</p>
-              <p className="text-red-300/60 text-xs mt-1">
-                {result.excessMinutes} min × ₦{result.deductionPerMin || 500}/min
-              </p>
-            </div>
-          )}
-
           {isSup && (
             <button onClick={() => { setResult(null); setStatus(null); setBStep('pick'); setSelWorker(null); }}
               className="w-full py-3 rounded-2xl border border-white/20 text-white hover:bg-white/10 text-sm">
@@ -2505,11 +2228,6 @@ export default function WorkerPortal() {
       {/* ── Breaks ─────────────────────────────────────────────────────────── */}
       {step === 'break' && session && (
         <BreakView session={session} onBack={() => setStep('menu')} />
-      )}
-
-      {/* ── Restroom Break ─────────────────────────────────────────────────── */}
-      {step === 'restroom' && session && (
-        <BreakView session={session} onBack={() => setStep('menu')} directRestroom />
       )}
 
       {/* ── Shortage ───────────────────────────────────────────────────────── */}

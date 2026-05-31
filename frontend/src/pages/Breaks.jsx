@@ -16,8 +16,9 @@ const STATUS_CFG = {
   missed:     { label: 'Missed',     cls: 'bg-gray-100 text-gray-600 border border-gray-200',    dot: 'bg-gray-400'   },
 };
 
-const BREAK_EMOJI = { morning: '🌅', afternoon: '☀️', night: '🌙' };
-const BREAK_LABEL = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' };
+const BREAK_EMOJI  = { morning: '🌅', afternoon: '☀️', night: '🌙', break_4: '⭐', break_5: '💫', break_6: '🔔' };
+const BREAK_LABEL  = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night', break_4: 'Break 4', break_5: 'Break 5', break_6: 'Break 6' };
+const DEFAULT_LABEL = { morning: 'Morning Break', afternoon: 'Afternoon Break', night: 'Night Break', break_4: 'Break 4', break_5: 'Break 5', break_6: 'Break 6' };
 
 function fmt2(n) { return String(n).padStart(2, '0'); }
 function fmtTime(ts) {
@@ -45,13 +46,17 @@ function SummaryCard({ icon: Icon, label, value, cls, sub }) {
   );
 }
 
+// ── All active break types (constant — for row iteration) ─────────────────────
+const ALL_BREAK_KEYS = ['morning', 'afternoon', 'night', 'break_4', 'break_5', 'break_6'];
+
 // ── Break type mini-badge ──────────────────────────────────────────────────────
 function TypeBreakRow({ type, stats }) {
   const cfg = STATUS_CFG;
+  const displayLabel = stats?.label || BREAK_LABEL[type] || type;
   return (
     <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-      <span className="text-lg w-6 text-center">{BREAK_EMOJI[type]}</span>
-      <span className="text-sm font-medium text-gray-700 w-20">{BREAK_LABEL[type]}</span>
+      <span className="text-lg w-6 text-center">{BREAK_EMOJI[type] || '☕'}</span>
+      <span className="text-sm font-medium text-gray-700 w-24 truncate">{displayLabel}</span>
       <div className="flex gap-1.5 flex-1 flex-wrap">
         {stats.completed  > 0 && <span className={`text-xs px-2 py-0.5 rounded-full ${cfg.completed.cls}`}>{stats.completed} done</span>}
         {stats.overstayed > 0 && <span className={`text-xs px-2 py-0.5 rounded-full ${cfg.overstayed.cls}`}>{stats.overstayed} over</span>}
@@ -91,37 +96,34 @@ function WorkerRow({ workerBreaks }) {
           <p className="font-semibold text-gray-800 text-sm truncate">{name}</p>
           <p className="text-xs text-gray-500">{role}</p>
         </div>
-        <div className="flex gap-1.5 shrink-0">
-          {['morning','afternoon','night'].map(type => {
-            const b = workerBreaks.find(x => x.breakType === type);
-            if (!b) return <span key={type} className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-xs">{BREAK_EMOJI[type]}</span>;
+        <div className="flex gap-1 shrink-0">
+          {workerBreaks.map(b => {
             const s = STATUS_CFG[b.status];
+            const em = BREAK_EMOJI[b.breakType] || '☕';
             return (
-              <div key={type} className={`w-5 h-5 rounded-full ${s.dot} flex items-center justify-center`} title={`${BREAK_LABEL[type]}: ${s.label}`}>
-                <span className="text-[9px]">{BREAK_EMOJI[type]}</span>
+              <div key={b.breakType} className={`w-5 h-5 rounded-full ${s.dot} flex items-center justify-center`}
+                title={`${b.label || BREAK_LABEL[b.breakType] || b.breakType}: ${s.label}`}>
+                <span className="text-[9px]">{em}</span>
               </div>
             );
           })}
+          {workerBreaks.length === 0 && (
+            <span className="text-xs text-gray-400">—</span>
+          )}
         </div>
         {open ? <ChevronUp size={16} className="text-gray-400 ml-1" /> : <ChevronRight size={16} className="text-gray-400 ml-1" />}
       </button>
 
       {open && (
         <div className="px-4 pb-3 space-y-2 border-t border-black/5 pt-2">
-          {['morning','afternoon','night'].map(type => {
-            const b = workerBreaks.find(x => x.breakType === type);
-            if (!b) return (
-              <div key={type} className="flex items-center gap-2 text-sm text-gray-400">
-                <span>{BREAK_EMOJI[type]}</span>
-                <span className="font-medium">{BREAK_LABEL[type]}</span>
-                <span className="ml-auto text-xs">—</span>
-              </div>
-            );
+          {workerBreaks.map(b => {
             const s = STATUS_CFG[b.status];
+            const em = BREAK_EMOJI[b.breakType] || '☕';
+            const lbl = b.label || BREAK_LABEL[b.breakType] || b.breakType;
             return (
-              <div key={type} className="flex items-center gap-2 text-sm">
-                <span>{BREAK_EMOJI[type]}</span>
-                <span className="font-medium text-gray-700 w-20">{BREAK_LABEL[type]}</span>
+              <div key={b.breakType} className="flex items-center gap-2 text-sm">
+                <span>{em}</span>
+                <span className="font-medium text-gray-700 w-24 truncate">{lbl}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${s.cls}`}>{s.label}</span>
                 {b.startTime && (
                   <span className="text-xs text-gray-500 ml-1">
@@ -175,67 +177,67 @@ function watToUtc(hhmm) {
 }
 
 // ── Break Settings Modal ───────────────────────────────────────────────────────
+// Fixed slots: morning / afternoon / night always shown.
+// Extra slots: break_4 / break_5 / break_6 — disabled by default, admin enables as needed.
 const BREAK_TYPES = [
-  { key: 'morning',   label: 'Morning Break',   emoji: '🌅', defaultMins: 5  },
-  { key: 'afternoon', label: 'Afternoon Break',  emoji: '☀️', defaultMins: 10 },
-  { key: 'night',     label: 'Night Break',      emoji: '🌙', defaultMins: 5  },
+  { key: 'morning',   emoji: '🌅', defaultLabel: 'Morning Break',   defaultMins: 5,  defaultStart: '07:00', defaultEnd: '09:30', alwaysOn: true  },
+  { key: 'afternoon', emoji: '☀️', defaultLabel: 'Afternoon Break', defaultMins: 10, defaultStart: '12:00', defaultEnd: '14:00', alwaysOn: true  },
+  { key: 'night',     emoji: '🌙', defaultLabel: 'Night Break',     defaultMins: 5,  defaultStart: '19:00', defaultEnd: '21:00', alwaysOn: true  },
+  { key: 'break_4',   emoji: '⭐', defaultLabel: 'Break 4',         defaultMins: 10, defaultStart: '10:00', defaultEnd: '12:00', alwaysOn: false },
+  { key: 'break_5',   emoji: '💫', defaultLabel: 'Break 5',         defaultMins: 10, defaultStart: '15:00', defaultEnd: '17:00', alwaysOn: false },
+  { key: 'break_6',   emoji: '🔔', defaultLabel: 'Break 6',         defaultMins: 10, defaultStart: '22:00', defaultEnd: '23:30', alwaysOn: false },
 ];
 
 function BreakSettingsModal({ branch, onClose, onSaved }) {
-  const [form,        setForm       ] = useState(null);
-  const [rstForm,     setRstForm    ] = useState(null);
-  const [saving,      setSaving     ] = useState(false);
-  const [err,         setErr        ] = useState('');
+  const [form,   setForm  ] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr   ] = useState('');
 
   // Load branch settings — convert stored UTC times → WAT for display
   useEffect(() => {
-    const bs  = branch.breakSettings    || {};
-    const rst = branch.restroomSettings || {};
-    const init = (stored, defStart, defEnd, defMins) => ({
-      enabled:                 stored?.enabled                 ?? true,
-      allowedMinutes:          stored?.allowedMinutes          ?? defMins,
-      windowStart:             utcToWat(stored?.windowStart    || defStart),
-      windowEnd:               utcToWat(stored?.windowEnd      || defEnd),
-      overstayDeductionAmount: stored?.overstayDeductionAmount ?? 0,
-      missedDeductionAmount:   stored?.missedDeductionAmount   ?? 0,
-    });
-    setForm({
-      morning:   init(bs.morning,   '07:00', '09:30', 5 ),
-      afternoon: init(bs.afternoon, '12:00', '14:00', 10),
-      night:     init(bs.night,     '19:00', '21:00', 5 ),
-    });
-    setRstForm({
-      allowedMinutes:  rst.allowedMinutes  ?? 2,
-      deductionPerMin: rst.deductionPerMin ?? 500,
-    });
+    const bs = branch.breakSettings || {};
+    const init = ({ key, defaultLabel, defaultMins, defaultStart, defaultEnd, alwaysOn }) => {
+      const stored = bs[key] || {};
+      return {
+        enabled:                 stored.enabled                 ?? alwaysOn,
+        label:                   stored.label                   || '',
+        allowedMinutes:          stored.allowedMinutes          ?? defaultMins,
+        windowStart:             utcToWat(stored.windowStart    || defaultStart),
+        windowEnd:               utcToWat(stored.windowEnd      || defaultEnd),
+        overstayDeductionAmount: stored.overstayDeductionAmount ?? 0,
+        missedDeductionAmount:   stored.missedDeductionAmount   ?? 0,
+      };
+    };
+    const f = {};
+    BREAK_TYPES.forEach(bt => { f[bt.key] = init(bt); });
+    setForm(f);
   }, [branch]);
 
-  const set    = (type, field, val) => setForm(f => ({ ...f, [type]: { ...f[type], [field]: val } }));
-  const setRst = (field, val)       => setRstForm(f => ({ ...f, [field]: val }));
+  const set = (type, field, val) => setForm(f => ({ ...f, [type]: { ...f[type], [field]: val } }));
 
   const save = async () => {
     setSaving(true); setErr('');
     try {
       // Convert WAT times back → UTC before sending to backend
       const payload = {};
-      for (const key of ['morning', 'afternoon', 'night']) {
+      for (const { key } of BREAK_TYPES) {
         payload[key] = {
           ...form[key],
           windowStart: watToUtc(form[key].windowStart),
           windowEnd:   watToUtc(form[key].windowEnd),
         };
       }
-      await api.put(`/branches/${branch._id}`, {
-        breakSettings:    payload,
-        restroomSettings: rstForm,
-      });
-      onSaved(payload, rstForm);
+      await api.put(`/branches/${branch._id}`, { breakSettings: payload });
+      onSaved(payload);
     } catch (e) {
       setErr(e.response?.data?.message || 'Save failed');
     } finally { setSaving(false); }
   };
 
   if (!form) return null;
+
+  const coreTypes  = BREAK_TYPES.filter(bt => bt.alwaysOn);
+  const extraTypes = BREAK_TYPES.filter(bt => !bt.alwaysOn);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -255,114 +257,35 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
 
         {/* Break rows */}
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
-          {BREAK_TYPES.map(({ key, label, emoji }) => {
+
+          {/* ── Core break slots ────────────────────────────── */}
+          {coreTypes.map(({ key, emoji, defaultLabel }) => {
             const v = form[key];
             return (
-              <div key={key} className={`rounded-2xl border-2 p-4 space-y-4 transition-colors ${v.enabled ? 'border-brand-200 bg-brand-50/30' : 'border-gray-200 bg-gray-50/50 opacity-60'}`}>
-                {/* Header row */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{emoji}</span>
-                    <span className="font-semibold text-gray-800">{label}</span>
-                  </div>
-                  <button onClick={() => set(key, 'enabled', !v.enabled)}
-                    className="flex items-center gap-1.5 text-sm font-medium transition-colors">
-                    {v.enabled
-                      ? <><ToggleRight size={22} className="text-brand-600" /><span className="text-brand-600">Enabled</span></>
-                      : <><ToggleLeft  size={22} className="text-gray-400"  /><span className="text-gray-400">Disabled</span></>}
-                  </button>
-                </div>
-
-                {v.enabled && (
-                  <>
-                    {/* Timing row */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">Duration (min)</label>
-                        <NumInput min={1} max={60}
-                          value={v.allowedMinutes}
-                          onChange={v2 => set(key, 'allowedMinutes', v2 || 1)}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-brand-400" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">Start Time</label>
-                        <input type="time"
-                          value={v.windowStart}
-                          onChange={e => set(key, 'windowStart', e.target.value)}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">End Time</label>
-                        <input type="time"
-                          value={v.windowEnd}
-                          onChange={e => set(key, 'windowEnd', e.target.value)}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
-                      </div>
-                    </div>
-
-                    {/* Deduction row */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">Overstay Deduction (₦)</label>
-                        <NumInput
-                          value={v.overstayDeductionAmount}
-                          onChange={v2 => set(key, 'overstayDeductionAmount', v2)}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
-                        <p className="text-[10px] text-gray-400 mt-0.5">Deducted when break time exceeded</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 block mb-1">Missed Break Deduction (₦)</label>
-                        <NumInput
-                          value={v.missedDeductionAmount}
-                          onChange={v2 => set(key, 'missedDeductionAmount', v2)}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
-                        <p className="text-[10px] text-gray-400 mt-0.5">Deducted if break window not used</p>
-                      </div>
-                    </div>
-
-                    {/* Summary line */}
-                    <p className="text-[11px] text-brand-700 bg-brand-50 rounded-lg px-3 py-1.5 font-medium">
-                      ⏰ {v.windowStart || '--:--'} – {v.windowEnd || '--:--'} · {v.allowedMinutes} min
-                    </p>
-                  </>
-                )}
-              </div>
+              <BreakSlotCard key={key}
+                slotKey={key} emoji={emoji} defaultLabel={defaultLabel}
+                v={v} set={set} showDisableToggle={false}
+              />
             );
           })}
 
-          {/* ── Restroom Break Settings ──────────────────────────────── */}
-          {rstForm && (
-            <div className="rounded-2xl border-2 border-blue-200 bg-blue-50/30 p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🚻</span>
-                <span className="font-semibold text-gray-800">Restroom Break</span>
-                <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Anytime while clocked in</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Allowed Time (min)</label>
-                  <NumInput min={1} max={30}
-                    value={rstForm.allowedMinutes}
-                    onChange={v => setRst('allowedMinutes', v || 1)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-blue-400" />
-                  <p className="text-[10px] text-gray-400 mt-0.5">Minutes before deduction starts</p>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Deduction per Extra Minute (₦)</label>
-                  <NumInput min={0}
-                    value={rstForm.deductionPerMin}
-                    onChange={v => setRst('deductionPerMin', v)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-blue-400" />
-                  <p className="text-[10px] text-gray-400 mt-0.5">₦0 = no deduction</p>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-blue-700 bg-blue-50 rounded-lg px-3 py-1.5 font-medium border border-blue-200">
-                🚻 {rstForm.allowedMinutes} min free · ₦{Number(rstForm.deductionPerMin || 0).toLocaleString()}/min after · auto-ends after {rstForm.allowedMinutes + 28} min
-              </p>
+          {/* ── Extra break slots ────────────────────────────── */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Additional Break Slots — enable any you need
+            </p>
+            <div className="space-y-4">
+              {extraTypes.map(({ key, emoji, defaultLabel }) => {
+                const v = form[key];
+                return (
+                  <BreakSlotCard key={key}
+                    slotKey={key} emoji={emoji} defaultLabel={defaultLabel}
+                    v={v} set={set} showDisableToggle isExtra
+                  />
+                );
+              })}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Footer */}
@@ -379,6 +302,98 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Break Slot Card (shared by core and extra slots) ──────────────────────────
+function BreakSlotCard({ slotKey, emoji, defaultLabel, v, set, showDisableToggle, isExtra }) {
+  return (
+    <div className={`rounded-2xl border-2 p-4 space-y-4 transition-colors
+      ${v.enabled ? (isExtra ? 'border-amber-200 bg-amber-50/30' : 'border-brand-200 bg-brand-50/30')
+                  : 'border-gray-200 bg-gray-50/50 opacity-70'}`}>
+
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-xl shrink-0">{emoji}</span>
+          {v.enabled ? (
+            <input
+              type="text"
+              value={v.label}
+              onChange={e => set(slotKey, 'label', e.target.value)}
+              placeholder={defaultLabel}
+              className="flex-1 min-w-0 text-sm font-semibold text-gray-800 bg-transparent border-b border-gray-300 focus:border-brand-500 focus:outline-none pb-0.5 placeholder-gray-400"
+            />
+          ) : (
+            <span className="font-semibold text-gray-500 text-sm">
+              {v.label || defaultLabel}
+            </span>
+          )}
+        </div>
+        {showDisableToggle && (
+          <button onClick={() => set(slotKey, 'enabled', !v.enabled)}
+            className="flex items-center gap-1.5 text-sm font-medium transition-colors shrink-0">
+            {v.enabled
+              ? <><ToggleRight size={22} className="text-brand-600" /><span className="text-brand-600">On</span></>
+              : <><ToggleLeft  size={22} className="text-gray-400"  /><span className="text-gray-400">Off</span></>}
+          </button>
+        )}
+      </div>
+
+      {v.enabled && (
+        <>
+          {/* Timing row */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Duration (min)</label>
+              <NumInput min={1} max={60}
+                value={v.allowedMinutes}
+                onChange={v2 => set(slotKey, 'allowedMinutes', v2 || 1)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-center font-bold focus:outline-none focus:border-brand-400" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Start Time</label>
+              <input type="time"
+                value={v.windowStart}
+                onChange={e => set(slotKey, 'windowStart', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">End Time</label>
+              <input type="time"
+                value={v.windowEnd}
+                onChange={e => set(slotKey, 'windowEnd', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+            </div>
+          </div>
+
+          {/* Deduction row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Overstay Deduction (₦)</label>
+              <NumInput
+                value={v.overstayDeductionAmount}
+                onChange={v2 => set(slotKey, 'overstayDeductionAmount', v2)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+              <p className="text-[10px] text-gray-400 mt-0.5">Deducted when break time exceeded</p>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Missed Break Deduction (₦)</label>
+              <NumInput
+                value={v.missedDeductionAmount}
+                onChange={v2 => set(slotKey, 'missedDeductionAmount', v2)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400" />
+              <p className="text-[10px] text-gray-400 mt-0.5">Deducted if break window not used</p>
+            </div>
+          </div>
+
+          {/* Summary line */}
+          <p className="text-[11px] text-brand-700 bg-brand-50 rounded-lg px-3 py-1.5 font-medium">
+            ⏰ {v.windowStart || '--:--'} – {v.windowEnd || '--:--'} · {v.allowedMinutes} min
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -622,11 +637,11 @@ export default function Breaks() {
         <BreakSettingsModal
           branch={selBranch}
           onClose={() => setShowSettings(false)}
-          onSaved={(newBreakSettings, newRstSettings) => {
+          onSaved={(newBreakSettings) => {
             setBranches(bs => bs.map(b => b._id === selBranch._id
-              ? { ...b, breakSettings: newBreakSettings, restroomSettings: newRstSettings } : b));
+              ? { ...b, breakSettings: newBreakSettings } : b));
             setShowSettings(false);
-            setMsg('✅ Break & restroom settings saved');
+            setMsg('✅ Break settings saved');
           }}
         />
       )}
@@ -654,8 +669,8 @@ export default function Breaks() {
           {summary?.byType && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Breakdown by Break Type</p>
-              {['morning','afternoon','night'].map(t => (
-                <TypeBreakRow key={t} type={t} stats={summary.byType[t] || { total: 0, completed: 0, overstayed: 0, missed: 0, active: 0 }} />
+              {Object.entries(summary.byType).map(([t, stats]) => (
+                <TypeBreakRow key={t} type={t} stats={stats} />
               ))}
             </div>
           )}
@@ -710,7 +725,7 @@ export default function Breaks() {
             {Object.entries(STATUS_CFG).map(([k, v]) => (
               <span key={k} className={`px-2 py-0.5 rounded-full ${v.cls}`}>{v.label}</span>
             ))}
-            <span className="ml-2">🌅 Morning · ☀️ Afternoon · 🌙 Night</span>
+            <span className="ml-2">🌅 Morning · ☀️ Afternoon · 🌙 Night · ⭐⭐💫🔔 Custom Slots</span>
           </div>
         </>
       )}

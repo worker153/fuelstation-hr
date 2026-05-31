@@ -27,24 +27,32 @@ function todayUtcStr() {
 }
 
 const BREAK_DEFAULTS = {
-  morning:   { enabled: true, allowedMinutes: 5,  windowStart: '07:00', windowEnd: '09:30' },
-  afternoon: { enabled: true, allowedMinutes: 10, windowStart: '12:00', windowEnd: '14:00' },
-  night:     { enabled: true, allowedMinutes: 5,  windowStart: '19:00', windowEnd: '21:00' },
+  morning:   { enabled: true,  label: 'Morning Break',   allowedMinutes: 5,  windowStart: '07:00', windowEnd: '09:30' },
+  afternoon: { enabled: true,  label: 'Afternoon Break', allowedMinutes: 10, windowStart: '12:00', windowEnd: '14:00' },
+  night:     { enabled: true,  label: 'Night Break',     allowedMinutes: 5,  windowStart: '19:00', windowEnd: '21:00' },
+  break_4:   { enabled: false, label: 'Break 4',         allowedMinutes: 10, windowStart: '10:00', windowEnd: '12:00' },
+  break_5:   { enabled: false, label: 'Break 5',         allowedMinutes: 10, windowStart: '15:00', windowEnd: '17:00' },
+  break_6:   { enabled: false, label: 'Break 6',         allowedMinutes: 10, windowStart: '22:00', windowEnd: '23:30' },
 };
 
-const BREAK_LABELS = {
-  morning:   'Morning Break',
-  afternoon: 'Afternoon Break',
-  night:     'Night Break',
-};
+// Fallback label lookup (used where config object not available)
+const BREAK_LABELS = Object.fromEntries(
+  Object.entries(BREAK_DEFAULTS).map(([k, v]) => [k, v.label])
+);
 
 function getBreakConfig(branch) {
   const s = branch?.breakSettings || {};
-  return {
-    morning:   { ...BREAK_DEFAULTS.morning,   ...(s.morning   || {}) },
-    afternoon: { ...BREAK_DEFAULTS.afternoon, ...(s.afternoon || {}) },
-    night:     { ...BREAK_DEFAULTS.night,     ...(s.night     || {}) },
-  };
+  const result = {};
+  for (const [key, defaults] of Object.entries(BREAK_DEFAULTS)) {
+    const stored = s[key] ? (s[key].toObject ? s[key].toObject() : s[key]) : {};
+    result[key] = {
+      ...defaults,
+      ...stored,
+      // Custom label from branch settings overrides default; empty string = use default
+      label: stored.label || defaults.label,
+    };
+  }
+  return result;
 }
 
 async function validateDevice(deviceToken) {
@@ -145,7 +153,7 @@ const startBreak = async (req, res) => {
   if (clockOut)  return res.status(400).json({ success: false, message: 'You have already clocked out today' });
 
   // Validate break type
-  if (!['morning', 'afternoon', 'night'].includes(breakType))
+  if (!Object.keys(BREAK_DEFAULTS).includes(breakType))
     return res.status(400).json({ success: false, message: 'Invalid break type' });
 
   const branch = ctx.branch || (ctx.device ? await Branch.findById(ctx.device.branch).lean() : null);
@@ -322,27 +330,27 @@ const getBreakStatus = async (req, res) => {
   else if (activeBreak)                   attendanceStatus = 'on_break';
   else if (clockedIn)                     attendanceStatus = 'active';
 
-  // Available breaks
-  const availableBreaks = Object.entries(config).map(([type, cfg]) => {
-    const taken   = todayBreaks.find(b => b.breakType === type);
-    const winStart = toMins(cfg.windowStart);
-    const winEnd   = toMins(cfg.windowEnd);
-    const inWindow = cfg.enabled
-      && (!winStart || nowMins >= winStart)
-      && (!winEnd   || nowMins <= winEnd);
+  // Available breaks — only include enabled slots (extras are hidden until admin enables them)
+  const availableBreaks = Object.entries(config)
+    .filter(([, cfg]) => cfg.enabled)
+    .map(([type, cfg]) => {
+      const taken   = todayBreaks.find(b => b.breakType === type);
+      const winStart = toMins(cfg.windowStart);
+      const winEnd   = toMins(cfg.windowEnd);
+      const inWindow = (!winStart || nowMins >= winStart) && (!winEnd || nowMins <= winEnd);
 
-    return {
-      type,
-      label:          BREAK_LABELS[type],
-      allowedMinutes: cfg.allowedMinutes,
-      windowStart:    cfg.windowStart,
-      windowEnd:      cfg.windowEnd,
-      enabled:        cfg.enabled,
-      inWindow,
-      taken:  !!taken && taken.status !== 'missed',
-      status: taken?.status || null,
-    };
-  });
+      return {
+        type,
+        label:          cfg.label,
+        allowedMinutes: cfg.allowedMinutes,
+        windowStart:    cfg.windowStart,
+        windowEnd:      cfg.windowEnd,
+        enabled:        cfg.enabled,
+        inWindow,
+        taken:  !!taken && taken.status !== 'missed',
+        status: taken?.status || null,
+      };
+    });
 
   // Server WAT time for client-side debug / display
   const watH   = Math.floor(nowMins / 60);
@@ -364,7 +372,7 @@ const getBreakStatus = async (req, res) => {
       activeBreak: activeBreak ? {
         _id:            activeBreak._id,
         breakType:      activeBreak.breakType,
-        label:          BREAK_LABELS[activeBreak.breakType],
+        label:          config[activeBreak.breakType]?.label || BREAK_LABELS[activeBreak.breakType],
         startTime:      activeBreak.startTime,
         allowedMinutes: activeBreak.allowedMinutes,
         elapsedMinutes,
@@ -373,7 +381,7 @@ const getBreakStatus = async (req, res) => {
       } : null,
       todayBreaks: todayBreaks.map(b => ({
         breakType:      b.breakType,
-        label:          BREAK_LABELS[b.breakType],
+        label:          config[b.breakType]?.label || BREAK_LABELS[b.breakType],
         status:         b.status,
         startTime:      b.startTime,
         endTime:        b.endTime,
@@ -429,9 +437,11 @@ const getBreakSummary = async (req, res) => {
     byType: {},
   };
 
-  for (const type of ['morning', 'afternoon', 'night']) {
+  for (const type of Object.keys(BREAK_DEFAULTS)) {
     const rows = breaks.filter(b => b.breakType === type);
+    if (rows.length === 0 && !['morning','afternoon','night'].includes(type)) continue; // skip empty extra slots
     summary.byType[type] = {
+      label:      BREAK_LABELS[type],
       total:      rows.length,
       completed:  rows.filter(b => b.status === 'completed').length,
       overstayed: rows.filter(b => b.status === 'overstayed').length,

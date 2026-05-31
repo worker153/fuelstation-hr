@@ -47,11 +47,11 @@ const branchSchema = new mongoose.Schema({
   }],
   // ── Break settings ────────────────────────────────────────────────────────────
   // Times are UTC strings 'HH:MM'.  Nigeria WAT = UTC+1, so enter 1 h earlier.
-  // ── Break settings ────────────────────────────────────────────────────────────
-  // Times are UTC strings 'HH:MM'.  Nigeria WAT = UTC+1, so enter 1 h earlier.
+  // morning/afternoon/night are always-available; break_4/5/6 are opt-in extras.
   breakSettings: {
     morning: {
       enabled:                 { type: Boolean, default: true  },
+      label:                   { type: String,  default: ''    },     // custom name; empty = use default
       allowedMinutes:          { type: Number,  default: 5     },
       windowStart:             { type: String,  default: '07:00' },   // 08:00 WAT
       windowEnd:               { type: String,  default: '09:30' },   // 10:30 WAT
@@ -60,6 +60,7 @@ const branchSchema = new mongoose.Schema({
     },
     afternoon: {
       enabled:                 { type: Boolean, default: true  },
+      label:                   { type: String,  default: ''    },
       allowedMinutes:          { type: Number,  default: 10    },
       windowStart:             { type: String,  default: '12:00' },   // 13:00 WAT
       windowEnd:               { type: String,  default: '14:00' },   // 15:00 WAT
@@ -68,9 +69,38 @@ const branchSchema = new mongoose.Schema({
     },
     night: {
       enabled:                 { type: Boolean, default: true  },
+      label:                   { type: String,  default: ''    },
       allowedMinutes:          { type: Number,  default: 5     },
       windowStart:             { type: String,  default: '19:00' },   // 20:00 WAT
       windowEnd:               { type: String,  default: '21:00' },   // 22:00 WAT
+      overstayDeductionAmount: { type: Number,  default: 0     },
+      missedDeductionAmount:   { type: Number,  default: 0     },
+    },
+    // Optional extra break slots (disabled by default — admin enables as needed)
+    break_4: {
+      enabled:                 { type: Boolean, default: false },
+      label:                   { type: String,  default: ''    },
+      allowedMinutes:          { type: Number,  default: 10    },
+      windowStart:             { type: String,  default: '10:00' },
+      windowEnd:               { type: String,  default: '12:00' },
+      overstayDeductionAmount: { type: Number,  default: 0     },
+      missedDeductionAmount:   { type: Number,  default: 0     },
+    },
+    break_5: {
+      enabled:                 { type: Boolean, default: false },
+      label:                   { type: String,  default: ''    },
+      allowedMinutes:          { type: Number,  default: 10    },
+      windowStart:             { type: String,  default: '15:00' },
+      windowEnd:               { type: String,  default: '17:00' },
+      overstayDeductionAmount: { type: Number,  default: 0     },
+      missedDeductionAmount:   { type: Number,  default: 0     },
+    },
+    break_6: {
+      enabled:                 { type: Boolean, default: false },
+      label:                   { type: String,  default: ''    },
+      allowedMinutes:          { type: Number,  default: 10    },
+      windowStart:             { type: String,  default: '22:00' },
+      windowEnd:               { type: String,  default: '23:30' },
       overstayDeductionAmount: { type: Number,  default: 0     },
       missedDeductionAmount:   { type: Number,  default: 0     },
     },

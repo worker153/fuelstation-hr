@@ -19,7 +19,7 @@ const breakSchema = new mongoose.Schema({
   date:      { type: String, required: true },   // 'YYYY-MM-DD'
   breakType: {
     type: String,
-    enum: ['morning', 'afternoon', 'night'],
+    enum: ['morning', 'afternoon', 'night', 'break_4', 'break_5', 'break_6'],
     required: true,
   },
   status: {
