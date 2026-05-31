@@ -1042,12 +1042,13 @@ function Row({ label, value }) {
 function DashboardView({ session, onBack }) {
   const { pin } = session;
   const now = new Date();
-  const [month, setMonth]     = useState(now.getMonth() + 1);
-  const [year,  setYear ]     = useState(now.getFullYear());
-  const [data,  setData ]     = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError  ] = useState('');
-  const [expanded, setExpanded] = useState(false);
+  const [month, setMonth]       = useState(now.getMonth() + 1);
+  const [year,  setYear ]       = useState(now.getFullYear());
+  const [data,  setData ]       = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [error,   setError  ]   = useState('');
+  const [showAtt, setShowAtt]   = useState(false);
+  const [showDed, setShowDed]   = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -1065,92 +1066,258 @@ function DashboardView({ session, onBack }) {
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (!atCurrentMonth) { if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1); } };
 
+  // Correct nested data paths
+  const att = data?.attendance || {};
+  const sal = data?.salary     || {};
+  const deductions = data?.shortages     || [];
+  const attDays    = data?.attendanceDays || [];
+
+  const deductPct = sal.baseSalary > 0
+    ? Math.min(100, Math.round((sal.totalDeducted / sal.baseSalary) * 100))
+    : 0;
+
   return (
-    <div className="p-4 max-w-sm mx-auto">
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={onBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white"><ChevronLeft size={20} /></button>
-        <h2 className="text-white font-bold text-lg flex-1">My Dashboard</h2>
-        <div className="flex items-center gap-1">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ChevronLeft size={16} /></button>
-          <span className="text-white/80 text-xs font-bold min-w-[68px] text-center">{MONTH_SHORT[month-1]} {year}</span>
-          <button onClick={nextMonth} disabled={atCurrentMonth} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-30"><ChevronRight size={16} /></button>
+    <div className="pb-8">
+      {/* ── Sticky header ───────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-10 bg-brand-900/95 backdrop-blur px-4 py-3 flex items-center gap-2 border-b border-white/10">
+        <button onClick={onBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white shrink-0">
+          <ChevronLeft size={20} />
+        </button>
+        <h2 className="text-white font-bold text-base flex-1">My Dashboard</h2>
+        {/* Month navigator */}
+        <div className="flex items-center gap-1 bg-white/10 rounded-xl px-1 py-1">
+          <button onClick={prevMonth} className="p-1 rounded-lg hover:bg-white/20 text-white transition-colors">
+            <ChevronLeft size={15} />
+          </button>
+          <span className="text-white text-xs font-bold min-w-[72px] text-center">
+            {MONTH_SHORT[month-1]} {year}
+          </span>
+          <button onClick={nextMonth} disabled={atCurrentMonth}
+            className="p-1 rounded-lg hover:bg-white/20 text-white transition-colors disabled:opacity-30">
+            <ChevronRight size={15} />
+          </button>
         </div>
       </div>
 
-      {loading && <div className="flex justify-center py-12"><Loader size={32} className="animate-spin text-white/50" /></div>}
-      {error   && <p className="text-red-300 text-sm text-center py-8">{error}</p>}
-
-      {!loading && data && (
-        <div className="space-y-3">
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'Days Present', value: data.daysPresent,  color: 'text-green-300' },
-              { label: 'Late Days',    value: data.lateDays,      color: data.lateDays     > 0 ? 'text-amber-300' : 'text-white/60' },
-              { label: 'Absent Days',  value: data.absentDays,    color: data.absentDays   > 0 ? 'text-red-300'   : 'text-white/60' },
-              { label: 'No-Shows',     value: data.noShowDays,    color: data.noShowDays   > 0 ? 'text-red-300'   : 'text-white/60' },
-            ].map(s => (
-              <div key={s.label} className="bg-white/10 rounded-xl p-3 border border-white/15 text-center">
-                <p className={`text-2xl font-black ${s.color}`}>{s.value || 0}</p>
-                <p className="text-white/50 text-xs mt-0.5">{s.label}</p>
+      <div className="px-4 pt-4 max-w-sm mx-auto space-y-3">
+        {/* ── Worker card ─────────────────────────────────────────────────── */}
+        <div className="flex items-center gap-3 bg-white/10 rounded-2xl p-4 border border-white/15">
+          {data?.worker?.photo
+            ? <img src={data.worker.photo} alt="" className="w-14 h-14 rounded-xl object-cover border-2 border-white/20 shrink-0" />
+            : <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center text-white text-2xl font-black shrink-0">
+                {(data?.worker?.fullName || session.worker?.fullName || '?')[0]}
               </div>
-            ))}
+          }
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-black text-base truncate">{data?.worker?.fullName || session.worker?.fullName}</p>
+            <p className="text-white/60 text-sm">{data?.worker?.role || session.worker?.role}</p>
+            <p className="text-brand-300 text-xs mt-0.5">{data?.worker?.branchName || session.worker?.branch}</p>
           </div>
-
-          {/* Pay summary */}
-          <div className="bg-white/10 rounded-2xl p-4 border border-white/20 space-y-2">
-            <p className="text-white/50 text-xs font-bold uppercase tracking-wide">Pay — {MONTH_FULL[month-1]} {year}</p>
-            <div className="flex justify-between text-sm"><span className="text-white/60">Base Salary</span><span className="text-white font-medium">{fmt(data.baseSalary)}</span></div>
-            {data.bonus > 0   && <div className="flex justify-between text-sm"><span className="text-white/60">Bonus</span><span className="text-green-300 font-medium">+{fmt(data.bonus)}</span></div>}
-            {data.totalDeducted > 0 && <div className="flex justify-between text-sm"><span className="text-white/60">Deductions</span><span className="text-red-300 font-medium">-{fmt(data.totalDeducted)}</span></div>}
-            <div className="flex justify-between border-t border-white/10 pt-2">
-              <span className="text-white font-bold">Expected Pay</span>
-              <span className="text-green-300 font-black text-lg">{fmt(data.expectedPay)}</span>
-            </div>
+          <div className="text-right shrink-0">
+            <p className="text-white/40 text-[10px] uppercase tracking-wide">Period</p>
+            <p className="text-white font-bold text-sm">{MONTH_SHORT[month-1]}</p>
+            <p className="text-white/60 text-xs">{year}</p>
           </div>
+        </div>
 
-          {/* Deductions expandable */}
-          {data.shortages?.length > 0 && (
-            <div className="bg-white/10 rounded-2xl border border-white/20 overflow-hidden">
-              <button onClick={() => setExpanded(e => !e)}
-                className="w-full flex items-center justify-between px-4 py-3">
-                <span className="text-white/80 text-sm font-bold">Deductions ({data.shortages.length})</span>
-                {expanded ? <ChevronUp size={16} className="text-white/50" /> : <ChevronDown size={16} className="text-white/50" />}
-              </button>
-              {expanded && (
-                <div className="border-t border-white/10 divide-y divide-white/5">
-                  {data.shortages.map((s, i) => (
-                    <div key={i} className="px-4 py-3 flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{s.reasonLabel || s.reason}</p>
-                        {s.notes && <p className="text-white/40 text-xs truncate">{s.notes}</p>}
-                      </div>
-                      <span className="text-red-300 font-bold text-sm shrink-0">-{fmt(s.amount)}</span>
-                    </div>
-                  ))}
+        {loading && (
+          <div className="flex flex-col items-center gap-3 py-12">
+            <Loader size={32} className="animate-spin text-white/40" />
+            <p className="text-white/40 text-sm">Loading…</p>
+          </div>
+        )}
+        {error && (
+          <div className="bg-red-900/40 border border-red-700 rounded-2xl p-4 text-center">
+            <p className="text-red-300 text-sm">{error}</p>
+            <button onClick={load} className="text-red-300 text-xs underline mt-2">Retry</button>
+          </div>
+        )}
+
+        {!loading && data && (
+          <>
+            {/* ── Salary card ───────────────────────────────────────────────── */}
+            <div className="bg-white rounded-2xl overflow-hidden shadow-xl">
+              {/* Green header bar */}
+              <div className="bg-brand-700 px-5 py-3 flex items-center justify-between">
+                <p className="text-white/80 text-xs font-bold uppercase tracking-wider">Salary Summary</p>
+                <p className="text-brand-200 text-xs">{MONTH_FULL[month-1]} {year}</p>
+              </div>
+
+              <div className="p-5 space-y-3">
+                {/* Base salary */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+                    <span className="text-gray-600 text-sm">Base Salary</span>
+                  </div>
+                  <span className="text-gray-900 font-bold">{fmt(sal.baseSalary)}</span>
                 </div>
-              )}
-            </div>
-          )}
 
-          {/* Attendance log */}
-          {data.attendanceDays?.length > 0 ? (
-            <div className="bg-white/10 rounded-2xl border border-white/20 overflow-hidden">
-              <p className="px-4 py-3 text-white/80 text-sm font-bold border-b border-white/10">Attendance Log</p>
-              <div className="divide-y divide-white/5 max-h-72 overflow-y-auto">
-                {[...data.attendanceDays].reverse().map((d, i) => (
-                  <div key={i} className="px-4 py-2.5 flex items-center justify-between">
-                    <span className="text-white/70 text-xs">{fmtD(d.date)}</span>
-                    <span className="text-white/80 text-xs">{fmtT(d.clockIn)} → {fmtT(d.clockOut)}</span>
+                {/* Bonus (if any) */}
+                {sal.bonus > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
+                      <span className="text-gray-600 text-sm">Bonus</span>
+                    </div>
+                    <span className="text-green-600 font-bold">+{fmt(sal.bonus)}</span>
+                  </div>
+                )}
+
+                {/* Deductions */}
+                {sal.totalDeducted > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                      <span className="text-gray-600 text-sm">Total Deductions</span>
+                    </div>
+                    <span className="text-red-600 font-bold">-{fmt(sal.totalDeducted)}</span>
+                  </div>
+                )}
+
+                {/* Deduction progress bar */}
+                {sal.totalDeducted > 0 && sal.baseSalary > 0 && (
+                  <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full" style={{ width: `${100 - deductPct}%` }} />
+                  </div>
+                )}
+
+                {/* Divider */}
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-900 font-black text-base">Expected Pay</p>
+                      {sal.totalDeducted > 0 && (
+                        <p className="text-red-500 text-xs mt-0.5">{deductPct}% deducted this month</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-green-600 font-black text-2xl">{fmt(sal.expectedPay)}</p>
+                      {sal.totalDeducted > 0 && sal.baseSalary > 0 && (
+                        <p className="text-gray-400 text-xs line-through">{fmt(sal.baseSalary + (sal.bonus||0))}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Attendance stats ───────────────────────────────────────── */}
+            <div className="bg-white/10 rounded-2xl border border-white/15 overflow-hidden">
+              <p className="px-4 py-2.5 text-white/60 text-xs font-bold uppercase tracking-wider border-b border-white/10">
+                Attendance — {MONTH_FULL[month-1]}
+              </p>
+              <div className="grid grid-cols-5 divide-x divide-white/10">
+                {[
+                  { label: 'Present', value: att.daysPresent,  emoji: '✅', color: 'text-green-300' },
+                  { label: 'Late',    value: att.lateDays,      emoji: '🕐', color: att.lateDays     > 0 ? 'text-amber-300' : 'text-white/40' },
+                  { label: 'Absent',  value: att.absentDays,    emoji: '❌', color: att.absentDays   > 0 ? 'text-red-300'   : 'text-white/40' },
+                  { label: 'No-show', value: att.noShowDays,    emoji: '👻', color: att.noShowDays   > 0 ? 'text-red-300'   : 'text-white/40' },
+                  { label: 'Early↑',  value: att.earlyExitDays, emoji: '🏃', color: att.earlyExitDays> 0 ? 'text-amber-300' : 'text-white/40' },
+                ].map(s => (
+                  <div key={s.label} className="py-3 text-center">
+                    <p className="text-base">{s.emoji}</p>
+                    <p className={`text-lg font-black leading-tight ${s.color}`}>{s.value || 0}</p>
+                    <p className="text-white/40 text-[10px] leading-tight mt-0.5">{s.label}</p>
                   </div>
                 ))}
               </div>
             </div>
-          ) : (
-            <p className="text-white/40 text-sm text-center py-6">No attendance records for this month</p>
-          )}
-        </div>
-      )}
+
+            {/* ── Deductions detail ──────────────────────────────────────── */}
+            {deductions.length > 0 && (
+              <div className="bg-white/10 rounded-2xl border border-white/15 overflow-hidden">
+                <button onClick={() => setShowDed(e => !e)}
+                  className="w-full flex items-center justify-between px-4 py-3 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">💸</span>
+                    <span className="text-white font-bold text-sm">Deductions ({deductions.length})</span>
+                    <span className="bg-red-500/20 text-red-300 text-xs px-2 py-0.5 rounded-full font-bold border border-red-500/30">
+                      -{fmt(sal.totalDeducted)}
+                    </span>
+                  </div>
+                  {showDed ? <ChevronUp size={16} className="text-white/40" /> : <ChevronDown size={16} className="text-white/40" />}
+                </button>
+                {showDed && (
+                  <div className="divide-y divide-white/5">
+                    {deductions.map((s, i) => (
+                      <div key={i} className="px-4 py-3 flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="text-sm">
+                            {s.source === 'late_arrival'    ? '🕐'
+                             : s.source === 'absent'        ? '❌'
+                             : s.source === 'no_clockin'    ? '👻'
+                             : s.source === 'early_departure'? '🏃'
+                             : '💸'}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-semibold">{s.label || s.source}</p>
+                          {s.notes && <p className="text-white/40 text-xs mt-0.5 truncate">{s.notes}</p>}
+                          {s.date && (
+                            <p className="text-white/30 text-xs mt-0.5">
+                              {new Date(s.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                            </p>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className="text-red-300 font-black text-base">-{fmt(s.amount)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Attendance log ─────────────────────────────────────────── */}
+            <div className="bg-white/10 rounded-2xl border border-white/15 overflow-hidden">
+              <button onClick={() => setShowAtt(e => !e)}
+                className="w-full flex items-center justify-between px-4 py-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">📅</span>
+                  <span className="text-white font-bold text-sm">
+                    Attendance Log
+                    {attDays.length > 0 && <span className="text-white/40 font-normal"> · {attDays.length} days</span>}
+                  </span>
+                </div>
+                {showAtt ? <ChevronUp size={16} className="text-white/40" /> : <ChevronDown size={16} className="text-white/40" />}
+              </button>
+
+              {showAtt && (
+                attDays.length > 0 ? (
+                  <div className="divide-y divide-white/5 max-h-80 overflow-y-auto">
+                    {[...attDays].reverse().map((d, i) => (
+                      <div key={i} className="px-4 py-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-white text-sm font-semibold">{fmtD(d.date)}</p>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="bg-green-500/20 text-green-300 border border-green-500/30 px-2 py-1 rounded-lg font-bold">
+                            IN {fmtT(d.clockIn)}
+                          </span>
+                          {d.clockOut && (
+                            <span className="bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-1 rounded-lg font-bold">
+                              OUT {fmtT(d.clockOut)}
+                            </span>
+                          )}
+                          {!d.clockOut && (
+                            <span className="bg-white/5 text-white/30 border border-white/10 px-2 py-1 rounded-lg">
+                              —
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-white/30 text-sm text-center py-6">No attendance records for {MONTH_FULL[month-1]}</p>
+                )
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
