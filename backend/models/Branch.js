@@ -79,6 +79,18 @@ const branchSchema = new mongoose.Schema({
     allowedMinutes:  { type: Number, default: 2   },  // minutes allowed before deduction kicks in
     deductionPerMin: { type: Number, default: 500 },  // ₦ per extra minute
   },
+
+  // Default penalty amounts per shortage reason — 0 means no preset (supervisor enters manually)
+  penaltyPresets: {
+    cash_shortage:      { type: Number, default: 0 },
+    fuel_shortage:      { type: Number, default: 0 },
+    equipment_damage:   { type: Number, default: 0 },
+    customer_complaint: { type: Number, default: 0 },
+    late_arrival:       { type: Number, default: 0 },
+    absent:             { type: Number, default: 0 },
+    early_departure:    { type: Number, default: 0 },
+    other:              { type: Number, default: 0 },
+  },
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });

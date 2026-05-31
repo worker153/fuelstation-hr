@@ -62,7 +62,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ─── Submit Shortage Modal ─────────────────────────────────────────────────────
-function SubmitModal({ workers, onClose, onSubmitted }) {
+function SubmitModal({ workers, branches, onClose, onSubmitted }) {
   const notify = useNotify();
   const now    = new Date();
   const [workerId,    setWorkerId   ] = useState('');
@@ -71,11 +71,19 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
   const [year,        setYear       ] = useState(now.getFullYear());
   const [date,        setDate       ] = useState(now.toISOString().split('T')[0]);
   const [amount,      setAmount     ] = useState('');
+  const [amountTouched, setAmountTouched] = useState(false);
   const [about,       setAbout      ] = useState('');
   const [reason,      setReason     ] = useState('cash_shortage');
   const [notes,       setNotes      ] = useState('');
   const [loading,     setLoading    ] = useState(false);
   const years = Array.from({ length: 3 }, (_, i) => now.getFullYear() - i);
+
+  // Find the selected worker's branch and its penalty presets
+  const selectedWorker  = workers.find(w => w._id === workerId);
+  const workerBranchId  = selectedWorker?.branchId?._id || selectedWorker?.branchId;
+  const workerBranch    = branches.find(b => String(b._id) === String(workerBranchId));
+  const presets         = workerBranch?.penaltyPresets || {};
+  const currentPreset   = presets[reason] || 0;
 
   // Filter workers by search text
   const filteredWorkers = workerSearch.trim()
@@ -84,7 +92,27 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
       )
     : workers;
 
-  const selectedWorker = workers.find(w => w._id === workerId);
+  // Auto-fill amount when reason changes (only if not manually edited, or if current amount matches a preset)
+  const handleReasonChange = (newReason) => {
+    setReason(newReason);
+    const preset = presets[newReason] || 0;
+    if (preset > 0 && !amountTouched) {
+      setAmount(preset);
+    }
+  };
+
+  // When worker changes, auto-fill the preset for the current reason if not manually set
+  const handleWorkerSelect = (id) => {
+    setWorkerId(id);
+    if (!amountTouched) {
+      // We need to find the new worker's branch presets — do it after state updates
+      const w  = workers.find(x => x._id === id);
+      const bid = w?.branchId?._id || w?.branchId;
+      const b   = branches.find(x => String(x._id) === String(bid));
+      const p   = b?.penaltyPresets?.[reason] || 0;
+      if (p > 0) setAmount(p);
+    }
+  };
 
   const submit = async e => {
     e.preventDefault();
@@ -141,7 +169,7 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
                   <p className="text-center text-gray-400 text-sm py-3">No workers found</p>
                 ) : filteredWorkers.map(w => (
                   <button key={w._id} type="button"
-                    onClick={() => { setWorkerId(w._id); setWorkerSearch(''); }}
+                    onClick={() => { handleWorkerSelect(w._id); setWorkerSearch(''); }}
                     className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors
                       ${workerId === w._id ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-800'}`}>
                     {w.fullName}
@@ -150,7 +178,7 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
                 ))}
               </div>
             ) : (
-              <select className="input" value={workerId} onChange={e => setWorkerId(e.target.value)} required>
+              <select className="input" value={workerId} onChange={e => handleWorkerSelect(e.target.value)} required>
                 <option value="">— Select worker —</option>
                 {workers.map(w => (
                   <option key={w._id} value={w._id}>{w.fullName} ({w.role})</option>
@@ -193,16 +221,31 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
           </div>
 
           <div>
-            <label className="label">Shortage Amount (₦) *</label>
-            <NumInput min={1} className="input" placeholder="e.g. 5000"
-              value={Number(amount) || 0} onChange={v => setAmount(v)} />
+            <label className="label">Reason *</label>
+            <select className="input" value={reason} onChange={e => handleReasonChange(e.target.value)}>
+              {REASON_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
           </div>
 
           <div>
-            <label className="label">Reason *</label>
-            <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-              {REASON_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
+            <label className="label">Shortage Amount (₦) *</label>
+            <NumInput min={1} className="input" placeholder="e.g. 5000"
+              value={Number(amount) || 0}
+              onChange={v => { setAmount(v); setAmountTouched(true); }} />
+            {currentPreset > 0 && (
+              <p className="text-xs mt-1 flex items-center gap-1.5">
+                <span className="text-blue-600 font-medium">
+                  ⚡ Preset: ₦{currentPreset.toLocaleString()}
+                </span>
+                {amountTouched && Number(amount) !== currentPreset && (
+                  <button type="button"
+                    onClick={() => { setAmount(currentPreset); setAmountTouched(false); }}
+                    className="text-blue-500 hover:text-blue-700 underline text-xs">
+                    Reset to preset
+                  </button>
+                )}
+              </p>
+            )}
           </div>
 
           <div>
@@ -364,6 +407,7 @@ export default function Shortages() {
   const now          = new Date();
   const [shortages,  setShortages ] = useState([]);
   const [workers,    setWorkers   ] = useState([]);
+  const [branches,   setBranches  ] = useState([]);
   const [loading,    setLoading   ] = useState(true);
   const [showSubmit, setShowSubmit] = useState(false);
   const [rejectItem, setRejectItem] = useState(null);
@@ -397,6 +441,14 @@ export default function Shortages() {
       .then(r => setWorkers(r.data.data || []))
       .catch(() => {});
   }, [canSubmit, isAdmin, user?.branchId, user?.shiftId]);
+
+  // Load branches for penalty preset lookup
+  useEffect(() => {
+    if (!canSubmit) return;
+    api.get('/branches?limit=200')
+      .then(r => setBranches(r.data.data || []))
+      .catch(() => {});
+  }, [canSubmit]);
 
   const handleApprove = async (id) => {
     try {
@@ -483,7 +535,7 @@ export default function Shortages() {
 
       {/* Modals */}
       {showSubmit && (
-        <SubmitModal workers={workers} onClose={() => setShowSubmit(false)}
+        <SubmitModal workers={workers} branches={branches} onClose={() => setShowSubmit(false)}
           onSubmitted={s => { setShortages(prev => [s, ...prev]); setShowSubmit(false); }} />
       )}
       {rejectItem && (

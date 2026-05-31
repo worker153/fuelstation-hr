@@ -4,8 +4,19 @@ import {
   GitBranch, Plus, Edit2, Phone, MapPin, User, Users,
   CheckCircle, XCircle, X, Save, Loader, ToggleLeft, ToggleRight,
   Building2, Navigation, Link2, AlertCircle, Clock, ChevronDown,
-  Camera, Trash2,
+  Camera, Trash2, DollarSign,
 } from 'lucide-react';
+
+const PENALTY_REASON_OPTIONS = [
+  { value: 'cash_shortage',      label: 'Cash Shortage'      },
+  { value: 'fuel_shortage',      label: 'Fuel Shortage'      },
+  { value: 'equipment_damage',   label: 'Equipment Damage'   },
+  { value: 'customer_complaint', label: 'Customer Complaint' },
+  { value: 'late_arrival',       label: 'Late Arrival'       },
+  { value: 'absent',             label: 'Absent'             },
+  { value: 'early_departure',    label: 'Early Departure'    },
+  { value: 'other',              label: 'Other'              },
+];
 import api from '../utils/api';
 import NumInput from '../components/NumInput';
 import { useNotify } from '../context/NotificationContext';
@@ -188,6 +199,20 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     }];
   };
 
+  const getInitialPresets = () => {
+    const p = branch?.penaltyPresets || {};
+    return {
+      cash_shortage:      p.cash_shortage      ?? 0,
+      fuel_shortage:      p.fuel_shortage      ?? 0,
+      equipment_damage:   p.equipment_damage   ?? 0,
+      customer_complaint: p.customer_complaint ?? 0,
+      late_arrival:       p.late_arrival       ?? 0,
+      absent:             p.absent             ?? 0,
+      early_departure:    p.early_departure    ?? 0,
+      other:              p.other              ?? 0,
+    };
+  };
+
   const [form, setForm] = useState({
     name:      branch?.name      || '',
     address:   branch?.address   || '',
@@ -195,8 +220,10 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
     attendanceRules: getInitialRules(),
+    penaltyPresets:  getInitialPresets(),
   });
-  const [showAttendance, setShowAttendance] = useState(false);
+  const [showAttendance,    setShowAttendance   ] = useState(false);
+  const [showPenaltyPresets,setShowPenaltyPresets] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -357,6 +384,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
         managerId:       form.managerId || null,
         location:        form.location  || null,
         attendanceRules: form.attendanceRules,
+        penaltyPresets:  form.penaltyPresets,
       };
       const res = branch
         ? await api.put(`/branches/${branch._id}`, payload)
@@ -627,6 +655,55 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
 
                   <p className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
                     💡 Enter times in Nigerian time (WAT). Set ₦ amounts to 0 to track without deducting.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Section 4: Penalty Presets ───────────────────────────────── */}
+            <div>
+              <button type="button" onClick={() => setShowPenaltyPresets(v => !v)}
+                className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <DollarSign size={15} className="text-red-500" />
+                  Penalty Presets
+                  {Object.values(form.penaltyPresets).some(v => v > 0) && (
+                    <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
+                      {Object.values(form.penaltyPresets).filter(v => v > 0).length} set
+                    </span>
+                  )}
+                </span>
+                <ChevronDown size={14} className={`text-gray-400 transition-transform ${showPenaltyPresets ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showPenaltyPresets && (
+                <div className="px-6 pb-5 space-y-3 border-t border-gray-100">
+                  <p className="text-xs text-gray-500 pt-3">
+                    Set a default ₦ amount per shortage reason. When a supervisor submits a shortage and selects a reason,
+                    the amount auto-fills from this preset. Set to ₦0 to leave it blank (supervisor enters manually).
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {PENALTY_REASON_OPTIONS.map(r => (
+                      <div key={r.value}>
+                        <label className="text-xs font-medium text-gray-600 block mb-1">{r.label}</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₦</span>
+                          <NumInput
+                            min={0}
+                            className="input pl-7 text-sm"
+                            placeholder="0"
+                            value={form.penaltyPresets[r.value] || 0}
+                            onChange={v => setForm(f => ({
+                              ...f,
+                              penaltyPresets: { ...f.penaltyPresets, [r.value]: v },
+                            }))}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 bg-gray-50 px-3 py-2 rounded-lg">
+                    💡 These are defaults only — supervisors can still edit the amount before submitting.
                   </p>
                 </div>
               )}
