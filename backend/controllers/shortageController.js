@@ -10,7 +10,7 @@ const MONTHS = ['January','February','March','April','May','June',
 // Idempotent: returns existing record if already created for same worker/source/date.
 const createAttendanceShortage = async ({
   company, worker, branchId, branchName,
-  amount, source, reason, attendanceDate, notes,
+  amount, source, reason, attendanceDate, notes, about,
 }) => {
   // Idempotency check
   const existing = await Shortage.findOne({
@@ -29,7 +29,7 @@ const createAttendanceShortage = async ({
     workerRole: worker.role,
     month, year,
     date: attendanceDate, attendanceDate,
-    amount, notes, reason, source,
+    amount, about, notes, reason, source,
     status:     'approved',
     reviewedAt: new Date(),
     submittedBy: null,
@@ -84,7 +84,7 @@ const syncPayroll = async ({ company, workerId, branchId, month, year }) => {
 
 // ─── POST /api/shortages  (admin/supervisor submits — auto-approved) ──────────
 const submitShortage = async (req, res) => {
-  const { workerId, branchId, month, year, date, amount, notes, reason } = req.body;
+  const { workerId, branchId, month, year, date, amount, about, notes, reason } = req.body;
 
   if (!workerId || !month || !year || amount == null)
     return res.status(400).json({ success: false, message: 'workerId, month, year and amount are required' });
@@ -118,6 +118,7 @@ const submitShortage = async (req, res) => {
     year:        Number(year),
     date:        date ? new Date(date) : now,
     amount:      parsedAmount,
+    about:       about?.trim() || '',
     notes:       notes?.trim() || '',
     reason:      reason || 'cash_shortage',
     source:      'manual',
@@ -567,8 +568,49 @@ const workerDashboard = async (req, res) => {
   });
 };
 
+// ─── POST /api/shortages/:id/join ─────────────────────────────────────────────
+// Add an additional charge to an existing shortage record (same worker).
+const joinShortage = async (req, res) => {
+  const cid      = req.user.company._id;
+  const shortage = await Shortage.findOne({ _id: req.params.id, company: cid });
+  if (!shortage) return res.status(404).json({ success: false, message: 'Shortage not found' });
+  if (shortage.status === 'rejected')
+    return res.status(400).json({ success: false, message: 'Cannot add to a rejected shortage' });
+
+  const { amount, about, notes } = req.body;
+  const extra = Number(amount);
+  if (!extra || extra <= 0)
+    return res.status(400).json({ success: false, message: 'Enter a valid amount to add' });
+
+  shortage.amount += extra;
+  if (about?.trim()) {
+    shortage.about = about.trim();
+  }
+  if (notes?.trim()) {
+    shortage.notes = shortage.notes
+      ? `${shortage.notes}\n+ ${notes.trim()}`
+      : notes.trim();
+  }
+  shortage.notes = shortage.notes
+    ? `${shortage.notes}\n[+₦${extra.toLocaleString()} added by ${req.user.name || 'admin'}]`
+    : `+₦${extra.toLocaleString()} added by ${req.user.name || 'admin'}`;
+
+  await shortage.save();
+
+  // Re-sync payroll
+  try {
+    await syncPayroll({
+      company: cid, workerId: shortage.worker,
+      branchId: shortage.branchId, month: shortage.month, year: shortage.year,
+    });
+  } catch (e) { console.error('Payroll sync error (join):', e.message); }
+
+  await shortage.populate('submittedBy reviewedBy', 'name');
+  res.json({ success: true, data: shortage });
+};
+
 module.exports = {
   submitShortage, getShortages, approveShortage, rejectShortage,
   deleteShortage, getShortagesSummary, workerPinSubmit, workerPinLookup,
-  createAttendanceShortage, workerDashboard,
+  createAttendanceShortage, workerDashboard, joinShortage,
 };

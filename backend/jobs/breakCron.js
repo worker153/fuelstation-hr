@@ -57,9 +57,10 @@ async function runBreakCron() {
           if (worker) {
             await createAttendanceShortage({
               company: b.company, worker, branchId: b.branchId, branchName: b.branchName,
-              amount: amt, source: 'manual', reason: 'other',
+              amount: amt, source: 'break_overstay', reason: 'break_overstay',
+              about: `${b.breakType.charAt(0).toUpperCase() + b.breakType.slice(1)} break overstay — ${excess} min over`,
               attendanceDate: new Date(dateStr + 'T00:00:00.000Z'),
-              notes: `Break overstay — ${b.breakType} break, ${excess} min over limit`,
+              notes: `${b.breakType} break: ${excess} min over the ${b.allowedMinutes}-min limit`,
             });
           }
         }
@@ -87,10 +88,11 @@ async function runBreakCron() {
             branchId:       rb.branchId,
             branchName:     rb.branchName,
             amount:         deductAmt,
-            source:         'manual',
-            reason:         'other',
+            source:         'restroom_overstay',
+            reason:         'restroom_overstay',
+            about:          `Restroom overstay (auto) — ${excess} min over limit`,
             attendanceDate: new Date(rb.date + 'T00:00:00.000Z'),
-            notes: `Restroom overstay (auto) — ${excess} min × ₦${rb.deductionPerMin || 500}/min = ₦${deductAmt.toLocaleString()}`,
+            notes: `${excess} min × ₦${rb.deductionPerMin || 500}/min = ₦${deductAmt.toLocaleString()}`,
           });
         }
       } catch (e) { console.error('[RESTROOM-CRON] deduction error:', e.message); }

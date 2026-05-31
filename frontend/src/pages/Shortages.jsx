@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   AlertTriangle, Plus, Check, X, Clock, CheckCircle, XCircle,
   ChevronDown, Building2, Users, Loader, Trash2, ReceiptText,
-  DollarSign, Filter, Search
+  DollarSign, Filter, Search, GitMerge,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -28,11 +28,13 @@ const REASON_OPTIONS = [
 const REASON_LABELS = Object.fromEntries(REASON_OPTIONS.map(r => [r.value, r.label]));
 
 const SOURCE_CFG = {
-  late_arrival:    { icon: '🕐', label: 'Auto · Late',        cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  absent:          { icon: '❌', label: 'Auto · Absent',      cls: 'bg-red-50 text-red-700 border border-red-200' },
-  no_clockin:      { icon: '👻', label: 'Auto · No Show',     cls: 'bg-red-50 text-red-700 border border-red-200' },
-  early_departure: { icon: '🚪', label: 'Auto · Early Exit',  cls: 'bg-orange-50 text-orange-700 border border-orange-200' },
-  penalty:         { icon: '⚡', label: 'Auto · Penalty',     cls: 'bg-purple-50 text-purple-700 border border-purple-200' },
+  late_arrival:      { icon: '🕐', label: 'Auto · Late',          cls: 'bg-amber-50 text-amber-700 border border-amber-200'  },
+  absent:            { icon: '❌', label: 'Auto · Absent',        cls: 'bg-red-50 text-red-700 border border-red-200'        },
+  no_clockin:        { icon: '👻', label: 'Auto · No Show',       cls: 'bg-red-50 text-red-700 border border-red-200'        },
+  early_departure:   { icon: '🚪', label: 'Auto · Early Exit',    cls: 'bg-orange-50 text-orange-700 border border-orange-200'},
+  penalty:           { icon: '⚡', label: 'Auto · Penalty',       cls: 'bg-purple-50 text-purple-700 border border-purple-200'},
+  restroom_overstay: { icon: '🚻', label: 'Auto · Restroom',      cls: 'bg-blue-50 text-blue-700 border border-blue-200'     },
+  break_overstay:    { icon: '☕', label: 'Auto · Break Overstay', cls: 'bg-orange-50 text-orange-700 border border-orange-200'},
 };
 
 const SourceBadge = ({ source }) => {
@@ -69,6 +71,7 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
   const [year,        setYear       ] = useState(now.getFullYear());
   const [date,        setDate       ] = useState(now.toISOString().split('T')[0]);
   const [amount,      setAmount     ] = useState('');
+  const [about,       setAbout      ] = useState('');
   const [reason,      setReason     ] = useState('cash_shortage');
   const [notes,       setNotes      ] = useState('');
   const [loading,     setLoading    ] = useState(false);
@@ -89,7 +92,7 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
     if (!amount || Number(amount) <= 0) return notify('Enter a valid amount', 'error');
     setLoading(true);
     try {
-      const { data } = await api.post('/shortages', { workerId, month, year, date, amount: Number(amount), reason, notes });
+      const { data } = await api.post('/shortages', { workerId, month, year, date, amount: Number(amount), about, reason, notes });
       notify('Shortage submitted for approval ✓');
       onSubmitted(data.data);
     } catch (err) {
@@ -183,6 +186,13 @@ function SubmitModal({ workers, onClose, onSubmitted }) {
           </div>
 
           <div>
+            <label className="label">About (What is this charge for?) *</label>
+            <input type="text" className="input" maxLength={200}
+              placeholder="e.g. Pump 3 cash shortage — morning shift"
+              value={about} onChange={e => setAbout(e.target.value)} required />
+          </div>
+
+          <div>
             <label className="label">Shortage Amount (₦) *</label>
             <NumInput min={1} className="input" placeholder="e.g. 5000"
               value={Number(amount) || 0} onChange={v => setAmount(v)} />
@@ -262,6 +272,87 @@ function RejectModal({ shortage, onClose, onRejected }) {
   );
 }
 
+// ─── Join Shortage Modal ───────────────────────────────────────────────────────
+function JoinModal({ shortage, onClose, onJoined }) {
+  const notify  = useNotify();
+  const [amount,  setAmount ] = useState('');
+  const [about,   setAbout  ] = useState(shortage.about || '');
+  const [notes,   setNotes  ] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async e => {
+    e.preventDefault();
+    if (!amount || Number(amount) <= 0) return notify('Enter a valid amount to add', 'error');
+    setLoading(true);
+    try {
+      const { data } = await api.post(`/shortages/${shortage._id}/join`, {
+        amount: Number(amount), about, notes,
+      });
+      notify(`₦${Number(amount).toLocaleString()} added to shortage ✓`);
+      onJoined(data.data);
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed', 'error');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+              <GitMerge size={15} className="text-blue-600" />
+            </div>
+            <p className="font-bold text-gray-900 text-sm">Add to Shortage</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={submit} className="px-5 py-5 space-y-4">
+          {/* Existing shortage summary */}
+          <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 text-sm">
+            <p className="font-semibold text-gray-800">{shortage.workerName}</p>
+            {shortage.about && <p className="text-gray-600 text-xs mt-0.5">📌 {shortage.about}</p>}
+            <p className="text-red-600 font-bold mt-1">{fmt(shortage.amount)} existing</p>
+          </div>
+
+          <div>
+            <label className="label">About (update title — optional)</label>
+            <input type="text" className="input" maxLength={200}
+              placeholder="Update the shortage description…"
+              value={about} onChange={e => setAbout(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="label">Additional Amount (₦) *</label>
+            <NumInput min={1} className="input" placeholder="Amount to add"
+              value={Number(amount) || 0} onChange={v => setAmount(v)} />
+            {amount > 0 && (
+              <p className="text-xs text-green-600 mt-1 font-semibold">
+                New total: {fmt(shortage.amount + Number(amount))}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="label">Note (optional)</label>
+            <textarea className="input" rows={2} placeholder="Reason for adding this amount…"
+              value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button type="submit" disabled={loading}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-colors">
+              {loading ? <Loader size={14} className="animate-spin" /> : <><GitMerge size={14} /> Add to Shortage</>}
+            </button>
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Shortages Page ──────────────────────────────────────────────────────
 export default function Shortages() {
   const notify                 = useNotify();
@@ -276,6 +367,7 @@ export default function Shortages() {
   const [loading,    setLoading   ] = useState(true);
   const [showSubmit, setShowSubmit] = useState(false);
   const [rejectItem, setRejectItem] = useState(null);
+  const [joinItem,   setJoinItem  ] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterMonth,  setFilterMonth ] = useState('');
   const [filterYear,   setFilterYear  ] = useState(now.getFullYear());
@@ -382,6 +474,7 @@ export default function Shortages() {
             {shortages.map(s => (
               <ShortageRow key={s._id} shortage={s} isAdmin={isAdmin}
                 onDelete={() => handleDelete(s._id)}
+                onJoin={canSubmit ? () => setJoinItem(s) : null}
               />
             ))}
           </div>
@@ -396,6 +489,10 @@ export default function Shortages() {
       {rejectItem && (
         <RejectModal shortage={rejectItem} onClose={() => setRejectItem(null)}
           onRejected={updated => { setShortages(prev => prev.map(s => s._id === updated._id ? updated : s)); setRejectItem(null); }} />
+      )}
+      {joinItem && (
+        <JoinModal shortage={joinItem} onClose={() => setJoinItem(null)}
+          onJoined={updated => { setShortages(prev => prev.map(s => s._id === updated._id ? updated : s)); setJoinItem(null); }} />
       )}
     </div>
   );
@@ -457,7 +554,8 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
 }
 
 // ─── Shortage row (full list) ──────────────────────────────────────────────────
-function ShortageRow({ shortage, isAdmin, onDelete }) {
+function ShortageRow({ shortage, isAdmin, onDelete, onJoin }) {
+  const isAutoSource = shortage.source && shortage.source !== 'manual';
   return (
     <div className="flex items-start gap-4 px-5 py-4 hover:bg-gray-50/50 flex-wrap">
       <div className="flex-1 min-w-0">
@@ -468,10 +566,17 @@ function ShortageRow({ shortage, isAdmin, onDelete }) {
             <span className="text-xs text-gray-500">· {shortage.branchName}</span>
           )}
           <SourceBadge source={shortage.source} />
+          <StatusBadge status={shortage.status} />
         </div>
+
+        {/* About — shown prominently as the charge title */}
+        {shortage.about && (
+          <p className="text-sm font-semibold text-gray-800 mt-1">📌 {shortage.about}</p>
+        )}
+
         <div className="flex items-center gap-3 mt-0.5 flex-wrap">
           <span className="text-sm font-bold text-red-600">{fmt(shortage.amount)}</span>
-          {shortage.reason && shortage.reason !== 'other' && (
+          {shortage.reason && shortage.reason !== 'other' && shortage.reason !== shortage.source && (
             <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
               {REASON_LABELS[shortage.reason] || shortage.reason}
             </span>
@@ -479,12 +584,13 @@ function ShortageRow({ shortage, isAdmin, onDelete }) {
           <span className="text-xs text-gray-400">{MONTHS[(shortage.month||1)-1]} {shortage.year}</span>
           {shortage.date && <span className="text-xs text-gray-400">{new Date(shortage.date).toLocaleDateString('en-NG')}</span>}
         </div>
+
         {shortage.notes && <p className="text-xs text-gray-500 mt-0.5 italic">"{shortage.notes}"</p>}
         {shortage.status === 'rejected' && shortage.rejectionReason && (
           <p className="text-xs text-red-500 mt-0.5">Reason: {shortage.rejectionReason}</p>
         )}
         <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-          {shortage.source && shortage.source !== 'manual'
+          {isAutoSource
             ? <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full font-medium">Auto-deduction</span>
             : shortage.submittedBy?.name
               ? <>Submitted by {shortage.submittedBy.name}</>
@@ -498,7 +604,14 @@ function ShortageRow({ shortage, isAdmin, onDelete }) {
         </p>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
+        {onJoin && shortage.status !== 'rejected' && (
+          <button onClick={onJoin}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Add to this shortage">
+            <GitMerge size={14} />
+          </button>
+        )}
         {isAdmin && (
           <button onClick={onDelete}
             className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"

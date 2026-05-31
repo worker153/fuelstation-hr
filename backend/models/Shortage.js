@@ -17,18 +17,20 @@ const shortageSchema = new mongoose.Schema({
   date:   { type: Date },           // specific incident date (optional)
 
   amount: { type: Number, required: true, min: 0 },
+  about:  { type: String, trim: true, maxlength: 200 },   // short title / what the charge is for
   notes:  { type: String, trim: true },
 
   reason: {
     type: String,
     enum: ['cash_shortage','fuel_shortage','equipment_damage',
            'customer_complaint','late_arrival','absent','no_clockin',
-           'early_departure','other'],
+           'early_departure','restroom_overstay','break_overstay','other'],
     default: 'other',
   },
   source: {
     type: String,
-    enum: ['manual','late_arrival','absent','no_clockin','early_departure','penalty'],
+    enum: ['manual','late_arrival','absent','no_clockin','early_departure',
+           'penalty','restroom_overstay','break_overstay'],
     default: 'manual',
   },
   attendanceDate:    { type: Date },

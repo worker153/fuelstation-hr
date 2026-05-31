@@ -118,10 +118,11 @@ const endRestroom = async (req, res) => {
           branchId:      activeRB.branchId,
           branchName:    activeRB.branchName,
           amount:        deductAmt,
-          source:        'manual',
-          reason:        'other',
+          source:        'restroom_overstay',
+          reason:        'restroom_overstay',
+          about:         `Restroom overstay — ${excess} min over limit`,
           attendanceDate: new Date(dateStr + 'T00:00:00.000Z'),
-          notes: `Restroom overstay — ${excess} min × ₦${activeRB.deductionPerMin || DEDUCTION_PER_MIN}/min = ₦${deductAmt.toLocaleString()}`,
+          notes: `${excess} min × ₦${activeRB.deductionPerMin || DEDUCTION_PER_MIN}/min = ₦${deductAmt.toLocaleString()}`,
         });
       }
     } catch (e) {

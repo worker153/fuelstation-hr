@@ -7,7 +7,8 @@ const {
   submitShortage, getShortages,
   approveShortage, rejectShortage,
   deleteShortage, getShortagesSummary,
-  workerPinSubmit, workerPinLookup, workerDashboard
+  workerPinSubmit, workerPinLookup, workerDashboard,
+  joinShortage,
 } = require('../controllers/shortageController');
 
 // ── Public routes (no auth — worker PIN self-service) ─────────────────────────
@@ -26,5 +27,6 @@ router.post('/', requirePermission('submitShortages'), submitShortage);
 router.delete('/:id', deleteShortage);
 router.post('/:id/approve', requirePermission('manageBranches'), approveShortage);
 router.post('/:id/reject',  requirePermission('manageBranches'), rejectShortage);
+router.post('/:id/join',    requirePermission('submitShortages'), joinShortage);
 
 module.exports = router;
