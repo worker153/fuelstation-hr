@@ -8,11 +8,12 @@
  *   For each break window that has just closed (in the last 5 min) and each worker who
  *   clocked in but never started that break → create a 'missed' record.
  */
-const cron       = require('node-cron');
-const Break      = require('../models/Break');
-const Branch     = require('../models/Branch');
-const Worker     = require('../models/Worker');
-const Attendance = require('../models/Attendance');
+const cron         = require('node-cron');
+const Break        = require('../models/Break');
+const RestroomBreak = require('../models/RestroomBreak');
+const Branch       = require('../models/Branch');
+const Worker       = require('../models/Worker');
+const Attendance   = require('../models/Attendance');
 const { getBreakConfig }            = require('../controllers/breakController');
 const { createAttendanceShortage }  = require('../controllers/shortageController');
 
@@ -66,7 +67,47 @@ async function runBreakCron() {
     }
   }
 
-  // ── 2. Missed break detection ─────────────────────────────────────────────────
+  // ── 2. Restroom overstay auto-end ────────────────────────────────────────────
+  // If a restroom break has been active for > (allowedMinutes + 28) min (≈ 30 min total)
+  // and no deduction has been created yet, auto-end it and deduct ₦/min.
+  const activeRestroom = await RestroomBreak.find({ status: 'active' }).lean();
+  for (const rb of activeRestroom) {
+    const elapsedMins     = Math.floor((now - new Date(rb.startTime)) / 60000);
+    const autoEndThreshold = (rb.allowedMinutes || 2) + 28; // 30 min total grace
+
+    if (elapsedMins > autoEndThreshold && !rb.deductionCreated) {
+      const excess    = elapsedMins - (rb.allowedMinutes || 2);
+      const deductAmt = excess * (rb.deductionPerMin || 500);
+      try {
+        const worker = await Worker.findById(rb.worker).select('fullName role company branchId branch').lean();
+        if (worker) {
+          await createAttendanceShortage({
+            company:        rb.company,
+            worker,
+            branchId:       rb.branchId,
+            branchName:     rb.branchName,
+            amount:         deductAmt,
+            source:         'manual',
+            reason:         'other',
+            attendanceDate: new Date(rb.date + 'T00:00:00.000Z'),
+            notes: `Restroom overstay (auto) — ${excess} min × ₦${rb.deductionPerMin || 500}/min = ₦${deductAmt.toLocaleString()}`,
+          });
+        }
+      } catch (e) { console.error('[RESTROOM-CRON] deduction error:', e.message); }
+
+      await RestroomBreak.findByIdAndUpdate(rb._id, {
+        status:           'overstayed',
+        endTime:          now,
+        actualMinutes:    elapsedMins,
+        excessMinutes:    excess,
+        deductionCreated: true,
+        deductionAmount:  deductAmt,
+      });
+      console.log(`[RESTROOM-CRON] Auto-ended: ${rb.workerName} — ${excess} min over, ₦${deductAmt} deducted`);
+    }
+  }
+
+  // ── 3. Missed break detection ─────────────────────────────────────────────────
   const branches = await Branch.find({ isActive: true }).lean();
 
   for (const branch of branches) {

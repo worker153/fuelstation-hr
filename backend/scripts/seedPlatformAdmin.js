@@ -24,23 +24,25 @@ const User     = require('../models/User');
 (async () => {
   const {
     MONGO_URI,
+    MONGODB_URI,
     PLATFORM_ADMIN_NAME     = 'Platform Admin',
     PLATFORM_ADMIN_EMAIL,
     PLATFORM_ADMIN_PASSWORD,
   } = process.env;
 
+  const mongoUri = MONGO_URI || MONGODB_URI;
+
   // ── Validate env vars ────────────────────────────────────────────────────────
   const errors = [];
-  if (!MONGO_URI)                errors.push('MONGO_URI');
-  if (!PLATFORM_ADMIN_EMAIL)     errors.push('PLATFORM_ADMIN_EMAIL');
-  if (!PLATFORM_ADMIN_PASSWORD)  errors.push('PLATFORM_ADMIN_PASSWORD');
+  if (!mongoUri)             errors.push('MONGO_URI or MONGODB_URI');
+  if (!PLATFORM_ADMIN_EMAIL) errors.push('PLATFORM_ADMIN_EMAIL');
   if (errors.length) {
     console.error(`❌  Missing required environment variables: ${errors.join(', ')}`);
     process.exit(1);
   }
 
   // ── Connect ──────────────────────────────────────────────────────────────────
-  await mongoose.connect(MONGO_URI);
+  await mongoose.connect(mongoUri);
   console.log('✅  MongoDB connected');
 
   const email = PLATFORM_ADMIN_EMAIL.toLowerCase().trim();
@@ -60,6 +62,11 @@ const User     = require('../models/User');
       console.log(`✅  Promoted ${existing.name} <${email}> to platform admin.`);
     }
   } else {
+    if (!PLATFORM_ADMIN_PASSWORD) {
+      console.error('❌  No existing user found for that email. PLATFORM_ADMIN_PASSWORD is required to create a new one.');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
     const admin = await User.create({
       name:            PLATFORM_ADMIN_NAME,
       email,

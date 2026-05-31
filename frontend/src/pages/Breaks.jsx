@@ -341,6 +341,63 @@ function BreakSettingsModal({ branch, onClose, onSaved }) {
   );
 }
 
+// ── Restroom Worker Row ────────────────────────────────────────────────────────
+function RestroomWorkerRow({ s }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`rounded-xl overflow-hidden mb-2 border-l-4 ${s.overstays > 0 ? 'border-red-400 bg-red-50/30' : 'border-blue-300 bg-blue-50/20'}`}>
+      <button onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black/5 transition-colors">
+        <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+          <span className="text-base">🚻</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-gray-800 text-sm truncate">{s.workerName}</p>
+          <p className="text-xs text-gray-500">{s.workerRole}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-xs font-bold px-2 py-1 rounded-full ${s.trips >= 5 ? 'bg-red-100 text-red-700 border border-red-200' : s.trips >= 3 ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
+            {s.trips} trip{s.trips !== 1 ? 's' : ''}
+          </span>
+          {s.totalDeducted > 0 && (
+            <span className="text-xs bg-red-100 text-red-600 border border-red-200 px-2 py-1 rounded-full font-bold">
+              -₦{s.totalDeducted.toLocaleString()}
+            </span>
+          )}
+        </div>
+        {open ? <ChevronUp size={16} className="text-gray-400 ml-1" /> : <ChevronRight size={16} className="text-gray-400 ml-1" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-3 border-t border-black/5 pt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          <div className="flex justify-between col-span-2">
+            <span className="text-gray-500">Total time</span>
+            <span className="font-semibold text-gray-700">{s.totalMinutes} min</span>
+          </div>
+          <div className="flex justify-between col-span-2">
+            <span className="text-gray-500">Excess time</span>
+            <span className={`font-semibold ${s.excessMinutes > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+              {s.excessMinutes > 0 ? `${s.excessMinutes} min` : '—'}
+            </span>
+          </div>
+          <div className="flex justify-between col-span-2">
+            <span className="text-gray-500">Overstays</span>
+            <span className={`font-semibold ${s.overstays > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+              {s.overstays > 0 ? s.overstays : '—'}
+            </span>
+          </div>
+          <div className="flex justify-between col-span-2">
+            <span className="text-gray-500">Total deducted</span>
+            <span className={`font-bold ${s.totalDeducted > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+              {s.totalDeducted > 0 ? `₦${s.totalDeducted.toLocaleString()}` : '—'}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function Breaks() {
   const { isSuperAdmin, can } = useAuth();
@@ -355,11 +412,27 @@ export default function Breaks() {
   const [processing, setProcessing] = useState(false);
   const [msg,        setMsg      ] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  // Restroom
+  const [rstSummary, setRstSummary] = useState([]);
+  const [rstLoading, setRstLoading] = useState(false);
+  const [showRestroom, setShowRestroom] = useState(true);
 
   // Load branches
   useEffect(() => {
     api.get('/branches').then(r => setBranches(r.data.data || [])).catch(() => {});
   }, []);
+
+  const loadRestroom = useCallback(async () => {
+    setRstLoading(true);
+    try {
+      const params = { date };
+      if (branchId) params.branchId = branchId;
+      const { data } = await api.get('/restroom', { params });
+      setRstSummary(data.summary || []);
+    } catch {
+      setRstSummary([]);
+    } finally { setRstLoading(false); }
+  }, [date, branchId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -374,13 +447,13 @@ export default function Breaks() {
     } finally { setLoading(false); }
   }, [date, branchId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadRestroom(); }, [load, loadRestroom]);
 
   // Auto-refresh every 60 s
   useEffect(() => {
-    const t = setInterval(load, 60000);
+    const t = setInterval(() => { load(); loadRestroom(); }, 60000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, loadRestroom]);
 
   const handleProcessMissed = async () => {
     if (!branchId) return setMsg('Select a branch first');
@@ -555,6 +628,72 @@ export default function Breaks() {
           <span key={k} className={`px-2 py-0.5 rounded-full ${v.cls}`}>{v.label}</span>
         ))}
         <span className="ml-2">🌅 Morning · ☀️ Afternoon · 🌙 Night</span>
+      </div>
+
+      {/* ── Restroom Trips Section ─────────────────────────────────────────── */}
+      <div className="border-t border-gray-100 pt-5">
+        <button onClick={() => setShowRestroom(v => !v)}
+          className="w-full flex items-center justify-between mb-3 hover:opacity-80 transition-opacity">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🚻</span>
+            <h2 className="text-base font-bold text-gray-800">Restroom Trips</h2>
+            {rstSummary.length > 0 && (
+              <span className="bg-blue-100 text-blue-700 border border-blue-200 text-xs px-2 py-0.5 rounded-full font-bold">
+                {rstSummary.length} worker{rstSummary.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {rstSummary.some(s => s.overstays > 0) && (
+              <span className="bg-red-100 text-red-700 border border-red-200 text-xs px-2 py-0.5 rounded-full font-bold">
+                {rstSummary.filter(s => s.overstays > 0).length} overstay{rstSummary.filter(s => s.overstays > 0).length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          {showRestroom ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+
+        {showRestroom && (
+          <>
+            {/* Quick summary strip */}
+            {rstSummary.length > 0 && (
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                {[
+                  { label: 'Workers',      value: rstSummary.length,                                                  cls: 'bg-blue-50 text-blue-700'  },
+                  { label: 'Total Trips',  value: rstSummary.reduce((a, s) => a + s.trips, 0),                       cls: 'bg-brand-50 text-brand-700' },
+                  { label: 'Overstays',    value: rstSummary.reduce((a, s) => a + s.overstays, 0),                   cls: 'bg-red-50 text-red-700'    },
+                  { label: 'Total Deducted', value: `₦${rstSummary.reduce((a, s) => a + s.totalDeducted, 0).toLocaleString()}`, cls: 'bg-amber-50 text-amber-700' },
+                ].map(card => (
+                  <div key={card.label} className={`rounded-2xl p-3 text-center ${card.cls}`}>
+                    <p className="text-lg font-extrabold leading-tight">{card.value}</p>
+                    <p className="text-xs font-medium mt-0.5 opacity-80">{card.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {rstLoading ? (
+              <div className="flex justify-center py-8">
+                <RefreshCw size={20} className="animate-spin text-blue-400" />
+              </div>
+            ) : rstSummary.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <span className="text-4xl block mb-3">🚻</span>
+                <p className="font-medium text-sm">No restroom trips recorded for this date</p>
+              </div>
+            ) : (
+              <div>
+                {rstSummary.some(s => s.trips >= 5) && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-3">
+                    <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+                    <p className="text-sm text-amber-700 font-medium">
+                      {rstSummary.filter(s => s.trips >= 5).length} worker{rstSummary.filter(s => s.trips >= 5).length !== 1 ? 's' : ''} made 5+ trips today
+                    </p>
+                  </div>
+                )}
+                {rstSummary.map((s, i) => <RestroomWorkerRow key={s.workerId || i} s={s} />)}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
