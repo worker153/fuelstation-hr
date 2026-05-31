@@ -16,16 +16,31 @@ function parseMapsCoords(url) {
   return null;
 }
 
-// ─── Extract place name from Google Maps URL path ─────────────────────────────
+// ─── Extract place name from Google Maps URL ──────────────────────────────────
 function extractPlaceName(url) {
+  // Strategy 1: /maps/place/Name (full desktop URLs)
   const m = url.match(/maps\/place\/([^/?#]+)/);
-  if (!m) return '';
-  return decodeURIComponent(m[1]).replace(/\+/g, ' ').replace(/_/g, ' ').trim();
+  if (m) return decodeURIComponent(m[1]).replace(/\+/g, ' ').replace(/_/g, ' ').trim();
+
+  // Strategy 2: ?q=address (short URLs like maps.app.goo.gl resolve to this format)
+  // e.g. ?q=8HJV+4X2+Oando+Filling+Station,+Ekenhuan+Rd,+Benin+City
+  const q = url.match(/[?&]q=([^&#]+)/);
+  if (q) {
+    const decoded = decodeURIComponent(q[1]).replace(/\+/g, ' ').trim();
+    // Skip if it's raw lat,lng coordinates (handled by parseMapsCoords instead)
+    if (!/^-?\d+\.\d+\s*,\s*-?\d+\.\d+$/.test(decoded)) return decoded;
+  }
+
+  return '';
 }
 
 // ─── Forward geocode via Nominatim (free, no API key) ─────────────────────────
 async function nominatimGeocode(placeName) {
-  const parts = placeName.split(',').map(s => s.trim()).filter(Boolean);
+  // Strip leading Plus Code — may be "8HJV+4X2 " or "8HJV 4X2 " (+ decoded to space)
+  const stripped = placeName.replace(/^[23456789CFGHJMPQRVWX]{2,8}[+ ][23456789CFGHJMPQRVWX]{2,3}\s+/i, '').trim();
+  const nameToUse = stripped || placeName;
+
+  const parts = nameToUse.split(',').map(s => s.trim()).filter(Boolean);
 
   // Build progressively simpler queries
   const queries = new Set();
@@ -45,7 +60,8 @@ async function nominatimGeocode(placeName) {
     queries.add(parts.slice(-2).join(', '));        // ← "Benin City 300104, Edo" — reliably found
     queries.add(parts[parts.length - 1].trim());   // just the state/country
   }
-  queries.add(placeName); // full name — least likely but worth trying
+  queries.add(nameToUse); // full stripped name
+  queries.add(placeName); // original full name — last resort
 
   for (const q of queries) {
     if (!q || q.length < 4) continue;
