@@ -102,9 +102,7 @@ async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId, require
         }
         const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
         if (dist > radius) {
-          return {
-            error: `You are ${Math.round(dist)}m from the branch. Must be within ${radius}m to use a personal phone for breaks.`,
-          };
+          return { error: 'YOU ARE NOT IN LOCATION' };
         }
       }
     }

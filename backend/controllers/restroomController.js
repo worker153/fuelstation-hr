@@ -56,9 +56,7 @@ async function resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId, requ
         }
         const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
         if (dist > radius) {
-          return {
-            error: `You are ${Math.round(dist)}m from the branch. Must be within ${radius}m to use a personal phone for restroom breaks.`,
-          };
+          return { error: 'YOU ARE NOT IN LOCATION' };
         }
       }
     }
