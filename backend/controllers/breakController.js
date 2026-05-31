@@ -91,10 +91,15 @@ async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId, require
 
     // ── GPS radius check (personal phone only, mutating ops) ─────────────────
     if (requireGPS && gps?.lat != null && gps?.lng != null) {
-      const bLat = branch?.location?.lat;
-      const bLng = branch?.location?.lng;
+      const bLat   = branch?.location?.lat;
+      const bLng   = branch?.location?.lng;
       const radius = branch?.personalPhoneRadius ?? 150;
-      if (bLat != null && bLng != null && radius > 0) {
+
+      if (radius > 0) {
+        if (bLat == null || bLng == null) {
+          // Admin set a radius but forgot to pin branch GPS — block until fixed
+          return { error: 'Branch GPS location is not set. Contact admin to pin the branch on the map before using a personal phone for breaks.' };
+        }
         const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
         if (dist > radius) {
           return {

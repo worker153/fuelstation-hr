@@ -46,10 +46,14 @@ async function resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId, requ
 
     // ── GPS radius check (personal phone only, mutating ops) ─────────────────
     if (requireGPS && gps?.lat != null && gps?.lng != null) {
-      const bLat = branch?.location?.lat;
-      const bLng = branch?.location?.lng;
+      const bLat   = branch?.location?.lat;
+      const bLng   = branch?.location?.lng;
       const radius = branch?.personalPhoneRadius ?? 150;
-      if (bLat != null && bLng != null && radius > 0) {
+
+      if (radius > 0) {
+        if (bLat == null || bLng == null) {
+          return { error: 'Branch GPS location is not set. Contact admin to pin the branch on the map before using a personal phone for restroom breaks.' };
+        }
         const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
         if (dist > radius) {
           return {
