@@ -1201,7 +1201,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
       setBStep('status');
     } catch (e) {
       setError(e.response?.data?.message || 'Failed to start restroom break');
-      setBStep('status');
+      setBStep('status'); // return to status so error is visible
     } finally { setActLoading(false); }
   };
 
@@ -1218,7 +1218,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
       setBStep('result_restroom');
     } catch (e) {
       setError(e.response?.data?.message || 'Failed to end restroom break');
-      setBStep('status');
+      setBStep('status'); // return to status so error is visible
     } finally { setActLoading(false); }
   };
 
@@ -1234,6 +1234,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
       setBStep('result');
     } catch (e) {
       setError(e.response?.data?.message || 'Failed to start break');
+      setBStep('status'); // return to status so error is visible (face_start was active)
     } finally { setActLoading(false); }
   };
 
@@ -1249,6 +1250,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
       setBStep('result');
     } catch (e) {
       setError(e.response?.data?.message || 'Failed to end break');
+      setBStep('status'); // return to status so error is visible (face_end was active)
     } finally { setActLoading(false); }
   };
 
@@ -1322,6 +1324,19 @@ function BreakView({ session, onBack, directRestroom = false }) {
       {/* ── Status view ─────────────────────────────────────────── */}
       {bStep === 'status' && (
         <div className="space-y-4">
+          {/* Action error banner — shown prominently at the top */}
+          {error && !loading && (
+            <div className="bg-red-900/60 border border-red-500 rounded-2xl px-4 py-3 flex items-start gap-3">
+              <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-200 text-sm font-semibold">Action failed</p>
+                <p className="text-red-300 text-xs mt-0.5">{error}</p>
+              </div>
+              <button onClick={() => setError('')} className="text-red-400 hover:text-red-200 shrink-0">
+                <X size={14} />
+              </button>
+            </div>
+          )}
           {selWorker && <WorkerBadge worker={selWorker} />}
 
           {loading && (
@@ -1600,9 +1615,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
                   <p className="text-white/30 text-sm text-center py-4">No breaks taken today</p>
                 )}
 
-                {error && (
-                  <p className="text-red-300 text-sm bg-red-900/30 border border-red-700 rounded-xl px-4 py-2.5 text-center">{error}</p>
-                )}
+                {/* error shown in top banner above */}
               </>
             );
           })()}
