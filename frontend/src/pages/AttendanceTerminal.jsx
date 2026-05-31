@@ -17,156 +17,9 @@ import {
   Leaf, Building2, LogIn, LogOut, Loader, RefreshCw,
   AlertTriangle, MapPin, Smartphone, ShieldAlert, RotateCcw,
   CheckCircle, XCircle, UserCircle2, Camera, ShieldCheck,
-  Eye, Delete, Shield, Coffee, Clock, AlertCircle, Download,
+  Eye, Delete, Shield, Coffee, Clock, AlertCircle,
 } from 'lucide-react';
-
-// ── PWA install hook ──────────────────────────────────────────────────────────
-function usePWAInstall() {
-  const [prompt,    setPrompt   ] = useState(null);   // BeforeInstallPromptEvent
-  const [installed, setInstalled] = useState(false);
-  const [isIOS,     setIsIOS    ] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
-
-  useEffect(() => {
-    // Swap manifest to terminal-specific one
-    const link = document.querySelector('link[rel="manifest"]');
-    const prev = link?.getAttribute('href');
-    if (link) link.setAttribute('href', '/terminal-manifest.json');
-
-    // Detect iOS
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    setIsIOS(ios);
-
-    // Detect if already installed (standalone mode)
-    const standalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true;
-    setIsStandalone(standalone);
-
-    // Capture Android/Chrome install prompt
-    const handler = e => { e.preventDefault(); setPrompt(e); };
-    window.addEventListener('beforeinstallprompt', handler);
-
-    window.addEventListener('appinstalled', () => setInstalled(true));
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-      if (link && prev) link.setAttribute('href', prev);
-    };
-  }, []);
-
-  const triggerInstall = async () => {
-    if (!prompt) return;
-    prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === 'accepted') setInstalled(true);
-    setPrompt(null);
-  };
-
-  return { prompt, installed, isIOS, isStandalone, triggerInstall };
-}
-
-// ── Install Banner ────────────────────────────────────────────────────────────
-function InstallBanner() {
-  const { prompt, installed, isIOS, isStandalone, triggerInstall } = usePWAInstall();
-  const [showIOSGuide, setShowIOSGuide] = useState(false);
-  const [dismissed,    setDismissed   ] = useState(false);
-
-  // Don't show if already installed as standalone or user dismissed
-  if (isStandalone || installed || dismissed) return null;
-
-  // Android/Chrome — show install button when prompt is available
-  if (prompt) return (
-    <div className="fixed top-14 left-0 right-0 z-50 px-3 pt-2">
-      <div className="bg-white/15 backdrop-blur border border-white/25 rounded-2xl px-4 py-3
-                      flex items-center gap-3 shadow-xl">
-        <div className="bg-white/20 rounded-xl p-2 shrink-0">
-          <Download size={18} className="text-white" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-white font-bold text-sm leading-tight">Install Terminal App</p>
-          <p className="text-white/60 text-xs">Works offline · Full screen · No browser bar</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setDismissed(true)}
-            className="text-white/40 hover:text-white/70 text-xs px-2 py-1.5 rounded-lg
-                       hover:bg-white/10 transition-colors">
-            Later
-          </button>
-          <button onClick={triggerInstall}
-            className="bg-white text-brand-800 font-bold text-xs px-3 py-1.5 rounded-xl
-                       hover:bg-brand-50 transition-colors shadow-md">
-            Install
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // iOS Safari — show guide button
-  if (isIOS) return (
-    <>
-      <div className="fixed top-14 left-0 right-0 z-50 px-3 pt-2">
-        <div className="bg-white/15 backdrop-blur border border-white/25 rounded-2xl px-4 py-3
-                        flex items-center gap-3 shadow-xl">
-          <div className="bg-white/20 rounded-xl p-2 shrink-0">
-            <Download size={18} className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-bold text-sm">Add to Home Screen</p>
-            <p className="text-white/60 text-xs">Install as app on this iPhone/iPad</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => setDismissed(true)}
-              className="text-white/40 hover:text-white/70 text-xs px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors">
-              Later
-            </button>
-            <button onClick={() => setShowIOSGuide(true)}
-              className="bg-white text-brand-800 font-bold text-xs px-3 py-1.5 rounded-xl hover:bg-brand-50 transition-colors shadow-md">
-              How?
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {showIOSGuide && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.7)' }}
-          onClick={() => setShowIOSGuide(false)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
-            onClick={e => e.stopPropagation()}>
-            <p className="font-black text-gray-900 text-lg mb-4 text-center">
-              Install on iPhone / iPad
-            </p>
-            <div className="space-y-4">
-              {[
-                { step: '1', text: 'Tap the Share button', sub: '⬆️ at the bottom of Safari' },
-                { step: '2', text: 'Scroll down and tap', sub: '"Add to Home Screen"' },
-                { step: '3', text: 'Tap "Add"', sub: 'The app icon appears on your home screen' },
-              ].map(({ step, text, sub }) => (
-                <div key={step} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
-                    <span className="text-white font-bold text-sm">{step}</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">{text}</p>
-                    <p className="text-gray-500 text-xs">{sub}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button onClick={() => { setShowIOSGuide(false); setDismissed(true); }}
-              className="w-full mt-6 py-3 bg-brand-600 text-white font-bold rounded-2xl text-sm">
-              Got it!
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-
-  return null;
-}
+import PWAInstallBanner from '../components/PWAInstallBanner';
 
 const BASE      = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const TOKEN_KEY = 'attendance_device_token';
@@ -200,7 +53,7 @@ function Shell({ deviceInfo, children }) {
   const now = useClock();
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 flex flex-col select-none">
-      <InstallBanner />
+      <PWAInstallBanner manifest="/terminal-manifest.json" />
       <div className="flex items-center justify-between px-5 py-3 bg-black/20 border-b border-white/10">
         <div className="flex items-center gap-2">
           <Leaf size={18} className="text-white" />

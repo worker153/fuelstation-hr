@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AlertTriangle, Leaf, CheckCircle, ArrowLeft, Loader, Users, ChevronRight, Delete } from 'lucide-react';
 import axios from 'axios';
 import NumInput from '../components/NumInput';
+import PWAInstallBanner from '../components/PWAInstallBanner';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG')}`;
@@ -164,7 +165,9 @@ export default function WorkerShortage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 flex flex-col">
+      <PWAInstallBanner manifest="/shortage-manifest.json" />
+      <div className="flex-1 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
 
         {/* Logo */}
@@ -354,6 +357,7 @@ export default function WorkerShortage() {
         </div>
 
         <p className="text-center text-brand-400 text-xs mt-5">FuelStation HR · Shortage Self-Service</p>
+      </div>
       </div>
     </div>
   );
