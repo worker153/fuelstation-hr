@@ -122,7 +122,7 @@ const endRestroom = async (req, res) => {
   const elapsed     = Math.max(0, Math.round((now - activeRB.startTime) / 60000));
   const excess      = Math.max(0, elapsed - activeRB.allowedMinutes);
   const overstayed  = excess > 0;
-  const deductAmt   = overstayed ? excess * (activeRB.deductionPerMin || DEDUCTION_PER_MIN) : 0;
+  const deductAmt   = overstayed ? excess * (activeRB.deductionPerMin || DEFAULT_DEDUCTION_PER_MIN) : 0;
 
   activeRB.endTime       = now;
   activeRB.actualMinutes = elapsed;
@@ -143,7 +143,7 @@ const endRestroom = async (req, res) => {
           reason:        'restroom_overstay',
           about:         `Restroom overstay — ${excess} min over limit`,
           attendanceDate: new Date(dateStr + 'T00:00:00.000Z'),
-          notes: `${excess} min × ₦${activeRB.deductionPerMin || DEDUCTION_PER_MIN}/min = ₦${deductAmt.toLocaleString()}`,
+          notes: `${excess} min × ₦${activeRB.deductionPerMin || DEFAULT_DEDUCTION_PER_MIN}/min = ₦${deductAmt.toLocaleString()}`,
         });
       }
     } catch (e) {
@@ -164,7 +164,7 @@ const endRestroom = async (req, res) => {
       allowedMinutes:  activeRB.allowedMinutes,
       excessMinutes:   excess,
       deductionAmount: deductAmt,
-      deductionPerMin: activeRB.deductionPerMin || DEDUCTION_PER_MIN,
+      deductionPerMin: activeRB.deductionPerMin || DEFAULT_DEDUCTION_PER_MIN,
     },
   });
 };
