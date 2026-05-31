@@ -269,12 +269,15 @@ const updateBranch = async (req, res) => {
   if (req.body.breakSettings) {
     const cur = branch.breakSettings?.toObject?.() || {};
     const inc = req.body.breakSettings;
-    // Deep-merge each break type
-    branch.breakSettings = {
-      morning:   { ...(cur.morning   || {}), ...(inc.morning   || {}) },
-      afternoon: { ...(cur.afternoon || {}), ...(inc.afternoon || {}) },
-      night:     { ...(cur.night     || {}), ...(inc.night     || {}) },
-    };
+    // Deep-merge every known break slot (including optional break_4/5/6)
+    const ALL_SLOTS = ['morning', 'afternoon', 'night', 'break_4', 'break_5', 'break_6'];
+    const merged = {};
+    for (const slot of ALL_SLOTS) {
+      if (cur[slot] || inc[slot]) {
+        merged[slot] = { ...(cur[slot] || {}), ...(inc[slot] || {}) };
+      }
+    }
+    branch.breakSettings = merged;
     branch.markModified('breakSettings');
   }
   if (req.body.restroomSettings) {
