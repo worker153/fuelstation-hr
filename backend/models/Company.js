@@ -25,10 +25,12 @@ const companySchema = new mongoose.Schema({
   logo:        { url: String, publicId: String },
 
   // ── Subscription ────────────────────────────────────────────────────────────
+  // Default is 'active' so legacy companies without this field stay accessible.
+  // New registrations set this explicitly to 'pending_approval' in authController.
   subscriptionStatus: {
     type:    String,
     enum:    ['pending_approval', 'trial', 'active', 'expired', 'suspended'],
-    default: 'pending_approval',
+    default: 'active',
   },
   plan: {
     type:    String,
@@ -73,7 +75,7 @@ const companySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ── Indexes ──────────────────────────────────────────────────────────────────
-companySchema.index({ companyCode: 1 });
+// Note: companyCode already indexed via unique:true on the field — no duplicate needed
 companySchema.index({ subscriptionStatus: 1 });
 
 // ── Static: generate + guarantee a unique code ────────────────────────────────
