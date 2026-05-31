@@ -15,7 +15,7 @@ import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
   Key, ChevronLeft, ChevronRight, CheckCircle, XCircle,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
-  RotateCcw, MapPin,
+  RotateCcw, MapPin, Coffee, Play, Square,
 } from 'lucide-react';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
@@ -562,6 +562,13 @@ function MenuView({ session, onNavigate }) {
               onClick={() => onNavigate('terminal')}
             />
             <MenuCard
+              icon={Coffee}
+              label="Breaks"
+              sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end your break' : 'View your break history'}
+              color="bg-orange-500"
+              onClick={() => onNavigate('break')}
+            />
+            <MenuCard
               icon={AlertTriangle}
               label="Report Shortage"
               sub="Submit a cash or fuel shortage"
@@ -1038,6 +1045,338 @@ function Row({ label, value }) {
   );
 }
 
+// ── Break View ─────────────────────────────────────────────────────────────────
+const BREAK_EMOJI = { morning: '🌅', afternoon: '☀️', night: '🌙' };
+
+function fmtSecs(s) {
+  const m = Math.floor(Math.abs(s) / 60), sec = Math.abs(s) % 60;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function BreakView({ session, onBack }) {
+  const { worker, deviceInfo, shiftWorkers } = session;
+  const isSup = worker.isSupervisor;
+
+  const [bStep,      setBStep     ] = useState(isSup ? 'pick' : 'status');
+  const [selWorker,  setSelWorker ] = useState(isSup ? null : worker);
+  const [status,     setStatus    ] = useState(null);
+  const [loading,    setLoading   ] = useState(false);
+  const [actLoading, setActLoading] = useState(false);
+  const [error,      setError     ] = useState('');
+  const [result,     setResult    ] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  const loadStatus = useCallback(async (wId) => {
+    setLoading(true); setError('');
+    try {
+      const { data } = await axios.get(`${BASE}/breaks/status`, {
+        params: { deviceToken: deviceInfo?.deviceToken, workerId: wId },
+      });
+      setStatus(data.data);
+    } catch (e) {
+      setError(e.response?.data?.message || 'Failed to load break status');
+    } finally { setLoading(false); }
+  }, [deviceInfo?.deviceToken]);
+
+  useEffect(() => {
+    if (bStep === 'status' && selWorker) loadStatus(selWorker._id);
+  }, [selWorker, bStep]);
+
+  // Live countdown
+  useEffect(() => {
+    if (!status?.activeBreak) { setElapsedSec(0); return; }
+    const start = new Date(status.activeBreak.startTime).getTime();
+    const tick  = () => setElapsedSec(Math.floor((Date.now() - start) / 1000));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [status?.activeBreak?._id]);
+
+  const doStart = async (breakType) => {
+    setActLoading(true); setError('');
+    try {
+      const { data } = await axios.post(`${BASE}/breaks/start`, {
+        deviceToken: deviceInfo?.deviceToken,
+        workerId:    selWorker._id,
+        breakType,
+      });
+      setResult({ action: 'started', ...data.data });
+      setBStep('result');
+    } catch (e) {
+      setError(e.response?.data?.message || 'Failed to start break');
+    } finally { setActLoading(false); }
+  };
+
+  const doEnd = async () => {
+    setActLoading(true); setError('');
+    try {
+      const { data } = await axios.post(`${BASE}/breaks/end`, {
+        deviceToken: deviceInfo?.deviceToken,
+        workerId:    selWorker._id,
+      });
+      setResult({ action: 'ended', ...data.data });
+      setBStep('result');
+    } catch (e) {
+      setError(e.response?.data?.message || 'Failed to end break');
+    } finally { setActLoading(false); }
+  };
+
+  const handleBack = () => {
+    if (bStep === 'pick') return onBack();
+    if (bStep === 'status') {
+      if (isSup) { setBStep('pick'); setSelWorker(null); setStatus(null); }
+      else onBack();
+      return;
+    }
+    if (bStep === 'result') { setResult(null); setStatus(null); setBStep('status'); }
+  };
+
+  return (
+    <div className="p-4 max-w-sm mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button onClick={handleBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors">
+          <ChevronLeft size={20} />
+        </button>
+        <h2 className="text-white font-bold text-lg">
+          {bStep === 'pick' ? 'Select Worker' : 'Breaks'}
+        </h2>
+        {bStep === 'status' && selWorker && !loading && (
+          <button onClick={() => loadStatus(selWorker._id)}
+            className="ml-auto p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/60 hover:text-white">
+            <RotateCcw size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* ── Supervisor picks worker ──────────────────────────────── */}
+      {bStep === 'pick' && (
+        <div className="space-y-2">
+          <p className="text-white/60 text-sm mb-3">Manage break for:</p>
+          {[worker, ...(shiftWorkers?.filter(sw => String(sw._id) !== String(worker._id)) || [])].map((w, i) => (
+            <button key={w._id || i}
+              onClick={() => { setSelWorker(w); setBStep('status'); }}
+              className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/20 rounded-2xl px-4 py-3 border border-white/15 transition-all">
+              {w.photo
+                ? <img src={w.photo} alt="" className="w-10 h-10 rounded-lg object-cover border-2 border-white/20 shrink-0" />
+                : <div className="w-10 h-10 rounded-lg bg-white/20 text-white font-bold flex items-center justify-center shrink-0">{(w.fullName||'?')[0]}</div>
+              }
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{w.fullName}{i === 0 && <span className="text-white/40"> (me)</span>}</p>
+                <p className="text-white/50 text-xs">{w.role}</p>
+              </div>
+              <ChevronRight size={16} className="text-white/30 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Status view ─────────────────────────────────────────── */}
+      {bStep === 'status' && (
+        <div className="space-y-4">
+          {selWorker && <WorkerBadge worker={selWorker} />}
+
+          {loading && (
+            <div className="flex flex-col items-center py-10 gap-3">
+              <Loader size={28} className="animate-spin text-white/40" />
+              <p className="text-white/40 text-sm">Loading…</p>
+            </div>
+          )}
+
+          {!loading && status && (() => {
+            const attCfg = {
+              active:        { label: '🟢 Clocked In — active',  cls: 'bg-green-900/40 border-green-600 text-green-300' },
+              on_break:      { label: '☕ Currently on break',    cls: 'bg-orange-900/40 border-orange-500 text-orange-300' },
+              break_overdue: { label: '⚠️ Break overdue!',        cls: 'bg-red-900/60 border-red-500 text-red-300' },
+              clocked_out:   { label: '✅ Clocked out today',      cls: 'bg-gray-900/40 border-gray-600 text-gray-300' },
+              absent:        { label: '⏳ Not yet clocked in',    cls: 'bg-yellow-900/40 border-yellow-600 text-yellow-300' },
+            }[status.attendanceStatus] || { label: status.attendanceStatus, cls: 'bg-white/10 border-white/20 text-white/60' };
+
+            return (
+              <>
+                {/* Attendance status */}
+                <div className={`rounded-xl px-4 py-2.5 text-sm font-bold text-center border ${attCfg.cls}`}>
+                  {attCfg.label}
+                </div>
+
+                {/* ── Active break countdown ───────────────────── */}
+                {status.activeBreak && (() => {
+                  const allowed = status.activeBreak.allowedMinutes * 60;
+                  const remaining = allowed - elapsedSec;
+                  const pct = Math.min(100, Math.round((elapsedSec / allowed) * 100));
+                  const isOver = remaining < 0;
+                  return (
+                    <div className="bg-orange-900/30 border border-orange-500/50 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{BREAK_EMOJI[status.activeBreak.breakType]}</span>
+                        <div>
+                          <p className="text-orange-200 font-bold">{status.activeBreak.label}</p>
+                          <p className="text-orange-300/60 text-xs">
+                            Started {fmtT(status.activeBreak.startTime)} · {status.activeBreak.allowedMinutes} min allowed
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-orange-300/70">Elapsed: {fmtSecs(elapsedSec)}</span>
+                          <span className={`font-black text-base ${isOver ? 'text-red-300' : remaining < 60 ? 'text-amber-300' : 'text-green-300'}`}>
+                            {isOver ? `⚠️ +${fmtSecs(-remaining)} over` : `${fmtSecs(remaining)} left`}
+                          </span>
+                        </div>
+                        <div className="bg-white/10 rounded-full h-2.5 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-1000 ${isOver ? 'bg-red-500' : 'bg-orange-400'}`}
+                            style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                      <button onClick={doEnd} disabled={actLoading}
+                        className="w-full py-3.5 rounded-2xl bg-orange-500 hover:bg-orange-400 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
+                        {actLoading ? <Loader size={16} className="animate-spin" /> : <Square size={16} />}
+                        End Break
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Available breaks ──────────────────────────── */}
+                {!status.activeBreak && (
+                  <div className="space-y-2">
+                    <p className="text-white/40 text-xs font-semibold uppercase tracking-wider">Available Breaks</p>
+                    {status.availableBreaks?.map(br => {
+                      const canStart = !br.taken && br.inWindow && status.attendanceStatus === 'active';
+                      const isTaken  = br.taken;
+                      return (
+                        <div key={br.type}
+                          className={`rounded-2xl p-4 border transition-colors ${
+                            isTaken  ? 'bg-green-900/20 border-green-700/50' :
+                            canStart ? 'bg-white/10 border-white/20' :
+                                       'bg-white/5 border-white/10 opacity-60'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xl shrink-0">{BREAK_EMOJI[br.type]}</span>
+                              <div className="min-w-0">
+                                <p className={`font-semibold text-sm ${isTaken ? 'text-green-300' : canStart ? 'text-white' : 'text-white/40'}`}>
+                                  {br.label}
+                                </p>
+                                <p className="text-white/30 text-xs">{br.windowStart}–{br.windowEnd} UTC · {br.allowedMinutes} min</p>
+                              </div>
+                            </div>
+                            {isTaken ? (
+                              <span className="bg-green-500/20 text-green-300 border border-green-500/30 text-xs px-2.5 py-1 rounded-full font-bold shrink-0">
+                                Taken ✓
+                              </span>
+                            ) : canStart ? (
+                              <button onClick={() => doStart(br.type)} disabled={actLoading}
+                                className="bg-orange-500 hover:bg-orange-400 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 shrink-0 disabled:opacity-50 transition-colors">
+                                {actLoading ? <Loader size={12} className="animate-spin" /> : <Play size={12} />}
+                                Start
+                              </button>
+                            ) : (
+                              <span className="text-white/20 text-xs shrink-0">
+                                {!br.inWindow ? 'Window closed' : 'Unavailable'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* ── Today's break history ─────────────────────── */}
+                {status.todayBreaks?.length > 0 && (
+                  <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
+                    <p className="px-4 py-2.5 text-white/40 text-xs font-bold uppercase tracking-wider border-b border-white/10">
+                      Today's History
+                    </p>
+                    <div className="divide-y divide-white/5">
+                      {status.todayBreaks.map((b, i) => {
+                        const sc = {
+                          completed:  { cls: 'bg-green-500/20 text-green-300',   label: 'Done ✓' },
+                          overstayed: { cls: 'bg-red-500/20 text-red-300',        label: `Over +${b.excessMinutes}m` },
+                          active:     { cls: 'bg-orange-500/20 text-orange-300',  label: 'Active' },
+                          missed:     { cls: 'bg-gray-500/20 text-gray-400',      label: 'Missed' },
+                        }[b.status] || { cls: 'bg-white/10 text-white/40', label: b.status };
+                        return (
+                          <div key={i} className="px-4 py-3 flex items-center gap-3">
+                            <span className="text-base shrink-0">{BREAK_EMOJI[b.breakType]}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white text-sm font-medium">{b.label}</p>
+                              <p className="text-white/40 text-xs">
+                                {b.startTime ? fmtT(b.startTime) : '—'}
+                                {b.endTime ? ` → ${fmtT(b.endTime)}` : ''}
+                                {b.actualMinutes > 0 ? ` · ${b.actualMinutes} min` : ''}
+                              </p>
+                            </div>
+                            <span className={`text-xs px-2 py-1 rounded-full font-bold shrink-0 ${sc.cls}`}>
+                              {sc.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* No breaks yet */}
+                {!status.activeBreak && status.todayBreaks?.length === 0 && (
+                  <p className="text-white/30 text-sm text-center py-4">No breaks taken today</p>
+                )}
+
+                {error && (
+                  <p className="text-red-300 text-sm bg-red-900/30 border border-red-700 rounded-xl px-4 py-2.5 text-center">{error}</p>
+                )}
+              </>
+            );
+          })()}
+
+          {!loading && !status && error && (
+            <div className="bg-red-900/40 border border-red-700 rounded-2xl p-4 text-center space-y-2">
+              <p className="text-red-300 text-sm">{error}</p>
+              <button onClick={() => loadStatus(selWorker._id)} className="text-red-300 text-xs underline">Retry</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Result ──────────────────────────────────────────────── */}
+      {bStep === 'result' && result && (
+        <div className="flex flex-col items-center py-8 gap-5">
+          <div className={`w-24 h-24 rounded-full flex items-center justify-center ${result.action === 'started' ? 'bg-orange-500' : 'bg-green-500'}`}>
+            {result.action === 'started'
+              ? <Coffee size={48} className="text-white" />
+              : <CheckCircle size={48} className="text-white" />}
+          </div>
+          <div className="text-center">
+            <p className="text-white font-black text-2xl">
+              {result.action === 'started' ? 'Break Started!' : 'Break Ended!'}
+            </p>
+            <p className="text-white/60 mt-1">{result.label}</p>
+            {result.action === 'started' && result.allowedMinutes && (
+              <p className="text-orange-300 text-sm mt-1">You have {result.allowedMinutes} minutes ⏱</p>
+            )}
+            {result.action === 'ended' && result.overstayed && (
+              <p className="text-red-300 text-sm mt-1">⚠️ Overstayed by {result.excessMinutes} min — {result.actualMinutes} min total</p>
+            )}
+            {result.action === 'ended' && !result.overstayed && (
+              <p className="text-green-300 text-sm mt-1">✓ On time · {result.actualMinutes} min used</p>
+            )}
+          </div>
+          {isSup && (
+            <button onClick={() => { setResult(null); setStatus(null); setBStep('pick'); setSelWorker(null); }}
+              className="w-full py-3 rounded-2xl border border-white/20 text-white hover:bg-white/10 text-sm">
+              Another Worker
+            </button>
+          )}
+          <button onClick={handleBack}
+            className="w-full py-3 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/20">
+            Back
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Dashboard View ─────────────────────────────────────────────────────────────
 function DashboardView({ session, onBack }) {
   const { pin } = session;
@@ -1471,6 +1810,11 @@ export default function WorkerPortal() {
             setStep('menu');
           }}
         />
+      )}
+
+      {/* ── Breaks ─────────────────────────────────────────────────────────── */}
+      {step === 'break' && session && (
+        <BreakView session={session} onBack={() => setStep('menu')} />
       )}
 
       {/* ── Shortage ───────────────────────────────────────────────────────── */}
