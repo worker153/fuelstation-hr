@@ -17,8 +17,13 @@ if ('serviceWorker' in navigator) {
         reg.addEventListener('updatefound', () => {
           const newWorker = reg.installing;
           newWorker?.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New SW installed → skip waiting so it activates immediately
+            if (newWorker.state === 'installed') {
               newWorker.postMessage('SKIP_WAITING');
+            }
+            // New SW activated → reload the page so fresh JS is loaded
+            if (newWorker.state === 'activated') {
+              window.location.reload();
             }
           });
         });
