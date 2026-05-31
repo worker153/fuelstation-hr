@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { PlatformAuthProvider, usePlatformAuth } from './context/PlatformAuthContext';
+import PlatformLogin     from './pages/platform/PlatformLogin';
+import PlatformDashboard from './pages/platform/PlatformDashboard';
 import Layout             from './components/Layout';
 import Login              from './pages/Login';
 import Register           from './pages/Register';
@@ -56,6 +59,23 @@ function PublicRoute({ children }) {
   return user ? <Navigate to="/dashboard" replace /> : children;
 }
 
+// Platform Admin guards — completely separate from main app auth
+function PlatformPrivateRoute({ children }) {
+  const { admin, loading } = usePlatformAuth();
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+    </div>
+  );
+  return admin ? children : <Navigate to="/platform/login" replace />;
+}
+
+function PlatformPublicRoute({ children }) {
+  const { admin, loading } = usePlatformAuth();
+  if (loading) return null;
+  return admin ? <Navigate to="/platform" replace /> : children;
+}
+
 // Super Admin only guard
 function AdminRoute({ children }) {
   const { user, isSuperAdmin } = useAuth();
@@ -70,6 +90,18 @@ export default function App() {
       <NotificationProvider>
         <BrowserRouter>
           <Routes>
+            {/* ── Platform Admin portal — completely isolated ────────────────── */}
+            <Route path="/platform/*" element={
+              <PlatformAuthProvider>
+                <Routes>
+                  <Route path="login" element={<PlatformPublicRoute><PlatformLogin /></PlatformPublicRoute>} />
+                  <Route path=""      element={<PlatformPrivateRoute><PlatformDashboard /></PlatformPrivateRoute>} />
+                  <Route path="*"     element={<Navigate to="/platform" replace />} />
+                </Routes>
+              </PlatformAuthProvider>
+            } />
+
+            {/* ── Main company app ──────────────────────────────────────────── */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
