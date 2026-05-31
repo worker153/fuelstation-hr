@@ -1264,7 +1264,7 @@ function BreakView({ session, onBack }) {
                                 <p className={`font-semibold text-sm ${isTaken ? 'text-green-300' : canStart ? 'text-white' : 'text-white/40'}`}>
                                   {br.label}
                                 </p>
-                                <p className="text-white/30 text-xs">{br.windowStart}–{br.windowEnd} UTC · {br.allowedMinutes} min</p>
+                                <p className="text-white/30 text-xs">{br.windowStart}–{br.windowEnd} · {br.allowedMinutes} min</p>
                               </div>
                             </div>
                             {isTaken ? (

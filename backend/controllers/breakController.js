@@ -6,6 +6,9 @@ const Attendance      = require('../models/Attendance');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Nigeria WAT = UTC+1 — all break window times are treated as local (WAT) time
+const WAT_OFFSET_MINS = 60;
+
 // 'HH:MM' → minutes since midnight
 function toMins(hhmm) {
   if (!hhmm) return null;
@@ -13,9 +16,10 @@ function toMins(hhmm) {
   return h * 60 + m;
 }
 
-function nowUtcMins() {
+// Current local (WAT) time in minutes since midnight
+function nowLocalMins() {
   const n = new Date();
-  return n.getUTCHours() * 60 + n.getUTCMinutes();
+  return (n.getUTCHours() * 60 + n.getUTCMinutes() + WAT_OFFSET_MINS) % (24 * 60);
 }
 
 function todayUtcStr() {
@@ -79,14 +83,14 @@ const startBreak = async (req, res) => {
   if (!cfg.enabled)
     return res.status(400).json({ success: false, message: `${BREAK_LABELS[breakType]} is not enabled for this branch` });
 
-  // Check window
-  const nowMins  = nowUtcMins();
+  // Check window (times are local WAT)
+  const nowMins  = nowLocalMins();
   const winStart = toMins(cfg.windowStart);
   const winEnd   = toMins(cfg.windowEnd);
   if (winStart !== null && nowMins < winStart)
-    return res.status(400).json({ success: false, message: `${BREAK_LABELS[breakType]} window hasn't started yet. Available from ${cfg.windowStart} UTC` });
+    return res.status(400).json({ success: false, message: `${BREAK_LABELS[breakType]} window hasn't started yet. Available from ${cfg.windowStart}` });
   if (winEnd !== null && nowMins > winEnd)
-    return res.status(400).json({ success: false, message: `${BREAK_LABELS[breakType]} window has closed (closed at ${cfg.windowEnd} UTC)` });
+    return res.status(400).json({ success: false, message: `${BREAK_LABELS[breakType]} window has closed (closed at ${cfg.windowEnd})` });
 
   // Already have an active break?
   const active = await Break.findOne({ company: device.company, worker: worker._id, date: dateStr, status: 'active' }).lean();
@@ -221,7 +225,7 @@ const getBreakStatus = async (req, res) => {
   ]);
 
   const config    = getBreakConfig(branch);
-  const nowMins   = nowUtcMins();
+  const nowMins   = nowLocalMins();
   const now       = new Date();
   const clockedIn  = !!clockIn && !clockOut;
   const clockedOut = !!clockOut;
@@ -363,7 +367,7 @@ const processMissedBreaks = async (req, res) => {
   if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
 
   const config  = getBreakConfig(branch);
-  const nowMins = nowUtcMins();
+  const nowMins = nowLocalMins();
 
   const clockedIn = await Attendance.find({
     company: cid, branchId, date, type: 'clock_in',
