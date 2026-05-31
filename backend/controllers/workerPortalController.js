@@ -1,6 +1,7 @@
 const Worker           = require('../models/Worker');
 const AttendanceDevice = require('../models/AttendanceDevice');
 const Attendance       = require('../models/Attendance');
+const Offence          = require('../models/Offence');
 
 // ─── POST /api/worker/auth ────────────────────────────────────────────────────
 // Public. PIN + optional device token.
@@ -159,4 +160,57 @@ const workerChangePin = async (req, res) => {
   res.json({ success: true, message: 'PIN changed successfully' });
 };
 
-module.exports = { workerPortalAuth, workerChangePin };
+// ─── POST /api/worker/book-offence ───────────────────────────────────────────
+// Device-token authenticated. Supervisor PIN required. Books an offence for a worker.
+const bookOffence = async (req, res) => {
+  const {
+    deviceToken, pin, workerId,
+    offenceType, severity, description,
+    action, deductionAmount, witness, date,
+  } = req.body;
+
+  if (!deviceToken) return res.status(400).json({ success: false, message: 'Device token required' });
+  if (!pin)         return res.status(400).json({ success: false, message: 'PIN required' });
+  if (!workerId)    return res.status(400).json({ success: false, message: 'Worker is required' });
+  if (!offenceType) return res.status(400).json({ success: false, message: 'Offence type is required' });
+  if (!severity)    return res.status(400).json({ success: false, message: 'Severity is required' });
+
+  // Validate device
+  const device = await AttendanceDevice.findOne({ deviceToken, status: 'approved' }).lean();
+  if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+
+  // Validate supervisor's PIN
+  const supervisor = await Worker.findOne({ pin: String(pin).trim(), company: device.company }).lean();
+  if (!supervisor) return res.status(401).json({ success: false, message: 'Invalid PIN — supervisor not found' });
+
+  const isSup = ['supervisor', 'outside supervisor']
+    .includes((supervisor.role || '').toLowerCase());
+  if (!isSup)
+    return res.status(403).json({ success: false, message: 'Only supervisors can book offences' });
+
+  // Validate target worker
+  const worker = await Worker.findOne({ _id: workerId, company: device.company }).lean();
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  const offence = await Offence.create({
+    company:         device.company,
+    worker:          worker._id,
+    workerName:      worker.fullName,
+    workerRole:      worker.role,
+    branch:          worker.branch,
+    branchId:        worker.branchId,
+    date:            date ? new Date(date) : new Date(),
+    offenceType,
+    description:     description || '',
+    severity,
+    action:          action || 'verbal_warning',
+    deductionAmount: action === 'deduction' ? (Number(deductionAmount) || 0) : 0,
+    witness:         witness || '',
+    recordedByName:  supervisor.fullName,
+    status:          'active',
+  });
+
+  res.status(201).json({ success: true, data: offence });
+};
+
+module.exports = { workerPortalAuth, workerChangePin, bookOffence };

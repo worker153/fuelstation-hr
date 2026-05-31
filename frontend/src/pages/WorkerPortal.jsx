@@ -15,7 +15,7 @@ import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
   Key, ChevronLeft, ChevronRight, CheckCircle, XCircle,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
-  RotateCcw, MapPin, Coffee, Play, Square,
+  RotateCcw, MapPin, Coffee, Play, Square, FileWarning,
 } from 'lucide-react';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
@@ -567,6 +567,13 @@ function MenuView({ session, onNavigate }) {
               sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end your break' : 'View your break history'}
               color="bg-orange-500"
               onClick={() => onNavigate('break')}
+            />
+            <MenuCard
+              icon={FileWarning}
+              label="Book Offence"
+              sub="Record a worker offence"
+              color="bg-red-600"
+              onClick={() => onNavigate('offence')}
             />
             <MenuCard
               icon={AlertTriangle}
@@ -1377,6 +1384,273 @@ function BreakView({ session, onBack }) {
   );
 }
 
+// ── Offence View ───────────────────────────────────────────────────────────────
+const OFFENCE_TYPES = [
+  { value: 'late_arrival',           label: 'Late Arrival'            },
+  { value: 'absent_without_notice',  label: 'Absent Without Notice'   },
+  { value: 'improper_uniform',       label: 'Improper Uniform'        },
+  { value: 'rude_to_customer',       label: 'Rude to Customer'        },
+  { value: 'cash_shortage',          label: 'Cash Shortage'           },
+  { value: 'fuel_shortage',          label: 'Fuel Shortage'           },
+  { value: 'negligence',             label: 'Negligence'              },
+  { value: 'theft_fraud',            label: 'Theft / Fraud'           },
+  { value: 'disobedience',           label: 'Disobedience'            },
+  { value: 'mobile_phone_misuse',    label: 'Mobile Phone Misuse'     },
+  { value: 'fighting_misconduct',    label: 'Fighting / Misconduct'   },
+  { value: 'damage_to_property',     label: 'Damage to Property'      },
+  { value: 'abandoning_post',        label: 'Abandoning Post'         },
+  { value: 'insubordination',        label: 'Insubordination'         },
+  { value: 'sleeping_on_duty',       label: 'Sleeping on Duty'        },
+  { value: 'other',                  label: 'Other'                   },
+];
+
+const SEVERITY_OPTIONS = [
+  { value: 'minor',    label: '⚪ Minor'    },
+  { value: 'moderate', label: '🟡 Moderate' },
+  { value: 'serious',  label: '🟠 Serious'  },
+  { value: 'gross',    label: '🔴 Gross'    },
+];
+
+const ACTION_OPTIONS = [
+  { value: 'verbal_warning',   label: 'Verbal Warning'   },
+  { value: 'written_warning',  label: 'Written Warning'  },
+  { value: 'deduction',        label: 'Deduction (₦)'    },
+  { value: 'suspension',       label: 'Suspension'       },
+  { value: 'dismissal',        label: 'Dismissal'        },
+  { value: 'none',             label: 'No Action'        },
+];
+
+const SEVERITY_BADGE = {
+  minor:    'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  moderate: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  serious:  'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  gross:    'bg-red-500/20 text-red-300 border-red-500/30',
+};
+
+function OffenceView({ session, onBack }) {
+  const { worker, deviceInfo, shiftWorkers } = session;
+  const isSup = worker.isSupervisor;
+
+  const [oStep,  setOStep ] = useState(isSup ? 'pick' : 'not_sup');
+  const [target, setTarget] = useState(null);
+  const [form,   setForm  ] = useState({
+    offenceType:     'late_arrival',
+    severity:        'minor',
+    action:          'verbal_warning',
+    description:     '',
+    deductionAmount: '',
+    witness:         '',
+    date:            new Date().toISOString().split('T')[0],
+  });
+  const [error,   setError  ] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result,  setResult ] = useState(null);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    setLoading(true); setError('');
+    try {
+      const { data } = await axios.post(`${BASE}/worker/book-offence`, {
+        deviceToken:     deviceInfo?.deviceToken,
+        pin:             session.pin,
+        workerId:        target._id,
+        offenceType:     form.offenceType,
+        severity:        form.severity,
+        action:          form.action,
+        deductionAmount: form.action === 'deduction' ? Number(form.deductionAmount) : 0,
+        description:     form.description,
+        witness:         form.witness,
+        date:            form.date,
+      });
+      setResult(data.data);
+      setOStep('success');
+    } catch (e) {
+      setError(e.response?.data?.message || 'Failed to book offence');
+    } finally { setLoading(false); }
+  };
+
+  const handleBack = () => {
+    if (oStep === 'pick' || oStep === 'not_sup') return onBack();
+    if (oStep === 'form')    { setOStep('pick'); setTarget(null); setError(''); }
+    if (oStep === 'success') { setResult(null); setOStep('pick'); setTarget(null); setForm({
+      offenceType: 'late_arrival', severity: 'minor', action: 'verbal_warning',
+      description: '', deductionAmount: '', witness: '', date: new Date().toISOString().split('T')[0],
+    }); }
+  };
+
+  return (
+    <div className="p-4 max-w-sm mx-auto">
+      {/* Header */}
+      {oStep !== 'success' && (
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={handleBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors">
+            <ChevronLeft size={20} />
+          </button>
+          <h2 className="text-white font-bold text-lg">
+            {oStep === 'pick' ? 'Select Worker' : 'Book Offence'}
+          </h2>
+        </div>
+      )}
+
+      {/* Not supervisor */}
+      {oStep === 'not_sup' && (
+        <div className="flex flex-col items-center py-12 gap-4 text-center">
+          <div className="w-20 h-20 rounded-full bg-white/10 border border-white/20 flex items-center justify-center">
+            <FileWarning size={36} className="text-white/40" />
+          </div>
+          <p className="text-white font-bold">Supervisors Only</p>
+          <p className="text-white/50 text-sm">Only supervisors can book offences for workers</p>
+          <button onClick={onBack} className="mt-2 py-2.5 px-6 rounded-xl border border-white/20 text-white/60 text-sm hover:bg-white/10">
+            Back to Menu
+          </button>
+        </div>
+      )}
+
+      {/* Supervisor picks target worker */}
+      {oStep === 'pick' && (
+        <div className="space-y-2">
+          <p className="text-white/60 text-sm mb-3">Who is the offence for?</p>
+          {[worker, ...(shiftWorkers?.filter(sw => String(sw._id) !== String(worker._id)) || [])].map((w, i) => (
+            <button key={w._id || i}
+              onClick={() => { setTarget(w); setOStep('form'); }}
+              className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/20 rounded-2xl px-4 py-3 border border-white/15 transition-all">
+              {w.photo
+                ? <img src={w.photo} alt="" className="w-10 h-10 rounded-lg object-cover border-2 border-white/20 shrink-0" />
+                : <div className="w-10 h-10 rounded-lg bg-white/20 text-white font-bold flex items-center justify-center shrink-0">{(w.fullName||'?')[0]}</div>
+              }
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{w.fullName}{i === 0 && <span className="text-white/40"> (me)</span>}</p>
+                <p className="text-white/50 text-xs">{w.role}{w.shift ? ` · ${w.shift}` : ''}</p>
+              </div>
+              <ChevronRight size={16} className="text-white/30 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Offence form */}
+      {oStep === 'form' && target && (
+        <div className="space-y-4">
+          <WorkerBadge worker={target} />
+          <div className="bg-white rounded-2xl p-4 space-y-4">
+
+            {/* Offence Type */}
+            <div>
+              <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Offence Type</label>
+              <select value={form.offenceType} onChange={e => set('offenceType', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                {OFFENCE_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+
+            {/* Severity */}
+            <div>
+              <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Severity</label>
+              <div className="grid grid-cols-2 gap-2">
+                {SEVERITY_OPTIONS.map(s => (
+                  <button key={s.value} type="button"
+                    onClick={() => set('severity', s.value)}
+                    className={`py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+                      form.severity === s.value
+                        ? 'border-gray-900 bg-gray-900 text-white'
+                        : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Action */}
+            <div>
+              <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Action Taken</label>
+              <select value={form.action} onChange={e => set('action', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                {ACTION_OPTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+              </select>
+            </div>
+
+            {/* Deduction amount — only when action=deduction */}
+            {form.action === 'deduction' && (
+              <div>
+                <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Deduction Amount (₦)</label>
+                <input type="number" min="0" inputMode="numeric" placeholder="0"
+                  value={form.deductionAmount} onChange={e => set('deductionAmount', e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-400" />
+              </div>
+            )}
+
+            {/* Description */}
+            <div>
+              <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Description</label>
+              <textarea value={form.description} onChange={e => set('description', e.target.value)}
+                placeholder="Describe what happened…" rows={2}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
+            </div>
+
+            {/* Witness */}
+            <div>
+              <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Witness (optional)</label>
+              <input type="text" placeholder="Witness name"
+                value={form.witness} onChange={e => set('witness', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" />
+            </div>
+
+            {/* Date */}
+            <div>
+              <label className="text-gray-500 text-xs font-semibold uppercase tracking-wide block mb-1">Date</label>
+              <input type="date" value={form.date}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={e => set('date', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" />
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-red-300 text-sm bg-red-900/30 border border-red-700 rounded-xl px-4 py-2.5 text-center">{error}</p>
+          )}
+
+          <button onClick={submit} disabled={loading}
+            className="w-full py-4 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
+            {loading ? <Loader size={18} className="animate-spin" /> : <FileWarning size={18} />}
+            {loading ? 'Booking…' : 'Book Offence'}
+          </button>
+        </div>
+      )}
+
+      {/* Success */}
+      {oStep === 'success' && result && (
+        <div className="flex flex-col items-center py-8 gap-5">
+          <div className="w-24 h-24 rounded-full bg-red-600 flex items-center justify-center">
+            <CheckCircle size={48} className="text-white" />
+          </div>
+          <div className="text-center">
+            <p className="text-white font-black text-2xl">Offence Booked</p>
+            <p className="text-white/60 mt-1">{target?.fullName}</p>
+          </div>
+          <div className="bg-white/10 rounded-2xl p-4 w-full border border-white/20 space-y-2">
+            <Row label="Offence"   value={OFFENCE_TYPES.find(o => o.value === form.offenceType)?.label} />
+            <Row label="Severity"  value={SEVERITY_OPTIONS.find(s => s.value === form.severity)?.label} />
+            <Row label="Action"    value={ACTION_OPTIONS.find(a => a.value === form.action)?.label} />
+            {form.action === 'deduction' && form.deductionAmount && (
+              <Row label="Deduction" value={fmt(form.deductionAmount)} />
+            )}
+            <Row label="Recorded by" value={worker.fullName} />
+          </div>
+          <button onClick={handleBack}
+            className="w-full py-3 rounded-2xl border border-white/20 text-white hover:bg-white/10 text-sm">
+            Book Another
+          </button>
+          <button onClick={onBack}
+            className="w-full py-3 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/20">
+            Back to Menu
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Dashboard View ─────────────────────────────────────────────────────────────
 function DashboardView({ session, onBack }) {
   const { pin } = session;
@@ -1810,6 +2084,11 @@ export default function WorkerPortal() {
             setStep('menu');
           }}
         />
+      )}
+
+      {/* ── Offence ────────────────────────────────────────────────────────── */}
+      {step === 'offence' && session && (
+        <OffenceView session={session} onBack={() => setStep('menu')} />
       )}
 
       {/* ── Breaks ─────────────────────────────────────────────────────────── */}
