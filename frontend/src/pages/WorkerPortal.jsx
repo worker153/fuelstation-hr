@@ -13,7 +13,7 @@ import * as faceapi from '@vladmandic/face-api';
 import axios from 'axios';
 import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
-  Key, ChevronLeft, ChevronRight, CheckCircle, XCircle,
+  Key, ChevronLeft, ChevronRight, CheckCircle, XCircle, X,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
   RotateCcw, MapPin, Coffee, Play, Square, FileWarning,
 } from 'lucide-react';
