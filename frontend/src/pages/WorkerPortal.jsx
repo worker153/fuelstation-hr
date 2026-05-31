@@ -1126,10 +1126,12 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const isSelf = !selWorker || String(selWorker._id) === String(worker._id);
 
   // Build auth params — device token if on approved device, PIN if on personal phone
+  // NOTE: session.pin is the 4-digit PIN the worker typed at login.
+  //       worker.pin is NOT returned by the API (security), so we read from session.
   const breakAuthParams = useCallback((wId) => {
     if (deviceInfo?.deviceToken) return { deviceToken: deviceInfo.deviceToken, workerId: wId };
-    return { pin: worker.pin, workerId: wId };
-  }, [deviceInfo?.deviceToken, worker.pin]);
+    return { pin: session.pin, workerId: wId };
+  }, [deviceInfo?.deviceToken, session.pin]);
 
   const loadStatus = useCallback(async (wId) => {
     setLoading(true); setError('');
@@ -1192,7 +1194,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
     try {
       const gps = isPersonalPhone ? await getGPS() : null;
       const body = isPersonalPhone
-        ? { pin: worker.pin, workerId: selWorker._id, gps }
+        ? { pin: session.pin, workerId: selWorker._id, gps }
         : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
       await axios.post(`${BASE}/restroom/start`, body);
       await loadRestroom(selWorker._id);
@@ -1208,7 +1210,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
     try {
       const gps = isPersonalPhone ? await getGPS() : null;
       const body = isPersonalPhone
-        ? { pin: worker.pin, workerId: selWorker._id, gps }
+        ? { pin: session.pin, workerId: selWorker._id, gps }
         : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
       const { data } = await axios.post(`${BASE}/restroom/end`, body);
       setResult({ action: 'restroom_ended', ...data.data });
@@ -1225,7 +1227,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
     try {
       const gps = isPersonalPhone ? await getGPS() : null;
       const body = isPersonalPhone
-        ? { pin: worker.pin, workerId: selWorker._id, breakType, gps }
+        ? { pin: session.pin, workerId: selWorker._id, breakType, gps }
         : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id, breakType };
       const { data } = await axios.post(`${BASE}/breaks/start`, body);
       setResult({ action: 'started', ...data.data });
@@ -1240,7 +1242,7 @@ function BreakView({ session, onBack, directRestroom = false }) {
     try {
       const gps = isPersonalPhone ? await getGPS() : null;
       const body = isPersonalPhone
-        ? { pin: worker.pin, workerId: selWorker._id, gps }
+        ? { pin: session.pin, workerId: selWorker._id, gps }
         : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
       const { data } = await axios.post(`${BASE}/breaks/end`, body);
       setResult({ action: 'ended', ...data.data });

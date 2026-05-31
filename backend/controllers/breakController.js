@@ -54,8 +54,9 @@ async function validateDevice(deviceToken) {
 
 // ─── Dual-auth context resolver ───────────────────────────────────────────────
 // Accepts either:  deviceToken (approved branch device)
-//              or  pin + gps   (worker's personal phone — GPS required)
-async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId }) {
+//              or  pin + gps   (worker's personal phone — GPS required for mutating ops)
+// requireGPS: false — skip GPS check for read-only status queries
+async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId, requireGPS = true }) {
   if (deviceToken) {
     const device = await validateDevice(deviceToken);
     if (!device) return { error: 'Invalid or unapproved device' };
@@ -70,7 +71,7 @@ async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId }) {
     };
   }
   if (pin) {
-    if (!gps?.lat || !gps?.lng)
+    if (requireGPS && (!gps?.lat || !gps?.lng))
       return { error: 'GPS location is required when starting a break from your personal phone. Please allow location access.' };
     const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
       .populate('branchId', 'name breakSettings restroomSettings')
@@ -135,12 +136,12 @@ const startBreak = async (req, res) => {
     return res.status(400).json({ success: false, message: `${BREAK_LABELS[breakType]} window has closed (closed at ${cfg.windowEnd})` });
 
   // Already have an active break?
-  const active = await Break.findOne({ company: device.company, worker: worker._id, date: dateStr, status: 'active' }).lean();
+  const active = await Break.findOne({ company, worker: worker._id, date: dateStr, status: 'active' }).lean();
   if (active)
     return res.status(400).json({ success: false, message: `You are already on a ${BREAK_LABELS[active.breakType]} — end it first` });
 
   // Already took this break type today?
-  const prior = await Break.findOne({ company: device.company, worker: worker._id, date: dateStr, breakType }).lean();
+  const prior = await Break.findOne({ company, worker: worker._id, date: dateStr, breakType }).lean();
   if (prior && prior.status !== 'missed')
     return res.status(400).json({ success: false, message: `You already took your ${BREAK_LABELS[breakType]} today` });
 
@@ -256,7 +257,7 @@ const endBreak = async (req, res) => {
 const getBreakStatus = async (req, res) => {
   const { deviceToken, workerId: reqWorkerId, pin } = req.query;
 
-  const ctx = await resolveBreakContext({ deviceToken, pin, gps: null, reqWorkerId });
+  const ctx = await resolveBreakContext({ deviceToken, pin, gps: null, reqWorkerId, requireGPS: false });
   if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
 
   const { company, branchId, authType } = ctx;

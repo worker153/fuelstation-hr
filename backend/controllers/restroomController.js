@@ -19,14 +19,15 @@ async function validateDevice(deviceToken) {
 }
 
 // ─── Dual-auth context resolver (same pattern as breakController) ─────────────
-async function resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId }) {
+// requireGPS: false — skip GPS check for read-only status queries
+async function resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId, requireGPS = true }) {
   if (deviceToken) {
     const device = await validateDevice(deviceToken);
     if (!device) return { error: 'Invalid or unapproved device' };
     return { company: device.company, branchId: device.branch, branchName: device.branchName || '', workerId: reqWorkerId, authType: 'device', device };
   }
   if (pin) {
-    if (!gps?.lat || !gps?.lng)
+    if (requireGPS && (!gps?.lat || !gps?.lng))
       return { error: 'GPS location is required when using a personal phone. Please allow location access.' };
     const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
       .populate('branchId', 'name restroomSettings').lean();
@@ -172,7 +173,7 @@ const endRestroom = async (req, res) => {
 const getRestroomStatus = async (req, res) => {
   const { deviceToken, workerId: reqWorkerId, pin } = req.query;
 
-  const ctx = await resolveRestroomContext({ deviceToken, pin, gps: null, reqWorkerId });
+  const ctx = await resolveRestroomContext({ deviceToken, pin, gps: null, reqWorkerId, requireGPS: false });
   if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
 
   const { company } = ctx;
