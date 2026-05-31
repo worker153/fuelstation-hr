@@ -109,7 +109,7 @@ export default function App() {
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/shortage"        element={<WorkerShortage />} />
             <Route path="/policy"          element={<StaffPolicy />} />
-            <Route path="/handbook"        element={<WorkerHandbook />} />
+            <Route path="/worker-handbook" element={<WorkerHandbook />} />
             <Route path="/ops"             element={<PrivateRoute><OpsView /></PrivateRoute>} />
             <Route path="/my-dashboard"    element={<WorkerDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />
@@ -129,6 +129,7 @@ export default function App() {
               <Route path="/attendance"    element={<Attendance />} />
               <Route path="/breaks"        element={<Breaks />} />
               <Route path="/offences"      element={<Offences />} />
+              <Route path="/handbook"      element={<WorkerHandbook />} />
 
               <Route path="/workers/new"                                    element={<WorkerForm />} />
               <Route path="/workers/:id"                                    element={<WorkerDetail />} />

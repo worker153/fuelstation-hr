@@ -50,7 +50,7 @@ export default function Sidebar({ onClose }) {
     {
       label: 'Resources',
       items: [
-        { to: '/handbook', icon: BookOpen, label: 'Worker Handbook', show: true },
+        { to: '/handbook', icon: BookOpen, label: 'Worker Handbook', show: true  },
       ],
     },
   ];
