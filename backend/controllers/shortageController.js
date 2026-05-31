@@ -98,9 +98,10 @@ const submitShortage = async (req, res) => {
 
   let branchName = worker.branch || '';
   let resolvedBranchId = branchId || worker.branchId;
+  let branchDoc = null;
   if (resolvedBranchId) {
-    const branch = await Branch.findById(resolvedBranchId).lean();
-    if (branch) branchName = branch.name;
+    branchDoc = await Branch.findById(resolvedBranchId).lean();
+    if (branchDoc) branchName = branchDoc.name;
   }
 
   const parsedAmount = Number(amount);
@@ -127,27 +128,42 @@ const submitShortage = async (req, res) => {
     reviewedAt:  now,
   });
 
-  // ── Auto-penalty ─────────────────────────────────────────────────────────────
+  // ── Auto-penalty (only for sales shortages) ──────────────────────────────────
   try {
-    const penaltyAmount = parsedAmount >= 5000 ? 5000 : 2000;
-    await Shortage.create({
-      company:          cid,
-      branchId:         resolvedBranchId || undefined,
-      branchName,
-      worker:           workerId,
-      workerName:       worker.fullName,
-      workerRole:       worker.role,
-      month:            Number(month),
-      year:             Number(year),
-      date:             date ? new Date(date) : now,
-      amount:           penaltyAmount,
-      notes:            `Auto-penalty — shortage of ₦${parsedAmount.toLocaleString()} (${parsedAmount >= 5000 ? '≥ ₦5,000' : '< ₦5,000'})`,
-      reason:           'other',
-      source:           'penalty',
-      status:           'approved',
-      reviewedAt:       now,
-      relatedShortageId: shortage._id,
-    });
+    const parsedReason = reason || 'cash_shortage';
+    if (parsedReason === 'cash_shortage') {
+      // Read configurable rule from branch; fall back to sensible defaults
+      const rule       = branchDoc?.salesShortageRule;
+      const ruleActive = rule?.enabled !== false;   // default true if not set
+      const threshold  = rule?.threshold      ?? 10000;
+      const below      = rule?.belowPenalty   ?? 2000;
+      const above      = rule?.atAbovePenalty ?? 5000;
+
+      if (ruleActive) {
+        const penaltyAmount = parsedAmount >= threshold ? above : below;
+        const threshFmt     = `₦${threshold.toLocaleString()}`;
+        const compLabel     = parsedAmount >= threshold ? `≥ ${threshFmt}` : `< ${threshFmt}`;
+        await Shortage.create({
+          company:           cid,
+          branchId:          resolvedBranchId || undefined,
+          branchName,
+          worker:            workerId,
+          workerName:        worker.fullName,
+          workerRole:        worker.role,
+          month:             Number(month),
+          year:              Number(year),
+          date:              date ? new Date(date) : now,
+          amount:            penaltyAmount,
+          about:             `Penalty — sales shortage of ₦${parsedAmount.toLocaleString()}`,
+          notes:             `Auto-penalty: shortage ${compLabel} threshold. Deduction: ₦${penaltyAmount.toLocaleString()}`,
+          reason:            'other',
+          source:            'penalty',
+          status:            'approved',
+          reviewedAt:        now,
+          relatedShortageId: shortage._id,
+        });
+      }
+    }
   } catch (e) { console.error('Penalty error:', e.message); }
 
   // ── Sync payroll ─────────────────────────────────────────────────────────────

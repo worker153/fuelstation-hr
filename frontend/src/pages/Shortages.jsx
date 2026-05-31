@@ -78,12 +78,20 @@ function SubmitModal({ workers, branches, onClose, onSubmitted }) {
   const [loading,     setLoading    ] = useState(false);
   const years = Array.from({ length: 3 }, (_, i) => now.getFullYear() - i);
 
-  // Find the selected worker's branch and its penalty presets
+  // Find the selected worker's branch, presets, and sales shortage rule
   const selectedWorker  = workers.find(w => w._id === workerId);
   const workerBranchId  = selectedWorker?.branchId?._id || selectedWorker?.branchId;
   const workerBranch    = branches.find(b => String(b._id) === String(workerBranchId));
   const presets         = workerBranch?.penaltyPresets || {};
   const currentPreset   = presets[reason] || 0;
+  const salesRule       = workerBranch?.salesShortageRule;
+  const salesRuleActive = reason === 'cash_shortage' && salesRule?.enabled !== false;
+  const srThreshold     = salesRule?.threshold      ?? 10000;
+  const srBelow         = salesRule?.belowPenalty   ?? 2000;
+  const srAbove         = salesRule?.atAbovePenalty ?? 5000;
+  const srPenalty       = salesRuleActive && Number(amount) > 0
+    ? (Number(amount) >= srThreshold ? srAbove : srBelow)
+    : null;
 
   // Filter workers by search text
   const filteredWorkers = workerSearch.trim()
@@ -247,6 +255,27 @@ function SubmitModal({ workers, branches, onClose, onSubmitted }) {
               </p>
             )}
           </div>
+
+          {/* Sales shortage penalty preview */}
+          {salesRuleActive && Number(amount) > 0 && srPenalty !== null && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 space-y-1">
+              <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">⚡ Auto-Penalty</p>
+              <p className="text-sm text-gray-800">
+                Shortage of <span className="font-bold">₦{Number(amount).toLocaleString()}</span>
+                {Number(amount) >= srThreshold
+                  ? <> is <span className="font-semibold">≥ ₦{srThreshold.toLocaleString()}</span> threshold</>
+                  : <> is <span className="font-semibold">&lt; ₦{srThreshold.toLocaleString()}</span> threshold</>
+                }
+              </p>
+              <p className="text-base font-black text-red-600">
+                → ₦{srPenalty.toLocaleString()} penalty will be deducted
+              </p>
+              <p className="text-xs text-gray-400">This is added automatically on top of the shortage record</p>
+            </div>
+          )}
+          {salesRuleActive && !workerId && (
+            <p className="text-xs text-gray-400 italic">Select a worker to see penalty preview</p>
+          )}
 
           <div>
             <label className="label">Notes</label>

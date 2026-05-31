@@ -7,9 +7,6 @@ import {
   Camera, Trash2, DollarSign,
 } from 'lucide-react';
 
-const PENALTY_REASON_OPTIONS = [
-  { value: 'cash_shortage', label: 'Sales Shortage' },
-];
 import api from '../utils/api';
 import NumInput from '../components/NumInput';
 import { useNotify } from '../context/NotificationContext';
@@ -192,17 +189,13 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     }];
   };
 
-  const getInitialPresets = () => {
-    const p = branch?.penaltyPresets || {};
+  const getInitialRule = () => {
+    const r = branch?.salesShortageRule || {};
     return {
-      cash_shortage:      p.cash_shortage      ?? 0,
-      fuel_shortage:      p.fuel_shortage      ?? 0,
-      equipment_damage:   p.equipment_damage   ?? 0,
-      customer_complaint: p.customer_complaint ?? 0,
-      late_arrival:       p.late_arrival       ?? 0,
-      absent:             p.absent             ?? 0,
-      early_departure:    p.early_departure    ?? 0,
-      other:              p.other              ?? 0,
+      enabled:        r.enabled        ?? true,
+      threshold:      r.threshold      ?? 10000,
+      belowPenalty:   r.belowPenalty   ?? 2000,
+      atAbovePenalty: r.atAbovePenalty ?? 5000,
     };
   };
 
@@ -212,11 +205,16 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     phone:     branch?.phone     || '',
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
-    attendanceRules: getInitialRules(),
-    penaltyPresets:  getInitialPresets(),
+    attendanceRules:   getInitialRules(),
+    salesShortageRule: getInitialRule(),
   });
-  const [showAttendance,    setShowAttendance   ] = useState(false);
-  const [showPenaltyPresets,setShowPenaltyPresets] = useState(false);
+  const [showAttendance,      setShowAttendance     ] = useState(false);
+  const [showPenaltyPresets,  setShowPenaltyPresets ] = useState(false);
+
+  const setSalesRule = (key, val) => setForm(f => ({
+    ...f,
+    salesShortageRule: { ...f.salesShortageRule, [key]: val },
+  }));
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -371,13 +369,13 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = {
-        name:            form.name.trim(),
-        address:         form.address.trim(),
-        phone:           form.phone.trim(),
-        managerId:       form.managerId || null,
-        location:        form.location  || null,
-        attendanceRules: form.attendanceRules,
-        penaltyPresets:  form.penaltyPresets,
+        name:              form.name.trim(),
+        address:           form.address.trim(),
+        phone:             form.phone.trim(),
+        managerId:         form.managerId || null,
+        location:          form.location  || null,
+        attendanceRules:   form.attendanceRules,
+        salesShortageRule: form.salesShortageRule,
       };
       const res = branch
         ? await api.put(`/branches/${branch._id}`, payload)
@@ -653,51 +651,93 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
               )}
             </div>
 
-            {/* ── Section 4: Penalty Presets ───────────────────────────────── */}
+            {/* ── Section 4: Sales Shortage Penalty Rule ────────────────── */}
             <div>
               <button type="button" onClick={() => setShowPenaltyPresets(v => !v)}
                 className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors">
                 <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <DollarSign size={15} className="text-red-500" />
-                  Penalty Presets
-                  {Object.values(form.penaltyPresets).some(v => v > 0) && (
-                    <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
-                      {Object.values(form.penaltyPresets).filter(v => v > 0).length} set
-                    </span>
+                  Sales Shortage Penalty
+                  {form.salesShortageRule.enabled && (
+                    <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">Active</span>
                   )}
                 </span>
                 <ChevronDown size={14} className={`text-gray-400 transition-transform ${showPenaltyPresets ? 'rotate-180' : ''}`} />
               </button>
 
               {showPenaltyPresets && (
-                <div className="px-6 pb-5 space-y-3 border-t border-gray-100">
-                  <p className="text-xs text-gray-500 pt-3">
-                    Set a default ₦ amount per shortage reason. When a supervisor submits a shortage and selects a reason,
-                    the amount auto-fills from this preset. Set to ₦0 to leave it blank (supervisor enters manually).
+                <div className="px-6 pb-5 space-y-4 border-t border-gray-100 pt-4">
+                  <p className="text-xs text-gray-500">
+                    When a supervisor submits a sales shortage, a penalty deduction is automatically added to the worker's salary based on how much they were short.
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {PENALTY_REASON_OPTIONS.map(r => (
-                      <div key={r.value}>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">{r.label}</label>
+
+                  {/* Enable toggle */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Enable auto-penalty</span>
+                    <button type="button"
+                      onClick={() => setSalesRule('enabled', !form.salesShortageRule.enabled)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
+                        ${form.salesShortageRule.enabled
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      {form.salesShortageRule.enabled ? '✓ Enabled' : 'Disabled'}
+                    </button>
+                  </div>
+
+                  {form.salesShortageRule.enabled && (
+                    <>
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 block mb-1">Threshold Amount (₦)</label>
+                        <p className="text-xs text-gray-400 mb-1.5">Shortages at or above this amount get the higher penalty</p>
                         <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₦</span>
-                          <NumInput
-                            min={0}
-                            className="input pl-7 text-sm"
-                            placeholder="0"
-                            value={form.penaltyPresets[r.value] || 0}
-                            onChange={v => setForm(f => ({
-                              ...f,
-                              penaltyPresets: { ...f.penaltyPresets, [r.value]: v },
-                            }))}
-                          />
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none">₦</span>
+                          <NumInput min={0} className="input pl-7"
+                            value={form.salesShortageRule.threshold}
+                            onChange={v => setSalesRule('threshold', v)} />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-400 bg-gray-50 px-3 py-2 rounded-lg">
-                    💡 These are defaults only — supervisors can still edit the amount before submitting.
-                  </p>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 block mb-1">
+                            Below Threshold Penalty
+                          </label>
+                          <p className="text-xs text-gray-400 mb-1.5">Shortage &lt; ₦{(form.salesShortageRule.threshold||0).toLocaleString()}</p>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none">₦</span>
+                            <NumInput min={0} className="input pl-7"
+                              value={form.salesShortageRule.belowPenalty}
+                              onChange={v => setSalesRule('belowPenalty', v)} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 block mb-1">
+                            At/Above Threshold Penalty
+                          </label>
+                          <p className="text-xs text-gray-400 mb-1.5">Shortage ≥ ₦{(form.salesShortageRule.threshold||0).toLocaleString()}</p>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none">₦</span>
+                            <NumInput min={0} className="input pl-7"
+                              value={form.salesShortageRule.atAbovePenalty}
+                              onChange={v => setSalesRule('atAbovePenalty', v)} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Live preview */}
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm space-y-1">
+                        <p className="font-semibold text-amber-800 text-xs uppercase tracking-wide">Rule Preview</p>
+                        <p className="text-gray-700">
+                          Short &lt; ₦{(form.salesShortageRule.threshold||0).toLocaleString()} →
+                          <span className="font-bold text-red-600 ml-1">₦{(form.salesShortageRule.belowPenalty||0).toLocaleString()} deducted</span>
+                        </p>
+                        <p className="text-gray-700">
+                          Short ≥ ₦{(form.salesShortageRule.threshold||0).toLocaleString()} →
+                          <span className="font-bold text-red-600 ml-1">₦{(form.salesShortageRule.atAbovePenalty||0).toLocaleString()} deducted</span>
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

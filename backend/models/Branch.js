@@ -91,6 +91,15 @@ const branchSchema = new mongoose.Schema({
     early_departure:    { type: Number, default: 0 },
     other:              { type: Number, default: 0 },
   },
+
+  // Tiered auto-penalty rule for sales shortages
+  // When a shortage is submitted, a penalty shortage is auto-created based on the shortage amount vs threshold
+  salesShortageRule: {
+    enabled:        { type: Boolean, default: true  },
+    threshold:      { type: Number,  default: 10000 },  // ₦ boundary
+    belowPenalty:   { type: Number,  default: 2000  },  // deduction if shortage < threshold
+    atAbovePenalty: { type: Number,  default: 5000  },  // deduction if shortage >= threshold
+  },
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });

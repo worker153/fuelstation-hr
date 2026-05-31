@@ -267,6 +267,13 @@ const updateBranch = async (req, res) => {
     };
     branch.markModified('penaltyPresets');
   }
+  if (req.body.salesShortageRule !== undefined) {
+    branch.salesShortageRule = {
+      ...(branch.salesShortageRule?.toObject?.() || {}),
+      ...req.body.salesShortageRule,
+    };
+    branch.markModified('salesShortageRule');
+  }
 
   await branch.save();
   await branch.populate('manager', 'name email role');
