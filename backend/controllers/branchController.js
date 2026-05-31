@@ -69,7 +69,13 @@ const resolveMapsUrl = async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ success: false, message: 'URL is required' });
 
-  const cleanUrl = url.trim().replace(/[?&#]+$/, ''); // strip accidental trailing punctuation
+  // Strip trailing punctuation
+  let cleanUrl = url.trim().replace(/[?&#]+$/, '');
+  // For maps.app.goo.gl short URLs, strip query params entirely —
+  // ?g_st=ic and similar tracking params cause server-side redirects to fail
+  if (/maps\.app\.goo\.gl/i.test(cleanUrl)) {
+    cleanUrl = cleanUrl.split('?')[0];
+  }
 
   try {
     const ctrl  = new AbortController();

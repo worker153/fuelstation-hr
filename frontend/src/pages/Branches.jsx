@@ -240,8 +240,9 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
 
   // ── Google Maps import ──────────────────────────────────────────────────────
   const importFromMaps = async () => {
-    // Strip accidental trailing punctuation (sometimes browsers append "?")
-    const url = mapsLink.trim().replace(/[?&#]+$/, '');
+    // Strip trailing punctuation, then strip tracking params from short URLs
+    let url = mapsLink.trim().replace(/[?&#]+$/, '');
+    if (/maps\.app\.goo\.gl/i.test(url)) url = url.split('?')[0];
     if (!url) return;
     if (!isGoogleMapsUrl(url)) {
       setImportError('Paste a valid Google Maps link (google.com/maps or maps.app.goo.gl)');
