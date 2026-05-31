@@ -31,6 +31,7 @@ import WorkerPinReset     from './pages/WorkerPinReset';
 import Attendance         from './pages/Attendance';
 import Breaks             from './pages/Breaks';
 import StaffPolicy        from './pages/StaffPolicy';
+import WorkerHandbook     from './pages/WorkerHandbook';
 import Offences           from './pages/Offences';
 import OpsView            from './pages/OpsView';
 import AdminPinLogin      from './pages/AdminPinLogin';
@@ -108,6 +109,7 @@ export default function App() {
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/shortage"        element={<WorkerShortage />} />
             <Route path="/policy"          element={<StaffPolicy />} />
+            <Route path="/handbook"        element={<WorkerHandbook />} />
             <Route path="/ops"             element={<PrivateRoute><OpsView /></PrivateRoute>} />
             <Route path="/my-dashboard"    element={<WorkerDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />

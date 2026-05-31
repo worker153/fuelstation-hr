@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
-  AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon,
+  AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -45,6 +45,12 @@ export default function Sidebar({ onClose }) {
         { to: '/staff',              icon: UserCog,     label: 'Staff',              show: isSuperAdmin() },
         { to: '/attendance-devices', icon: Smartphone,  label: 'Attendance Devices', show: isSuperAdmin() },
         { to: '/worker-pins',        icon: KeyRound,    label: 'Worker PINs',        show: isSuperAdmin() },
+      ],
+    },
+    {
+      label: 'Resources',
+      items: [
+        { to: '/handbook', icon: BookOpen, label: 'Worker Handbook', show: true },
       ],
     },
   ];
