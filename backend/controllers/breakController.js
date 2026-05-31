@@ -52,23 +52,65 @@ async function validateDevice(deviceToken) {
   return AttendanceDevice.findOne({ deviceToken, status: 'approved' }).lean();
 }
 
+// ─── Dual-auth context resolver ───────────────────────────────────────────────
+// Accepts either:  deviceToken (approved branch device)
+//              or  pin + gps   (worker's personal phone — GPS required)
+async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId }) {
+  if (deviceToken) {
+    const device = await validateDevice(deviceToken);
+    if (!device) return { error: 'Invalid or unapproved device' };
+    return {
+      company:   device.company,
+      branchId:  device.branch,
+      branchName: device.branchName || '',
+      workerId:  reqWorkerId,
+      authType:  'device',
+      device,
+      branch:    null, // loaded by caller if needed
+    };
+  }
+  if (pin) {
+    if (!gps?.lat || !gps?.lng)
+      return { error: 'GPS location is required when starting a break from your personal phone. Please allow location access.' };
+    const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
+      .populate('branchId', 'name breakSettings restroomSettings')
+      .lean();
+    if (!worker) return { error: 'Invalid PIN — worker not found' };
+    const branch = worker.branchId; // populated
+    return {
+      company:    worker.company,
+      branchId:   branch?._id || worker.branchId,
+      branchName: branch?.name || worker.branch || '',
+      workerId:   String(worker._id),
+      authType:   'pin',
+      pinWorker:  worker,
+      branch,
+    };
+  }
+  return { error: 'deviceToken or PIN required' };
+}
+
 // ─── POST /api/breaks/start ───────────────────────────────────────────────────
 const startBreak = async (req, res) => {
-  const { deviceToken, workerId, breakType } = req.body;
-  if (!deviceToken || !workerId || !breakType)
-    return res.status(400).json({ success: false, message: 'deviceToken, workerId and breakType required' });
+  const { deviceToken, pin, gps, workerId: reqWorkerId, breakType } = req.body;
+  if (!breakType)
+    return res.status(400).json({ success: false, message: 'breakType required' });
 
-  const device = await validateDevice(deviceToken);
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+  const ctx = await resolveBreakContext({ deviceToken, pin, gps, reqWorkerId });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
 
-  const worker = await Worker.findOne({ _id: workerId, company: device.company, employmentStatus: 'active' }).lean();
+  const { company, branchId, branchName, authType } = ctx;
+  const workerId = ctx.workerId;
+
+  const worker = ctx.pinWorker
+    || await Worker.findOne({ _id: workerId, company, employmentStatus: 'active' }).lean();
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
 
   const dateStr = todayUtcStr();
 
   // Must be clocked in (and not clocked out)
-  const clockIn  = await Attendance.findOne({ company: device.company, worker: worker._id, date: dateStr, type: 'clock_in'  }).lean();
-  const clockOut = await Attendance.findOne({ company: device.company, worker: worker._id, date: dateStr, type: 'clock_out' }).lean();
+  const clockIn  = await Attendance.findOne({ company, worker: worker._id, date: dateStr, type: 'clock_in'  }).lean();
+  const clockOut = await Attendance.findOne({ company, worker: worker._id, date: dateStr, type: 'clock_out' }).lean();
   if (!clockIn)  return res.status(400).json({ success: false, message: 'You must clock in before taking a break' });
   if (clockOut)  return res.status(400).json({ success: false, message: 'You have already clocked out today' });
 
@@ -76,7 +118,7 @@ const startBreak = async (req, res) => {
   if (!['morning', 'afternoon', 'night'].includes(breakType))
     return res.status(400).json({ success: false, message: 'Invalid break type' });
 
-  const branch = await Branch.findById(device.branch).lean();
+  const branch = ctx.branch || (ctx.device ? await Branch.findById(ctx.device.branch).lean() : null);
   const config  = getBreakConfig(branch);
   const cfg     = config[breakType];
 
@@ -107,12 +149,12 @@ const startBreak = async (req, res) => {
 
   // Upsert: if a 'missed' record exists replace it; otherwise create fresh
   const breakRecord = await Break.findOneAndUpdate(
-    { company: device.company, worker: worker._id, date: dateStr, breakType },
+    { company, worker: worker._id, date: dateStr, breakType },
     {
       $set: {
-        company:    device.company,
-        branchId:   device.branch,
-        branchName: device.branchName || branch.name,
+        company,
+        branchId,
+        branchName: branchName || branch?.name || '',
         worker:     worker._id,
         workerName: worker.fullName,
         workerRole: worker.role,
@@ -126,13 +168,15 @@ const startBreak = async (req, res) => {
         endTime:    null,
         actualMinutes: 0,
         excessMinutes: 0,
+        authType,
+        ...(gps?.lat ? { startGps: { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy } } : {}),
       },
       $push: {
         auditLog: {
           action:    'started',
           timestamp: now,
-          by:        'worker',
-          notes:     `${worker.fullName} started ${BREAK_LABELS[breakType]}`,
+          by:        authType === 'pin' ? 'worker_phone' : 'worker',
+          notes:     `${worker.fullName} started ${BREAK_LABELS[breakType]}${authType === 'pin' ? ' (personal phone)' : ''}`,
         },
       },
     },
@@ -155,16 +199,17 @@ const startBreak = async (req, res) => {
 
 // ─── POST /api/breaks/end ─────────────────────────────────────────────────────
 const endBreak = async (req, res) => {
-  const { deviceToken, workerId } = req.body;
-  if (!deviceToken || !workerId)
-    return res.status(400).json({ success: false, message: 'deviceToken and workerId required' });
+  const { deviceToken, pin, gps, workerId: reqWorkerId } = req.body;
 
-  const device = await validateDevice(deviceToken);
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+  const ctx = await resolveBreakContext({ deviceToken, pin, gps, reqWorkerId });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
+
+  const { company, authType } = ctx;
+  const workerId = ctx.workerId;
 
   const dateStr = todayUtcStr();
   const activeBreak = await Break.findOne({
-    company: device.company,
+    company,
     worker:  workerId,
     date:    dateStr,
     status:  'active',
@@ -183,11 +228,12 @@ const endBreak = async (req, res) => {
   activeBreak.actualMinutes = actualMins;
   activeBreak.excessMinutes = excessMins;
   activeBreak.status        = overstayed ? 'overstayed' : 'completed';
+  if (gps?.lat) activeBreak.endGps = { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy };
   activeBreak.auditLog.push({
     action:    overstayed ? 'ended_overstayed' : 'ended',
     timestamp: now,
-    by:        'worker',
-    notes:     `Ended after ${actualMins} min (allowed ${activeBreak.allowedMinutes} min)${overstayed ? ` — ${excessMins} min OVER` : ''}`,
+    by:        authType === 'pin' ? 'worker_phone' : 'worker',
+    notes:     `Ended after ${actualMins} min (allowed ${activeBreak.allowedMinutes} min)${overstayed ? ` — ${excessMins} min OVER` : ''}${authType === 'pin' ? ' (personal phone)' : ''}`,
   });
 
   await activeBreak.save();
@@ -206,22 +252,23 @@ const endBreak = async (req, res) => {
   });
 };
 
-// ─── GET /api/breaks/status — terminal queries this after PIN ─────────────────
+// ─── GET /api/breaks/status — terminal OR personal phone queries this ─────────
 const getBreakStatus = async (req, res) => {
-  const { deviceToken, workerId } = req.query;
-  if (!deviceToken || !workerId)
-    return res.status(400).json({ success: false, message: 'deviceToken and workerId required' });
+  const { deviceToken, workerId: reqWorkerId, pin } = req.query;
 
-  const device = await validateDevice(deviceToken);
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid device' });
+  const ctx = await resolveBreakContext({ deviceToken, pin, gps: null, reqWorkerId });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
+
+  const { company, branchId, authType } = ctx;
+  const workerId = ctx.workerId;
 
   const dateStr = todayUtcStr();
 
   const [clockIn, clockOut, todayBreaks, branch] = await Promise.all([
-    Attendance.findOne({ company: device.company, worker: workerId, date: dateStr, type: 'clock_in'  }).lean(),
-    Attendance.findOne({ company: device.company, worker: workerId, date: dateStr, type: 'clock_out' }).lean(),
-    Break.find({ company: device.company, worker: workerId, date: dateStr }).lean(),
-    Branch.findById(device.branch).lean(),
+    Attendance.findOne({ company, worker: workerId, date: dateStr, type: 'clock_in'  }).lean(),
+    Attendance.findOne({ company, worker: workerId, date: dateStr, type: 'clock_out' }).lean(),
+    Break.find({ company, worker: workerId, date: dateStr }).lean(),
+    ctx.branch || Branch.findById(branchId).lean(),
   ]);
 
   const config    = getBreakConfig(branch);

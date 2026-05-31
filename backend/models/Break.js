@@ -39,6 +39,11 @@ const breakSchema = new mongoose.Schema({
 
   supervisorNotified: { type: Boolean, default: false },
 
+  // GPS location captured when break was started (personal phone flow)
+  startGps: { lat: Number, lng: Number, accuracy: Number },
+  endGps:   { lat: Number, lng: Number, accuracy: Number },
+  authType: { type: String, enum: ['device', 'pin'], default: 'device' }, // how the break was authenticated
+
   auditLog: [auditEntrySchema],
 }, { timestamps: true });
 

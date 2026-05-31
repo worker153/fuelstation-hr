@@ -570,29 +570,36 @@ function MenuView({ session, onNavigate }) {
       </div>
 
       <div className="space-y-3">
+        {/* Clock In/Out — approved device only */}
+        {deviceApproved && (
+          <MenuCard
+            icon={todayStatus?.clockedIn && !todayStatus?.clockedOut ? LogOut : LogIn}
+            label="Clock In / Out"
+            sub={todayStatus?.clockedIn && todayStatus?.clockedOut ? 'Attendance complete today' : 'Record your attendance'}
+            color="bg-brand-600"
+            onClick={() => onNavigate('terminal')}
+          />
+        )}
+
+        {/* Breaks + Restroom — any phone (GPS required) */}
+        <MenuCard
+          icon={Coffee}
+          label="Breaks"
+          sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end your break' : 'View your break history'}
+          color="bg-orange-500"
+          onClick={() => onNavigate('break')}
+        />
+        <MenuCard
+          icon={Droplets}
+          label="Restroom Break"
+          sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end a restroom break' : 'View restroom break history'}
+          color="bg-blue-500"
+          onClick={() => onNavigate('restroom')}
+        />
+
+        {/* Book Offence + Shortage — approved device only */}
         {deviceApproved && (
           <>
-            <MenuCard
-              icon={todayStatus?.clockedIn && !todayStatus?.clockedOut ? LogOut : LogIn}
-              label="Clock In / Out"
-              sub={todayStatus?.clockedIn && todayStatus?.clockedOut ? 'Attendance complete today' : 'Record your attendance'}
-              color="bg-brand-600"
-              onClick={() => onNavigate('terminal')}
-            />
-            <MenuCard
-              icon={Coffee}
-              label="Breaks"
-              sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end your break' : 'View your break history'}
-              color="bg-orange-500"
-              onClick={() => onNavigate('break')}
-            />
-            <MenuCard
-              icon={Droplets}
-              label="Restroom Break"
-              sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end a restroom break' : 'View restroom break history'}
-              color="bg-blue-500"
-              onClick={() => onNavigate('restroom')}
-            />
             <MenuCard
               icon={FileWarning}
               label="Book Offence"
@@ -1085,9 +1092,22 @@ function fmtSecs(s) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+// Capture GPS location (resolves with coords or null)
+function getGPS() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => resolve(null),
+      { timeout: 8000, maximumAge: 30000 }
+    );
+  });
+}
+
 function BreakView({ session, onBack, directRestroom = false }) {
   const { worker, deviceInfo, shiftWorkers } = session;
   const isSup = worker.isSupervisor;
+  const isPersonalPhone = !deviceInfo?.deviceToken;
 
   const [bStep,           setBStep          ] = useState(isSup ? 'pick' : 'status');
   const [selWorker,       setSelWorker      ] = useState(isSup ? null : worker);
@@ -1105,17 +1125,23 @@ function BreakView({ session, onBack, directRestroom = false }) {
   // Is the selected worker the logged-in worker? (face required for self only)
   const isSelf = !selWorker || String(selWorker._id) === String(worker._id);
 
+  // Build auth params — device token if on approved device, PIN if on personal phone
+  const breakAuthParams = useCallback((wId) => {
+    if (deviceInfo?.deviceToken) return { deviceToken: deviceInfo.deviceToken, workerId: wId };
+    return { pin: worker.pin, workerId: wId };
+  }, [deviceInfo?.deviceToken, worker.pin]);
+
   const loadStatus = useCallback(async (wId) => {
     setLoading(true); setError('');
     try {
       const { data } = await axios.get(`${BASE}/breaks/status`, {
-        params: { deviceToken: deviceInfo?.deviceToken, workerId: wId },
+        params: breakAuthParams(wId),
       });
       setStatus(data.data);
     } catch (e) {
       setError(e.response?.data?.message || 'Failed to load break status');
     } finally { setLoading(false); }
-  }, [deviceInfo?.deviceToken]);
+  }, [breakAuthParams]);
 
   useEffect(() => {
     if (bStep === 'status' && selWorker) loadStatus(selWorker._id);
@@ -1124,11 +1150,11 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const loadRestroom = useCallback(async (wId) => {
     try {
       const { data } = await axios.get(`${BASE}/restroom/status`, {
-        params: { deviceToken: deviceInfo?.deviceToken, workerId: wId },
+        params: breakAuthParams(wId),
       });
       setRestroomData(data.data);
     } catch { /* silent — restroom status is supplementary */ }
-  }, [deviceInfo?.deviceToken]);
+  }, [breakAuthParams]);
 
   useEffect(() => {
     if (bStep === 'status' && selWorker) loadRestroom(selWorker._id);
@@ -1164,10 +1190,11 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const doStartRestroom = async () => {
     setActLoading(true); setError('');
     try {
-      await axios.post(`${BASE}/restroom/start`, {
-        deviceToken: deviceInfo?.deviceToken,
-        workerId:    selWorker._id,
-      });
+      const gps = isPersonalPhone ? await getGPS() : null;
+      const body = isPersonalPhone
+        ? { pin: worker.pin, workerId: selWorker._id, gps }
+        : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
+      await axios.post(`${BASE}/restroom/start`, body);
       await loadRestroom(selWorker._id);
       setBStep('status');
     } catch (e) {
@@ -1179,10 +1206,11 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const doEndRestroom = async () => {
     setActLoading(true); setError('');
     try {
-      const { data } = await axios.post(`${BASE}/restroom/end`, {
-        deviceToken: deviceInfo?.deviceToken,
-        workerId:    selWorker._id,
-      });
+      const gps = isPersonalPhone ? await getGPS() : null;
+      const body = isPersonalPhone
+        ? { pin: worker.pin, workerId: selWorker._id, gps }
+        : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
+      const { data } = await axios.post(`${BASE}/restroom/end`, body);
       setResult({ action: 'restroom_ended', ...data.data });
       await loadRestroom(selWorker._id);
       setBStep('result_restroom');
@@ -1195,11 +1223,11 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const doStart = async (breakType) => {
     setActLoading(true); setError('');
     try {
-      const { data } = await axios.post(`${BASE}/breaks/start`, {
-        deviceToken: deviceInfo?.deviceToken,
-        workerId:    selWorker._id,
-        breakType,
-      });
+      const gps = isPersonalPhone ? await getGPS() : null;
+      const body = isPersonalPhone
+        ? { pin: worker.pin, workerId: selWorker._id, breakType, gps }
+        : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id, breakType };
+      const { data } = await axios.post(`${BASE}/breaks/start`, body);
       setResult({ action: 'started', ...data.data });
       setBStep('result');
     } catch (e) {
@@ -1210,10 +1238,11 @@ function BreakView({ session, onBack, directRestroom = false }) {
   const doEnd = async () => {
     setActLoading(true); setError('');
     try {
-      const { data } = await axios.post(`${BASE}/breaks/end`, {
-        deviceToken: deviceInfo?.deviceToken,
-        workerId:    selWorker._id,
-      });
+      const gps = isPersonalPhone ? await getGPS() : null;
+      const body = isPersonalPhone
+        ? { pin: worker.pin, workerId: selWorker._id, gps }
+        : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id };
+      const { data } = await axios.post(`${BASE}/breaks/end`, body);
       setResult({ action: 'ended', ...data.data });
       setBStep('result');
     } catch (e) {
@@ -1247,9 +1276,16 @@ function BreakView({ session, onBack, directRestroom = false }) {
         <button onClick={handleBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors">
           <ChevronLeft size={20} />
         </button>
-        <h2 className="text-white font-bold text-lg">
-          {bStep === 'pick' ? 'Select Worker' : directRestroom ? 'Restroom Break' : 'Breaks'}
-        </h2>
+        <div>
+          <h2 className="text-white font-bold text-lg">
+            {bStep === 'pick' ? 'Select Worker' : directRestroom ? 'Restroom Break' : 'Breaks'}
+          </h2>
+          {isPersonalPhone && bStep === 'status' && (
+            <p className="text-white/40 text-[10px] flex items-center gap-1 mt-0.5">
+              <MapPin size={9} /> GPS required · personal phone
+            </p>
+          )}
+        </div>
         {bStep === 'status' && selWorker && !loading && (
           <button onClick={() => loadStatus(selWorker._id)}
             className="ml-auto p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/60 hover:text-white">

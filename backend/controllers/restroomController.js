@@ -18,47 +18,66 @@ async function validateDevice(deviceToken) {
   return AttendanceDevice.findOne({ deviceToken, status: 'approved' }).lean();
 }
 
+// ─── Dual-auth context resolver (same pattern as breakController) ─────────────
+async function resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId }) {
+  if (deviceToken) {
+    const device = await validateDevice(deviceToken);
+    if (!device) return { error: 'Invalid or unapproved device' };
+    return { company: device.company, branchId: device.branch, branchName: device.branchName || '', workerId: reqWorkerId, authType: 'device', device };
+  }
+  if (pin) {
+    if (!gps?.lat || !gps?.lng)
+      return { error: 'GPS location is required when using a personal phone. Please allow location access.' };
+    const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
+      .populate('branchId', 'name restroomSettings').lean();
+    if (!worker) return { error: 'Invalid PIN' };
+    const branch = worker.branchId;
+    return { company: worker.company, branchId: branch?._id || worker.branchId, branchName: branch?.name || worker.branch || '', workerId: String(worker._id), authType: 'pin', pinWorker: worker, branch };
+  }
+  return { error: 'deviceToken or PIN required' };
+}
+
 // ─── POST /api/restroom/start ─────────────────────────────────────────────────
 const startRestroom = async (req, res) => {
-  const { deviceToken, workerId } = req.body;
-  if (!deviceToken || !workerId)
-    return res.status(400).json({ success: false, message: 'deviceToken and workerId required' });
+  const { deviceToken, pin, gps, workerId: reqWorkerId } = req.body;
 
-  const device = await validateDevice(deviceToken);
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+  const ctx = await resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
 
-  const worker = await Worker.findOne({
-    _id: workerId, company: device.company, employmentStatus: 'active',
-  }).lean();
+  const { company, branchId, branchName, authType } = ctx;
+  const workerId = ctx.workerId;
+
+  const worker = ctx.pinWorker
+    || await Worker.findOne({ _id: workerId, company, employmentStatus: 'active' }).lean();
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
 
   const dateStr = todayUtcStr();
 
   // Must be clocked in and not clocked out
   const [clockIn, clockOut] = await Promise.all([
-    Attendance.findOne({ company: device.company, worker: worker._id, date: dateStr, type: 'clock_in'  }).lean(),
-    Attendance.findOne({ company: device.company, worker: worker._id, date: dateStr, type: 'clock_out' }).lean(),
+    Attendance.findOne({ company, worker: worker._id, date: dateStr, type: 'clock_in'  }).lean(),
+    Attendance.findOne({ company, worker: worker._id, date: dateStr, type: 'clock_out' }).lean(),
   ]);
   if (!clockIn)  return res.status(400).json({ success: false, message: 'You must clock in before taking a restroom break' });
   if (clockOut)  return res.status(400).json({ success: false, message: 'You have already clocked out today' });
 
   // Only one active restroom break at a time
   const existing = await RestroomBreak.findOne({
-    company: device.company, worker: worker._id, date: dateStr, status: 'active',
+    company, worker: worker._id, date: dateStr, status: 'active',
   }).lean();
   if (existing)
     return res.status(400).json({ success: false, message: 'You already have an active restroom break — clock back in first' });
 
   // Fetch branch settings for configured restroom limits
-  const branch         = await Branch.findById(device.branch).lean();
+  const branch         = ctx.branch || await Branch.findById(branchId).lean();
   const allowedMinutes  = branch?.restroomSettings?.allowedMinutes  ?? DEFAULT_ALLOWED_MINUTES;
   const deductionPerMin = branch?.restroomSettings?.deductionPerMin ?? DEFAULT_DEDUCTION_PER_MIN;
 
   const now = new Date();
   const rb  = await RestroomBreak.create({
-    company:         device.company,
-    branchId:        device.branch,
-    branchName:      device.branchName || '',
+    company,
+    branchId,
+    branchName,
     worker:          worker._id,
     workerName:      worker.fullName,
     workerRole:      worker.role,
@@ -83,16 +102,17 @@ const startRestroom = async (req, res) => {
 
 // ─── POST /api/restroom/end ───────────────────────────────────────────────────
 const endRestroom = async (req, res) => {
-  const { deviceToken, workerId } = req.body;
-  if (!deviceToken || !workerId)
-    return res.status(400).json({ success: false, message: 'deviceToken and workerId required' });
+  const { deviceToken, pin, gps, workerId: reqWorkerId } = req.body;
 
-  const device = await validateDevice(deviceToken);
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+  const ctx = await resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
+
+  const { company } = ctx;
+  const workerId = ctx.workerId;
 
   const dateStr   = todayUtcStr();
   const activeRB  = await RestroomBreak.findOne({
-    company: device.company, worker: workerId, date: dateStr, status: 'active',
+    company, worker: workerId, date: dateStr, status: 'active',
   });
   if (!activeRB)
     return res.status(400).json({ success: false, message: 'No active restroom break found' });
@@ -150,16 +170,17 @@ const endRestroom = async (req, res) => {
 
 // ─── GET /api/restroom/status — terminal/portal queries ──────────────────────
 const getRestroomStatus = async (req, res) => {
-  const { deviceToken, workerId } = req.query;
-  if (!deviceToken || !workerId)
-    return res.status(400).json({ success: false, message: 'deviceToken and workerId required' });
+  const { deviceToken, workerId: reqWorkerId, pin } = req.query;
 
-  const device = await validateDevice(deviceToken);
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid device' });
+  const ctx = await resolveRestroomContext({ deviceToken, pin, gps: null, reqWorkerId });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
+
+  const { company } = ctx;
+  const workerId = ctx.workerId;
 
   const dateStr    = todayUtcStr();
   const todayBreaks = await RestroomBreak.find({
-    company: device.company, worker: workerId, date: dateStr,
+    company, worker: workerId, date: dateStr,
   }).sort({ startTime: 1 }).lean();
 
   const activeRB = todayBreaks.find(b => b.status === 'active');
