@@ -1,4 +1,5 @@
 {
+  "id": "/terminal",
   "name": "Sage Attendance Terminal",
   "short_name": "Terminal",
   "description": "Worker clock-in / clock-out terminal for Sage Energy",

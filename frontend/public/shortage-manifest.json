@@ -1,4 +1,5 @@
 {
+  "id": "/shortage",
   "name": "Sage Shortage Report",
   "short_name": "Shortage",
   "description": "Worker shortage self-service reporting for Sage Energy",
