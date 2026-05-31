@@ -15,7 +15,7 @@ import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
   Key, ChevronLeft, ChevronRight, CheckCircle, XCircle,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
-  RotateCcw, MapPin, Coffee, Play, Square, FileWarning,
+  RotateCcw, MapPin, Coffee, Play, Square, FileWarning, Droplets,
 } from 'lucide-react';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
@@ -587,6 +587,13 @@ function MenuView({ session, onNavigate }) {
               onClick={() => onNavigate('break')}
             />
             <MenuCard
+              icon={Droplets}
+              label="Restroom Break"
+              sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end a restroom break' : 'View restroom break history'}
+              color="bg-blue-500"
+              onClick={() => onNavigate('restroom')}
+            />
+            <MenuCard
               icon={FileWarning}
               label="Book Offence"
               sub="Record a worker offence"
@@ -1078,7 +1085,7 @@ function fmtSecs(s) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-function BreakView({ session, onBack }) {
+function BreakView({ session, onBack, directRestroom = false }) {
   const { worker, deviceInfo, shiftWorkers } = session;
   const isSup = worker.isSupervisor;
 
@@ -1241,7 +1248,7 @@ function BreakView({ session, onBack }) {
           <ChevronLeft size={20} />
         </button>
         <h2 className="text-white font-bold text-lg">
-          {bStep === 'pick' ? 'Select Worker' : 'Breaks'}
+          {bStep === 'pick' ? 'Select Worker' : directRestroom ? 'Restroom Break' : 'Breaks'}
         </h2>
         {bStep === 'status' && selWorker && !loading && (
           <button onClick={() => loadStatus(selWorker._id)}
@@ -1348,7 +1355,7 @@ function BreakView({ session, onBack }) {
                 })()}
 
                 {/* ── Available breaks ──────────────────────────── */}
-                {!status.activeBreak && (
+                {!status.activeBreak && !directRestroom && (
                   <div className="space-y-2">
                     <p className="text-white/40 text-xs font-semibold uppercase tracking-wider">Available Breaks</p>
                     {status.availableBreaks?.map(br => {
@@ -2447,6 +2454,11 @@ export default function WorkerPortal() {
       {/* ── Breaks ─────────────────────────────────────────────────────────── */}
       {step === 'break' && session && (
         <BreakView session={session} onBack={() => setStep('menu')} />
+      )}
+
+      {/* ── Restroom Break ─────────────────────────────────────────────────── */}
+      {step === 'restroom' && session && (
+        <BreakView session={session} onBack={() => setStep('menu')} directRestroom />
       )}
 
       {/* ── Shortage ───────────────────────────────────────────────────────── */}
