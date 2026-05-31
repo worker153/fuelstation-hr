@@ -334,7 +334,13 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
 
   return (
     <div className="space-y-3">
-      <WorkerBadge worker={worker} sub={type === 'clock_in' ? '🟢 Clocking IN' : '🔴 Clocking OUT'} />
+      <WorkerBadge worker={worker} sub={
+        type === 'clock_in'    ? '🟢 Clocking IN'
+        : type === 'clock_out'   ? '🔴 Clocking OUT'
+        : type === 'break_start' ? '☕ Going on Break'
+        : type === 'break_end'   ? '✅ Returning from Break'
+        : ''
+      } />
 
       {stage === 'loading' && (
         <div className="text-center py-6 space-y-3">
@@ -389,9 +395,15 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
           <button
             onClick={() => onVerified(capturedB64, liveScore)}
             className={`w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2
-              ${type === 'clock_in' ? 'bg-green-600 hover:bg-green-500' : 'bg-red-500 hover:bg-red-400'}`}
+              ${type === 'clock_in'    ? 'bg-green-600 hover:bg-green-500'
+              : type === 'clock_out'   ? 'bg-red-500 hover:bg-red-400'
+              : type === 'break_start' ? 'bg-orange-500 hover:bg-orange-400'
+              :                          'bg-green-600 hover:bg-green-500'}`}
           >
-            {type === 'clock_in' ? <><LogIn size={20} /> Confirm Clock In</> : <><LogOut size={20} /> Confirm Clock Out</>}
+            {type === 'clock_in'    ? <><LogIn       size={20} /> Confirm Clock In</>
+            : type === 'clock_out'  ? <><LogOut      size={20} /> Confirm Clock Out</>
+            : type === 'break_start'? <><Coffee      size={20} /> Confirm Break Start</>
+            :                         <><CheckCircle size={20} /> Confirm Return</>}
           </button>
           <button onClick={onBack} className="w-full py-2.5 rounded-xl border border-white/20 text-white/50 text-sm hover:bg-white/10">← Back</button>
         </div>
@@ -1064,14 +1076,18 @@ function BreakView({ session, onBack }) {
   const { worker, deviceInfo, shiftWorkers } = session;
   const isSup = worker.isSupervisor;
 
-  const [bStep,      setBStep     ] = useState(isSup ? 'pick' : 'status');
-  const [selWorker,  setSelWorker ] = useState(isSup ? null : worker);
-  const [status,     setStatus    ] = useState(null);
-  const [loading,    setLoading   ] = useState(false);
-  const [actLoading, setActLoading] = useState(false);
-  const [error,      setError     ] = useState('');
-  const [result,     setResult    ] = useState(null);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const [bStep,           setBStep          ] = useState(isSup ? 'pick' : 'status');
+  const [selWorker,       setSelWorker      ] = useState(isSup ? null : worker);
+  const [status,          setStatus         ] = useState(null);
+  const [loading,         setLoading        ] = useState(false);
+  const [actLoading,      setActLoading     ] = useState(false);
+  const [error,           setError          ] = useState('');
+  const [result,          setResult         ] = useState(null);
+  const [elapsedSec,      setElapsedSec     ] = useState(0);
+  const [pendingBreakType,setPendingBreakType] = useState(null);
+
+  // Is the selected worker the logged-in worker? (face required for self only)
+  const isSelf = !selWorker || String(selWorker._id) === String(worker._id);
 
   const loadStatus = useCallback(async (wId) => {
     setLoading(true); setError('');
@@ -1142,12 +1158,16 @@ function BreakView({ session, onBack }) {
       else onBack();
       return;
     }
+    if (bStep === 'face_start' || bStep === 'face_end') {
+      setBStep('status'); setPendingBreakType(null); return;
+    }
     if (bStep === 'result') { setResult(null); setStatus(null); setBStep('status'); }
   };
 
   return (
     <div className="p-4 max-w-sm mx-auto">
-      {/* Header */}
+      {/* Header — hidden during face scan and result */}
+      {bStep !== 'face_start' && bStep !== 'face_end' && bStep !== 'result' && (
       <div className="flex items-center gap-3 mb-4">
         <button onClick={handleBack} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors">
           <ChevronLeft size={20} />
@@ -1162,6 +1182,7 @@ function BreakView({ session, onBack }) {
           </button>
         )}
       </div>
+      )}
 
       {/* ── Supervisor picks worker ──────────────────────────────── */}
       {bStep === 'pick' && (
@@ -1247,7 +1268,9 @@ function BreakView({ session, onBack }) {
                             style={{ width: `${pct}%` }} />
                         </div>
                       </div>
-                      <button onClick={doEnd} disabled={actLoading}
+                      <button
+                        onClick={() => { if (isSelf) setBStep('face_end'); else doEnd(); }}
+                        disabled={actLoading}
                         className="w-full py-3.5 rounded-2xl bg-orange-500 hover:bg-orange-400 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
                         {actLoading ? <Loader size={16} className="animate-spin" /> : <Square size={16} />}
                         End Break
@@ -1284,7 +1307,12 @@ function BreakView({ session, onBack }) {
                                 Taken ✓
                               </span>
                             ) : canStart ? (
-                              <button onClick={() => doStart(br.type)} disabled={actLoading}
+                              <button
+                                onClick={() => {
+                                  if (isSelf) { setPendingBreakType(br.type); setBStep('face_start'); }
+                                  else doStart(br.type);
+                                }}
+                                disabled={actLoading}
                                 className="bg-orange-500 hover:bg-orange-400 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 shrink-0 disabled:opacity-50 transition-colors">
                                 {actLoading ? <Loader size={12} className="animate-spin" /> : <Play size={12} />}
                                 Start
@@ -1355,6 +1383,46 @@ function BreakView({ session, onBack }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Face verification — break start ─────────────────────── */}
+      {bStep === 'face_start' && selWorker && (
+        !selWorker.hasFace ? (
+          <FaceRegister
+            worker={selWorker}
+            token={deviceInfo?.deviceToken}
+            onDone={(_desc, selfieB64) => doStart(pendingBreakType)}
+            onBack={() => { setBStep('status'); setPendingBreakType(null); }}
+          />
+        ) : (
+          <FaceVerify
+            worker={selWorker}
+            storedDescriptor={selWorker.faceDescriptor}
+            type="break_start"
+            onVerified={() => doStart(pendingBreakType)}
+            onBack={() => { setBStep('status'); setPendingBreakType(null); }}
+          />
+        )
+      )}
+
+      {/* ── Face verification — break end ────────────────────────── */}
+      {bStep === 'face_end' && selWorker && (
+        !selWorker.hasFace ? (
+          <FaceRegister
+            worker={selWorker}
+            token={deviceInfo?.deviceToken}
+            onDone={() => doEnd()}
+            onBack={() => setBStep('status')}
+          />
+        ) : (
+          <FaceVerify
+            worker={selWorker}
+            storedDescriptor={selWorker.faceDescriptor}
+            type="break_end"
+            onVerified={() => doEnd()}
+            onBack={() => setBStep('status')}
+          />
+        )
       )}
 
       {/* ── Result ──────────────────────────────────────────────── */}
