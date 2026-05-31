@@ -486,6 +486,7 @@ export default function Breaks() {
   });
 
   const selBranch = branches.find(b => b._id === branchId);
+  const [activeTab, setActiveTab] = useState('breaks');
 
   return (
     <div className="p-4 max-w-4xl mx-auto space-y-5">
@@ -498,9 +499,9 @@ export default function Breaks() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">Track all worker breaks — taken, overstayed and missed</p>
         </div>
-        <button onClick={load} disabled={loading}
+        <button onClick={() => { load(); loadRestroom(); }} disabled={loading || rstLoading}
           className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm disabled:opacity-50">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+          <RefreshCw size={14} className={(loading || rstLoading) ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 
@@ -520,7 +521,7 @@ export default function Breaks() {
             {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
           </select>
         </div>
-        {canManage && branchId && (
+        {canManage && branchId && activeTab === 'breaks' && (
           <>
             <button onClick={() => setShowSettings(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium shadow-sm transition-colors">
@@ -533,6 +534,45 @@ export default function Breaks() {
             </button>
           </>
         )}
+      </div>
+
+      {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+      <div className="flex gap-1 bg-gray-100 rounded-2xl p-1">
+        <button
+          onClick={() => setActiveTab('breaks')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            activeTab === 'breaks'
+              ? 'bg-white text-brand-700 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Coffee size={15} /> Breaks
+          {summary && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'breaks' ? 'bg-brand-100 text-brand-700' : 'bg-gray-200 text-gray-500'}`}>
+              {summary.total}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('restroom')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            activeTab === 'restroom'
+              ? 'bg-white text-blue-700 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          🚻 Restroom Trips
+          {rstSummary.length > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'restroom' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'}`}>
+              {rstSummary.reduce((a, s) => a + s.trips, 0)}
+            </span>
+          )}
+          {rstSummary.some(s => s.overstays > 0) && (
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-bold bg-red-100 text-red-600">
+              !
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Settings modal */}
@@ -556,145 +596,137 @@ export default function Breaks() {
         </div>
       )}
 
-      {/* Summary cards */}
-      {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SummaryCard icon={Coffee}       label="Total Breaks"  value={summary.total}      cls="bg-brand-50  text-brand-700" />
-          <SummaryCard icon={CheckCircle}  label="Completed"     value={summary.completed}  cls="bg-green-50 text-green-700" />
-          <SummaryCard icon={AlertTriangle}label="Overstayed"    value={summary.overstayed} cls="bg-red-50   text-red-700" />
-          <SummaryCard icon={XCircle}      label="Missed"        value={summary.missed}     cls="bg-gray-50  text-gray-700" />
-        </div>
-      )}
+      {/* ── BREAKS TAB ───────────────────────────────────────────────────── */}
+      {activeTab === 'breaks' && (
+        <>
+          {/* Summary cards */}
+          {summary && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <SummaryCard icon={Coffee}       label="Total Breaks"  value={summary.total}      cls="bg-brand-50  text-brand-700" />
+              <SummaryCard icon={CheckCircle}  label="Completed"     value={summary.completed}  cls="bg-green-50 text-green-700" />
+              <SummaryCard icon={AlertTriangle}label="Overstayed"    value={summary.overstayed} cls="bg-red-50   text-red-700" />
+              <SummaryCard icon={XCircle}      label="Missed"        value={summary.missed}     cls="bg-gray-50  text-gray-700" />
+            </div>
+          )}
 
-      {/* Per-type breakdown */}
-      {summary?.byType && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Breakdown by Break Type</p>
-          {['morning','afternoon','night'].map(t => (
-            <TypeBreakRow key={t} type={t} stats={summary.byType[t] || { total: 0, completed: 0, overstayed: 0, missed: 0, active: 0 }} />
-          ))}
-        </div>
-      )}
+          {/* Per-type breakdown */}
+          {summary?.byType && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Breakdown by Break Type</p>
+              {['morning','afternoon','night'].map(t => (
+                <TypeBreakRow key={t} type={t} stats={summary.byType[t] || { total: 0, completed: 0, overstayed: 0, missed: 0, active: 0 }} />
+              ))}
+            </div>
+          )}
 
-      {/* Worker list */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-gray-700">
-            Workers with break records {selBranch ? `· ${selBranch.name}` : ''} · {date}
-          </p>
-          <span className="text-xs text-gray-400">{workerGroups.length} worker{workerGroups.length !== 1 ? 's' : ''}</span>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <RefreshCw size={24} className="animate-spin text-brand-400" />
-          </div>
-        ) : workerGroups.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <Coffee size={36} className="mx-auto mb-3 opacity-30" />
-            <p className="font-medium">No break records for this date</p>
-            <p className="text-sm mt-1">Records appear once workers start breaks on the terminal</p>
-          </div>
-        ) : (
+          {/* Worker list */}
           <div>
-            {/* Alert banner if any overstays */}
-            {summary?.overstayed > 0 && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-3">
-                <AlertTriangle size={16} className="text-red-500 shrink-0" />
-                <p className="text-sm text-red-700 font-medium">
-                  {summary.overstayed} worker{summary.overstayed !== 1 ? 's' : ''} overstayed their break
-                </p>
-              </div>
-            )}
-            {summary?.active > 0 && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-3">
-                <Clock size={16} className="text-blue-500 shrink-0" />
-                <p className="text-sm text-blue-700 font-medium">
-                  {summary.active} worker{summary.active !== 1 ? 's' : ''} currently on break
-                </p>
-              </div>
-            )}
-            {workerGroups.map((grp, i) => (
-              <WorkerRow key={i} workerBreaks={grp} />
-            ))}
-          </div>
-        )}
-      </div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-700">
+                Workers with break records {selBranch ? `· ${selBranch.name}` : ''} · {date}
+              </p>
+              <span className="text-xs text-gray-400">{workerGroups.length} worker{workerGroups.length !== 1 ? 's' : ''}</span>
+            </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-xs text-gray-500 border-t border-gray-100 pt-4">
-        <span className="font-semibold">Legend:</span>
-        {Object.entries(STATUS_CFG).map(([k, v]) => (
-          <span key={k} className={`px-2 py-0.5 rounded-full ${v.cls}`}>{v.label}</span>
-        ))}
-        <span className="ml-2">🌅 Morning · ☀️ Afternoon · 🌙 Night</span>
-      </div>
-
-      {/* ── Restroom Trips Section ─────────────────────────────────────────── */}
-      <div className="border-t border-gray-100 pt-5">
-        <button onClick={() => setShowRestroom(v => !v)}
-          className="w-full flex items-center justify-between mb-3 hover:opacity-80 transition-opacity">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🚻</span>
-            <h2 className="text-base font-bold text-gray-800">Restroom Trips</h2>
-            {rstSummary.length > 0 && (
-              <span className="bg-blue-100 text-blue-700 border border-blue-200 text-xs px-2 py-0.5 rounded-full font-bold">
-                {rstSummary.length} worker{rstSummary.length !== 1 ? 's' : ''}
-              </span>
-            )}
-            {rstSummary.some(s => s.overstays > 0) && (
-              <span className="bg-red-100 text-red-700 border border-red-200 text-xs px-2 py-0.5 rounded-full font-bold">
-                {rstSummary.filter(s => s.overstays > 0).length} overstay{rstSummary.filter(s => s.overstays > 0).length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-          {showRestroom ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-        </button>
-
-        {showRestroom && (
-          <>
-            {/* Quick summary strip */}
-            {rstSummary.length > 0 && (
-              <div className="grid grid-cols-4 gap-3 mb-4">
-                {[
-                  { label: 'Workers',      value: rstSummary.length,                                                  cls: 'bg-blue-50 text-blue-700'  },
-                  { label: 'Total Trips',  value: rstSummary.reduce((a, s) => a + s.trips, 0),                       cls: 'bg-brand-50 text-brand-700' },
-                  { label: 'Overstays',    value: rstSummary.reduce((a, s) => a + s.overstays, 0),                   cls: 'bg-red-50 text-red-700'    },
-                  { label: 'Total Deducted', value: `₦${rstSummary.reduce((a, s) => a + s.totalDeducted, 0).toLocaleString()}`, cls: 'bg-amber-50 text-amber-700' },
-                ].map(card => (
-                  <div key={card.label} className={`rounded-2xl p-3 text-center ${card.cls}`}>
-                    <p className="text-lg font-extrabold leading-tight">{card.value}</p>
-                    <p className="text-xs font-medium mt-0.5 opacity-80">{card.label}</p>
-                  </div>
-                ))}
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <RefreshCw size={24} className="animate-spin text-brand-400" />
               </div>
-            )}
-
-            {rstLoading ? (
-              <div className="flex justify-center py-8">
-                <RefreshCw size={20} className="animate-spin text-blue-400" />
-              </div>
-            ) : rstSummary.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <span className="text-4xl block mb-3">🚻</span>
-                <p className="font-medium text-sm">No restroom trips recorded for this date</p>
+            ) : workerGroups.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <Coffee size={36} className="mx-auto mb-3 opacity-30" />
+                <p className="font-medium">No break records for this date</p>
+                <p className="text-sm mt-1">Records appear once workers start breaks on the terminal</p>
               </div>
             ) : (
               <div>
-                {rstSummary.some(s => s.trips >= 5) && (
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-3">
-                    <AlertTriangle size={16} className="text-amber-500 shrink-0" />
-                    <p className="text-sm text-amber-700 font-medium">
-                      {rstSummary.filter(s => s.trips >= 5).length} worker{rstSummary.filter(s => s.trips >= 5).length !== 1 ? 's' : ''} made 5+ trips today
+                {summary?.overstayed > 0 && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-3">
+                    <AlertTriangle size={16} className="text-red-500 shrink-0" />
+                    <p className="text-sm text-red-700 font-medium">
+                      {summary.overstayed} worker{summary.overstayed !== 1 ? 's' : ''} overstayed their break
                     </p>
                   </div>
                 )}
-                {rstSummary.map((s, i) => <RestroomWorkerRow key={s.workerId || i} s={s} />)}
+                {summary?.active > 0 && (
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-3">
+                    <Clock size={16} className="text-blue-500 shrink-0" />
+                    <p className="text-sm text-blue-700 font-medium">
+                      {summary.active} worker{summary.active !== 1 ? 's' : ''} currently on break
+                    </p>
+                  </div>
+                )}
+                {workerGroups.map((grp, i) => (
+                  <WorkerRow key={i} workerBreaks={grp} />
+                ))}
               </div>
             )}
-          </>
-        )}
-      </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap gap-3 text-xs text-gray-500 border-t border-gray-100 pt-4">
+            <span className="font-semibold">Legend:</span>
+            {Object.entries(STATUS_CFG).map(([k, v]) => (
+              <span key={k} className={`px-2 py-0.5 rounded-full ${v.cls}`}>{v.label}</span>
+            ))}
+            <span className="ml-2">🌅 Morning · ☀️ Afternoon · 🌙 Night</span>
+          </div>
+        </>
+      )}
+
+      {/* ── RESTROOM TAB ─────────────────────────────────────────────────── */}
+      {activeTab === 'restroom' && (
+        <>
+          {/* Quick summary strip */}
+          {rstSummary.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Workers',        value: rstSummary.length,                                                           cls: 'bg-blue-50 text-blue-700'   },
+                { label: 'Total Trips',    value: rstSummary.reduce((a, s) => a + s.trips, 0),                                cls: 'bg-brand-50 text-brand-700'  },
+                { label: 'Overstays',      value: rstSummary.reduce((a, s) => a + s.overstays, 0),                            cls: 'bg-red-50 text-red-700'     },
+                { label: 'Total Deducted', value: `₦${rstSummary.reduce((a, s) => a + s.totalDeducted, 0).toLocaleString()}`, cls: 'bg-amber-50 text-amber-700'  },
+              ].map(card => (
+                <div key={card.label} className={`rounded-2xl p-4 ${card.cls}`}>
+                  <p className="text-2xl font-extrabold leading-tight">{card.value}</p>
+                  <p className="text-sm font-semibold mt-0.5 opacity-80">{card.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {rstLoading ? (
+            <div className="flex justify-center py-12">
+              <RefreshCw size={24} className="animate-spin text-blue-400" />
+            </div>
+          ) : rstSummary.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <span className="text-5xl block mb-4">🚻</span>
+              <p className="font-semibold text-base">No restroom trips recorded</p>
+              <p className="text-sm mt-1">for {date}{selBranch ? ` · ${selBranch.name}` : ''}</p>
+            </div>
+          ) : (
+            <div>
+              {rstSummary.some(s => s.trips >= 5) && (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+                  <p className="text-sm text-amber-700 font-medium">
+                    {rstSummary.filter(s => s.trips >= 5).length} worker{rstSummary.filter(s => s.trips >= 5).length !== 1 ? 's' : ''} made 5+ restroom trips today
+                  </p>
+                </div>
+              )}
+              <div className="mt-1">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Workers — sorted by most trips
+                  </p>
+                  <span className="text-xs text-gray-400">{rstSummary.length} worker{rstSummary.length !== 1 ? 's' : ''}</span>
+                </div>
+                {rstSummary.map((s, i) => <RestroomWorkerRow key={s.workerId || i} s={s} />)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
