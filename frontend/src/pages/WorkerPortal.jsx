@@ -1089,6 +1089,13 @@ function BreakView({ session, onBack }) {
     if (bStep === 'status' && selWorker) loadStatus(selWorker._id);
   }, [selWorker, bStep]);
 
+  // Auto-refresh every 60 s so windows open/close without manual tap
+  useEffect(() => {
+    if (bStep !== 'status' || !selWorker) return;
+    const t = setInterval(() => loadStatus(selWorker._id), 60000);
+    return () => clearInterval(t);
+  }, [bStep, selWorker, loadStatus]);
+
   // Live countdown
   useEffect(() => {
     if (!status?.activeBreak) { setElapsedSec(0); return; }
@@ -1201,9 +1208,14 @@ function BreakView({ session, onBack }) {
 
             return (
               <>
-                {/* Attendance status */}
+                {/* Attendance status + server time */}
                 <div className={`rounded-xl px-4 py-2.5 text-sm font-bold text-center border ${attCfg.cls}`}>
                   {attCfg.label}
+                  {status.serverTimeWAT && (
+                    <span className="block text-xs font-normal opacity-60 mt-0.5">
+                      Server time: {status.serverTimeWAT} WAT
+                    </span>
+                  )}
                 </div>
 
                 {/* ── Active break countdown ───────────────────── */}

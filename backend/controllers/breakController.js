@@ -267,6 +267,11 @@ const getBreakStatus = async (req, res) => {
     };
   });
 
+  // Server WAT time for client-side debug / display
+  const watH   = Math.floor(nowMins / 60);
+  const watM   = nowMins % 60;
+  const serverTimeWAT = `${String(watH).padStart(2,'0')}:${String(watM).padStart(2,'0')}`;
+
   res.json({
     success: true,
     data: {
@@ -274,6 +279,7 @@ const getBreakStatus = async (req, res) => {
       clockedIn,
       clockedOut,
       clockInTime: clockIn?.timestamp || null,
+      serverTimeWAT,
       activeBreak: activeBreak ? {
         _id:            activeBreak._id,
         breakType:      activeBreak.breakType,

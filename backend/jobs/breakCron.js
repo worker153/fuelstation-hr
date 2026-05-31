@@ -16,6 +16,8 @@ const Attendance = require('../models/Attendance');
 const { getBreakConfig }            = require('../controllers/breakController');
 const { createAttendanceShortage }  = require('../controllers/shortageController');
 
+const WAT_OFFSET_MINS = 60; // Nigeria WAT = UTC+1
+
 function toMins(hhmm) {
   if (!hhmm) return null;
   const [h, m] = hhmm.split(':').map(Number);
@@ -24,7 +26,8 @@ function toMins(hhmm) {
 
 async function runBreakCron() {
   const now     = new Date();
-  const nowMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  // Use WAT local time — break windows are stored as WAT times
+  const nowMins = (now.getUTCHours() * 60 + now.getUTCMinutes() + WAT_OFFSET_MINS) % (24 * 60);
   const dateStr = now.toISOString().split('T')[0];
 
   // ── 1. Overstayed detection ───────────────────────────────────────────────────
