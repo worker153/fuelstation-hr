@@ -52,6 +52,16 @@ async function validateDevice(deviceToken) {
   return AttendanceDevice.findOne({ deviceToken, status: 'approved' }).lean();
 }
 
+// ─── Haversine distance (metres) ──────────────────────────────────────────────
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a  = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 // ─── Dual-auth context resolver ───────────────────────────────────────────────
 // Accepts either:  deviceToken (approved branch device)
 //              or  pin + gps   (worker's personal phone — GPS required for mutating ops)
@@ -74,10 +84,26 @@ async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId, require
     if (requireGPS && (!gps?.lat || !gps?.lng))
       return { error: 'GPS location is required when starting a break from your personal phone. Please allow location access.' };
     const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
-      .populate('branchId', 'name breakSettings restroomSettings')
+      .populate('branchId', 'name breakSettings restroomSettings location personalPhoneRadius')
       .lean();
     if (!worker) return { error: 'Invalid PIN — worker not found' };
     const branch = worker.branchId; // populated
+
+    // ── GPS radius check (personal phone only, mutating ops) ─────────────────
+    if (requireGPS && gps?.lat != null && gps?.lng != null) {
+      const bLat = branch?.location?.lat;
+      const bLng = branch?.location?.lng;
+      const radius = branch?.personalPhoneRadius ?? 150;
+      if (bLat != null && bLng != null && radius > 0) {
+        const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
+        if (dist > radius) {
+          return {
+            error: `You are ${Math.round(dist)}m from the branch. Must be within ${radius}m to use a personal phone for breaks.`,
+          };
+        }
+      }
+    }
+
     return {
       company:    worker.company,
       branchId:   branch?._id || worker.branchId,

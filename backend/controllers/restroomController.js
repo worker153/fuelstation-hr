@@ -9,6 +9,16 @@ const { createAttendanceShortage } = require('./shortageController');
 const DEFAULT_ALLOWED_MINUTES   = 2;
 const DEFAULT_DEDUCTION_PER_MIN = 500;
 
+// ─── Haversine distance (metres) ──────────────────────────────────────────────
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a  = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 function todayUtcStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -30,9 +40,25 @@ async function resolveRestroomContext({ deviceToken, pin, gps, reqWorkerId, requ
     if (requireGPS && (!gps?.lat || !gps?.lng))
       return { error: 'GPS location is required when using a personal phone. Please allow location access.' };
     const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
-      .populate('branchId', 'name restroomSettings').lean();
+      .populate('branchId', 'name restroomSettings location personalPhoneRadius').lean();
     if (!worker) return { error: 'Invalid PIN' };
     const branch = worker.branchId;
+
+    // ── GPS radius check (personal phone only, mutating ops) ─────────────────
+    if (requireGPS && gps?.lat != null && gps?.lng != null) {
+      const bLat = branch?.location?.lat;
+      const bLng = branch?.location?.lng;
+      const radius = branch?.personalPhoneRadius ?? 150;
+      if (bLat != null && bLng != null && radius > 0) {
+        const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
+        if (dist > radius) {
+          return {
+            error: `You are ${Math.round(dist)}m from the branch. Must be within ${radius}m to use a personal phone for restroom breaks.`,
+          };
+        }
+      }
+    }
+
     return { company: worker.company, branchId: branch?._id || worker.branchId, branchName: branch?.name || worker.branch || '', workerId: String(worker._id), authType: 'pin', pinWorker: worker, branch };
   }
   return { error: 'deviceToken or PIN required' };

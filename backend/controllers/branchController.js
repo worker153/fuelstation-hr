@@ -202,8 +202,10 @@ const createBranch = async (req, res) => {
     phone:     phone?.trim(),
     manager:   managerId || undefined,
     createdBy: req.user._id,
-    attendanceSettings: req.body.attendanceSettings || undefined,
-    attendanceRules:    req.body.attendanceRules    || undefined,
+    attendanceSettings:  req.body.attendanceSettings  || undefined,
+    attendanceRules:     req.body.attendanceRules     || undefined,
+    personalPhoneRadius: req.body.personalPhoneRadius != null
+      ? Number(req.body.personalPhoneRadius) : undefined,
   });
 
   await branch.populate('manager', 'name email role');
@@ -273,6 +275,9 @@ const updateBranch = async (req, res) => {
       ...req.body.salesShortageRule,
     };
     branch.markModified('salesShortageRule');
+  }
+  if (req.body.personalPhoneRadius != null) {
+    branch.personalPhoneRadius = Number(req.body.personalPhoneRadius);
   }
 
   await branch.save();

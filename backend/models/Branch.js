@@ -80,6 +80,10 @@ const branchSchema = new mongoose.Schema({
     deductionPerMin: { type: Number, default: 500 },  // ₦ per extra minute
   },
 
+  // GPS radius (metres) enforced when workers start/end breaks from a personal phone.
+  // 0 = no enforcement. Only applies when branch.location is set.
+  personalPhoneRadius: { type: Number, default: 150 },
+
   // Default penalty amounts per shortage reason — 0 means no preset (supervisor enters manually)
   penaltyPresets: {
     cash_shortage:      { type: Number, default: 0 },

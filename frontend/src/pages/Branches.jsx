@@ -205,6 +205,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     phone:     branch?.phone     || '',
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
+    personalPhoneRadius: branch?.personalPhoneRadius ?? 150,
     attendanceRules:   getInitialRules(),
     salesShortageRule: getInitialRule(),
   });
@@ -369,13 +370,14 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = {
-        name:              form.name.trim(),
-        address:           form.address.trim(),
-        phone:             form.phone.trim(),
-        managerId:         form.managerId || null,
-        location:          form.location  || null,
-        attendanceRules:   form.attendanceRules,
-        salesShortageRule: form.salesShortageRule,
+        name:                form.name.trim(),
+        address:             form.address.trim(),
+        phone:               form.phone.trim(),
+        managerId:           form.managerId || null,
+        location:            form.location  || null,
+        personalPhoneRadius: Number(form.personalPhoneRadius) || 150,
+        attendanceRules:     form.attendanceRules,
+        salesShortageRule:   form.salesShortageRule,
       };
       const res = branch
         ? await api.put(`/branches/${branch._id}`, payload)
@@ -605,6 +607,39 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
               {showMap && (
                 <MapPicker value={form.location} onChange={loc => set('location', loc)} />
               )}
+
+              {/* Personal phone break radius */}
+              <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 px-3.5 py-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Navigation size={12} className="text-brand-500" />
+                  <p className="text-xs font-semibold text-gray-700">Personal Phone Break Radius</p>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Workers using their own phone to start/end breaks must be within this distance from the branch.
+                  Set to <strong>0</strong> to disable the check.
+                  {!form.location?.lat && <span className="text-amber-600"> — set branch GPS first for this to work.</span>}
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    max="5000"
+                    step="10"
+                    className="input w-28 text-sm py-2"
+                    value={form.personalPhoneRadius}
+                    onChange={e => set('personalPhoneRadius', Number(e.target.value))}
+                  />
+                  <span className="text-sm text-gray-500 font-medium">metres</span>
+                  {form.personalPhoneRadius > 0 && form.location?.lat && (
+                    <span className="text-xs text-brand-600 font-medium">
+                      ✓ Enforced — workers must clock in within {form.personalPhoneRadius}m
+                    </span>
+                  )}
+                  {form.personalPhoneRadius === 0 && (
+                    <span className="text-xs text-amber-600 font-medium">No radius limit</span>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* ── Section 3: Attendance Rules ───────────────────────────────── */}
@@ -869,6 +904,11 @@ function BranchCard({ branch, canManage, onEdit, onToggle }) {
               <span className="text-xs font-mono">
                 {branch.location.lat.toFixed(5)}, {branch.location.lng.toFixed(5)}
               </span>
+              {branch.personalPhoneRadius > 0 && (
+                <span className="text-xs text-brand-500 font-medium ml-1">
+                  · {branch.personalPhoneRadius}m radius
+                </span>
+              )}
             </div>
           )}
         </div>
