@@ -557,6 +557,17 @@ const TABS = [
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const navigate = useNavigate();
+
+  // Set page title so iOS names the PWA shortcut "Sage Admin" not "FuelStation HR"
+  useEffect(() => {
+    document.title = 'Sage Admin';
+    let meta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (!meta) { meta = document.createElement('meta'); meta.name = 'apple-mobile-web-app-title'; document.head.appendChild(meta); }
+    const prev = meta.content;
+    meta.content = 'Sage Admin';
+    return () => { document.title = 'FuelStation HR — Worker Management'; meta.content = prev; };
+  }, []);
+
   const [tab,         setTab        ] = useState('home');
   const [data,        setData       ] = useState(null);
   const [loading,     setLoading    ] = useState(true);
