@@ -206,6 +206,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
     managerId: branch?.manager?._id || branch?.manager || '',
     location:  branch?.location  || null,
     personalPhoneRadius: branch?.personalPhoneRadius ?? 150,
+    minActiveWorkers:    branch?.minActiveWorkers    ?? 1,
     attendanceRules:   getInitialRules(),
     salesShortageRule: getInitialRule(),
   });
@@ -377,6 +378,7 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
         managerId:           form.managerId || null,
         location:            form.location  || null,
         personalPhoneRadius: Number(form.personalPhoneRadius) || 150,
+        minActiveWorkers:    Number(form.minActiveWorkers)    || 1,
         attendanceRules:     form.attendanceRules,
         salesShortageRule:   form.salesShortageRule,
       };
@@ -640,6 +642,38 @@ function BranchModal({ branch, staff, onClose, onSaved }) {
                     <span className="text-xs text-amber-600 font-medium">No radius limit</span>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* ── Minimum Active Workers ───────────────────────────────────── */}
+            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/40 px-3.5 py-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">👥</span>
+                <p className="text-xs font-semibold text-gray-700">Minimum Active Workers (Break Rule)</p>
+              </div>
+              <p className="text-xs text-gray-400">
+                The number of workers that must remain <strong>on duty</strong> (not on break) at all times.
+                Set to <strong>0</strong> to allow any number of workers to break simultaneously.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  className="input w-24 text-sm py-2"
+                  value={form.minActiveWorkers}
+                  onChange={e => set('minActiveWorkers', Number(e.target.value))}
+                />
+                <span className="text-sm text-gray-500 font-medium">workers</span>
+                {form.minActiveWorkers > 0 && (
+                  <span className="text-xs text-amber-700 font-medium">
+                    ✓ At least {form.minActiveWorkers} must stay on duty
+                  </span>
+                )}
+                {form.minActiveWorkers === 0 && (
+                  <span className="text-xs text-gray-400 font-medium">No minimum — all can break at once</span>
+                )}
               </div>
             </div>
 

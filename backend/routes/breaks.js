@@ -6,12 +6,14 @@ const { requirePermission } = require('../middleware/permissions');
 const {
   startBreak, endBreak, getBreakStatus,
   getBreaks, getBreakSummary, processMissedBreaks,
+  getShiftBoard,
 } = require('../controllers/breakController');
 
 // ── Public — device-token authenticated (terminal) ────────────────────────────
-router.post('/start',  startBreak);
-router.post('/end',    endBreak);
-router.get('/status',  getBreakStatus);
+router.post('/start',       startBreak);
+router.post('/end',         endBreak);
+router.get('/status',       getBreakStatus);
+router.get('/shift-board',  getShiftBoard);
 
 // ── Protected — admin / supervisor ───────────────────────────────────────────
 router.use(protect, checkSubscription);

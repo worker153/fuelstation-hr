@@ -15,7 +15,7 @@ import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
   Key, ChevronLeft, ChevronRight, CheckCircle, XCircle, X,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
-  RotateCcw, MapPin, Coffee, Play, Square, FileWarning,
+  RotateCcw, MapPin, Coffee, Play, Square, FileWarning, Users,
 } from 'lucide-react';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
@@ -582,6 +582,15 @@ function MenuView({ session, onNavigate }) {
           sub={todayStatus?.clockedIn && !todayStatus?.clockedOut ? 'Start or end your break' : 'View your break history'}
           color="bg-orange-500"
           onClick={() => onNavigate('break')}
+        />
+
+        {/* Shift Status Board */}
+        <MenuCard
+          icon={Users}
+          label="Shift Status Board"
+          sub="See who is active and who is on break"
+          color="bg-teal-600"
+          onClick={() => onNavigate('shift_board')}
         />
 
         {/* Book Offence + Shortage — approved device only */}
@@ -2138,6 +2147,179 @@ function ChangePinView({ session, onBack, onSuccess }) {
   );
 }
 
+// ── Shift Status Board ─────────────────────────────────────────────────────────
+function ShiftBoardView({ session, onBack }) {
+  const { deviceToken, worker } = session;
+  const [board,   setBoard  ] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError  ] = useState('');
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const params = deviceToken
+        ? { deviceToken }
+        : { pin: session.pin, workerId: worker._id };
+      const { data } = await axios.get(`${BASE}/breaks/shift-board`, { params });
+      if (data.success) setBoard(data.data);
+      else setError(data.message || 'Could not load board');
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not load board');
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceToken, session.pin, worker._id]);
+
+  // Load on mount + auto-refresh every 30 s
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const active  = board?.workers?.filter(w => w.status === 'active')  || [];
+  const onBreak = board?.workers?.filter(w => w.status === 'on_break') || [];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 pt-10 pb-4">
+        <button onClick={onBack}
+          className="bg-white/10 hover:bg-white/20 rounded-xl p-2.5 transition-colors">
+          <ChevronLeft size={20} className="text-white" />
+        </button>
+        <div>
+          <h1 className="text-white font-bold text-lg leading-tight">Shift Status Board</h1>
+          {board && <p className="text-white/50 text-xs">{board.branchName}</p>}
+        </div>
+        <button onClick={() => { setLoading(true); load(); }}
+          className="ml-auto bg-white/10 hover:bg-white/20 rounded-xl p-2.5 transition-colors"
+          title="Refresh">
+          <RotateCcw size={16} className="text-white/70" />
+        </button>
+      </div>
+
+      <div className="flex-1 px-4 pb-8 space-y-4 overflow-y-auto">
+        {loading && !board && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <Loader size={28} className="text-white/40 animate-spin" />
+            <p className="text-white/40 text-sm">Loading shift status…</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/30 rounded-2xl p-4 text-center">
+            <p className="text-red-300 text-sm">{error}</p>
+          </div>
+        )}
+
+        {board && (
+          <>
+            {/* ── Counters ─────────────────────────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-2xl p-4 text-center">
+                <p className="text-emerald-300 text-3xl font-bold">{board.activeCount}</p>
+                <p className="text-emerald-200/70 text-xs mt-1 font-medium">Active on Duty</p>
+              </div>
+              <div className="bg-amber-500/20 border border-amber-500/30 rounded-2xl p-4 text-center">
+                <p className="text-amber-300 text-3xl font-bold">{board.onBreakCount}</p>
+                <p className="text-amber-200/70 text-xs mt-1 font-medium">On Break</p>
+              </div>
+            </div>
+
+            {/* ── Break Availability ───────────────────────────────────────── */}
+            <div className={`rounded-2xl p-4 border text-center ${
+              board.breakAvailable
+                ? 'bg-emerald-500/15 border-emerald-500/30'
+                : 'bg-red-500/15 border-red-500/30'
+            }`}>
+              <p className="text-2xl mb-1">{board.breakAvailable ? '🟢' : '🔴'}</p>
+              <p className={`font-bold text-base ${board.breakAvailable ? 'text-emerald-300' : 'text-red-300'}`}>
+                {board.breakAvailable ? 'Break Available' : 'Break Not Available'}
+              </p>
+              {!board.breakAvailable && board.minActiveWorkers > 0 && (
+                <p className="text-red-200/60 text-xs mt-1 leading-snug">
+                  Minimum {board.minActiveWorkers} active worker{board.minActiveWorkers !== 1 ? 's' : ''} must remain on duty
+                </p>
+              )}
+              {board.breakAvailable && board.minActiveWorkers > 0 && (
+                <p className="text-emerald-200/50 text-xs mt-1">
+                  Min. {board.minActiveWorkers} required · {board.activeCount} currently active
+                </p>
+              )}
+            </div>
+
+            {/* ── Active Workers ───────────────────────────────────────────── */}
+            <div>
+              <p className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-2 px-1">
+                ✅ Active Workers ({active.length})
+              </p>
+              {active.length === 0 ? (
+                <p className="text-white/30 text-sm text-center py-3">No active workers right now</p>
+              ) : (
+                <div className="space-y-2">
+                  {active.map(w => (
+                    <div key={w.id}
+                      className="flex items-center gap-3 bg-white/8 border border-emerald-500/20 rounded-xl px-4 py-3">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-300 font-bold text-sm shrink-0">
+                        {(w.name || '?')[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium text-sm truncate">{w.name}</p>
+                        <p className="text-white/40 text-xs">{w.role}</p>
+                      </div>
+                      <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">
+                        ACTIVE
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── On Break ─────────────────────────────────────────────────── */}
+            <div>
+              <p className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-2 px-1">
+                ☕ On Break ({onBreak.length})
+              </p>
+              {onBreak.length === 0 ? (
+                <p className="text-white/30 text-sm text-center py-3">No workers on break</p>
+              ) : (
+                <div className="space-y-2">
+                  {onBreak.map(w => (
+                    <div key={w.id}
+                      className="flex items-center gap-3 bg-white/8 border border-amber-500/20 rounded-xl px-4 py-3">
+                      <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-300 font-bold text-sm shrink-0">
+                        {(w.name || '?')[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium text-sm truncate">{w.name}</p>
+                        <p className="text-white/40 text-xs">{w.role}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] font-semibold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full block mb-0.5">
+                          ON BREAK
+                        </span>
+                        {w.breakLabel && (
+                          <p className="text-white/30 text-[10px]">{w.breakLabel}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p className="text-white/20 text-xs text-center pt-2">
+              Auto-refreshes every 30 seconds
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── WorkerPortal — main ────────────────────────────────────────────────────────
 export default function WorkerPortal() {
   const [step,    setStep   ] = useState('pin');
@@ -2250,6 +2432,11 @@ export default function WorkerPortal() {
             setStep('menu');
           }}
         />
+      )}
+
+      {/* ── Shift Board ────────────────────────────────────────────────────── */}
+      {step === 'shift_board' && session && (
+        <ShiftBoardView session={session} onBack={() => setStep('menu')} />
       )}
     </Shell>
   );

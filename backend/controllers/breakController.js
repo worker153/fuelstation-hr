@@ -182,6 +182,27 @@ const startBreak = async (req, res) => {
   if (prior && prior.status !== 'missed')
     return res.status(400).json({ success: false, message: `You already took your ${BREAK_LABELS[breakType]} today` });
 
+  // ── Minimum active workers check ─────────────────────────────────────────────
+  const minActive = branch?.minActiveWorkers ?? 1;
+  if (minActive > 0) {
+    const [presentIds, clockedOutIds, onBreakCount] = await Promise.all([
+      Attendance.distinct('worker', { company, branch: branchId, date: dateStr, type: 'clock_in' }),
+      Attendance.distinct('worker', { company, branch: branchId, date: dateStr, type: 'clock_out' }),
+      Break.countDocuments({ company, branchId, date: dateStr, status: 'active' }),
+    ]);
+    const clockedOutSet  = new Set(clockedOutIds.map(String));
+    const presentCount   = presentIds.filter(id => !clockedOutSet.has(String(id))).length;
+    const activeNow      = presentCount - onBreakCount;   // workers currently NOT on break
+    // After this worker starts a break, activeNow drops by 1
+    if (activeNow - 1 < minActive) {
+      return res.status(400).json({
+        success: false,
+        breakBlocked: true,
+        message: 'Break not available at the moment. Minimum active workers must remain on duty.',
+      });
+    }
+  }
+
   const now = new Date();
   const deadline = new Date(now.getTime() + cfg.allowedMinutes * 60000);
 
@@ -511,8 +532,85 @@ const processMissedBreaks = async (req, res) => {
   res.json({ success: true, processed, workers: clockedIn.length });
 };
 
+// ─── GET /api/breaks/shift-board — public shift status board ─────────────────
+// Requires deviceToken OR pin+workerId to identify the branch.
+// Returns: list of clocked-in workers with statuses, counters, break availability.
+const getShiftBoard = async (req, res) => {
+  const { deviceToken, pin, workerId: reqWorkerId } = req.query;
+
+  const ctx = await resolveBreakContext({ deviceToken, pin, gps: null, reqWorkerId, requireGPS: false });
+  if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
+
+  const { company, branchId } = ctx;
+  const dateStr = todayUtcStr();
+
+  const branch = ctx.branch || (branchId ? await Branch.findById(branchId).lean() : null);
+  if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
+
+  const minActiveWorkers = branch.minActiveWorkers ?? 1;
+
+  // Workers present today (clocked in, not clocked out)
+  const [clockedInIds, clockedOutIds] = await Promise.all([
+    Attendance.distinct('worker', { company, branch: branchId, date: dateStr, type: 'clock_in'  }),
+    Attendance.distinct('worker', { company, branch: branchId, date: dateStr, type: 'clock_out' }),
+  ]);
+  const clockedOutSet  = new Set(clockedOutIds.map(String));
+  const presentIds     = clockedInIds.filter(id => !clockedOutSet.has(String(id)));
+
+  // Active breaks among present workers
+  const activeBreaks = await Break.find({
+    company, branchId, date: dateStr, status: 'active',
+    worker: { $in: presentIds },
+  }).lean();
+  const onBreakMap = {};
+  activeBreaks.forEach(b => { onBreakMap[String(b.worker)] = b; });
+
+  // Fetch names / roles
+  const workerDocs = await Worker.find({ _id: { $in: presentIds }, company })
+    .select('fullName role').lean();
+  const workerMap = {};
+  workerDocs.forEach(w => { workerMap[String(w._id)] = w; });
+
+  const config     = getBreakConfig(branch);
+  const workerRows = presentIds.map(id => {
+    const w  = workerMap[String(id)];
+    const br = onBreakMap[String(id)];
+    return {
+      id:         String(id),
+      name:       w?.fullName || 'Unknown',
+      role:       w?.role     || '',
+      status:     br ? 'on_break' : 'active',
+      breakLabel: br ? (config[br.breakType]?.label || BREAK_LABELS[br.breakType]) : null,
+      breakStart: br?.startTime || null,
+    };
+  }).sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const onBreakCount   = workerRows.filter(w => w.status === 'on_break').length;
+  const activeCount    = workerRows.filter(w => w.status === 'active').length;
+  // Break available if removing 1 active worker still keeps enough on duty
+  const breakAvailable = minActiveWorkers === 0 || (activeCount - 1) >= minActiveWorkers;
+
+  res.json({
+    success: true,
+    data: {
+      branchName:       branch.name,
+      date:             dateStr,
+      minActiveWorkers,
+      breakAvailable,
+      activeCount,
+      onBreakCount,
+      totalPresent:     workerRows.length,
+      workers:          workerRows,
+    },
+  });
+};
+
 module.exports = {
   startBreak, endBreak, getBreakStatus,
   getBreaks, getBreakSummary, processMissedBreaks,
+  getShiftBoard,
   getBreakConfig, BREAK_LABELS,
 };

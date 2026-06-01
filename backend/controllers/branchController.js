@@ -228,6 +228,8 @@ const createBranch = async (req, res) => {
     attendanceRules:     req.body.attendanceRules     || undefined,
     personalPhoneRadius: req.body.personalPhoneRadius != null
       ? Number(req.body.personalPhoneRadius) : undefined,
+    minActiveWorkers: req.body.minActiveWorkers != null
+      ? Number(req.body.minActiveWorkers) : undefined,
   });
 
   await branch.populate('manager', 'name email role');
@@ -303,6 +305,9 @@ const updateBranch = async (req, res) => {
   }
   if (req.body.personalPhoneRadius != null) {
     branch.personalPhoneRadius = Number(req.body.personalPhoneRadius);
+  }
+  if (req.body.minActiveWorkers != null) {
+    branch.minActiveWorkers = Number(req.body.minActiveWorkers);
   }
 
   await branch.save();

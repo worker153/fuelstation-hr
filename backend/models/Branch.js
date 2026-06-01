@@ -134,6 +134,10 @@ const branchSchema = new mongoose.Schema({
     belowPenalty:   { type: Number,  default: 2000  },  // deduction if shortage < threshold
     atAbovePenalty: { type: Number,  default: 5000  },  // deduction if shortage >= threshold
   },
+
+  // Minimum number of workers that must remain ACTIVE (not on break) at any time.
+  // 0 = no restriction. Default 1 means at least 1 worker must stay on duty.
+  minActiveWorkers: { type: Number, default: 1 },
 }, { timestamps: true });
 
 branchSchema.index({ company: 1 });
