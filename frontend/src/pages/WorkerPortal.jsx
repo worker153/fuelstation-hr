@@ -2581,6 +2581,9 @@ export default function WorkerPortal() {
   const [pinErr,  setPinErr ] = useState('');
   const [pinLoad, setPinLoad] = useState(false);
 
+  // Persist token from URL if provided (so approved device works on /worker too)
+  const _urlToken = new URLSearchParams(window.location.search).get('token');
+  if (_urlToken) localStorage.setItem(TOKEN_KEY, _urlToken);
   const deviceToken = localStorage.getItem(TOKEN_KEY) || '';
 
   const handlePinSubmit = async (p) => {

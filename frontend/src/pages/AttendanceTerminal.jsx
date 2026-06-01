@@ -792,6 +792,8 @@ function BreakBtn({ type, label, allowedMinutes, inWindow, taken, status, loadin
 export default function AttendanceTerminal() {
   const [token,      setToken    ] = useState(() => {
     const p = new URLSearchParams(window.location.search).get('token');
+    // If token came from URL, persist it so /worker can also detect approved device
+    if (p) localStorage.setItem(TOKEN_KEY, p);
     return p || localStorage.getItem(TOKEN_KEY) || '';
   });
   const [deviceInfo, setDeviceInfo] = useState(null);
