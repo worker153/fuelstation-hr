@@ -28,15 +28,10 @@ const userSchema = new mongoose.Schema({
   email:       { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, trim: true },
   password:    { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
   role: {
-    type: String,
-    enum: [
-      // Platform level
-      'platform_admin',
-      // Company level
-      'super_admin', 'admin',
-      'verification_officer', 'supervisor', 'record_supervisor', 'hr_staff'
-    ],
-    default: 'hr_staff'
+    type:    String,
+    default: 'hr_staff',
+    // No enum here — companies can define custom roles stored in Company.staffRoles.
+    // System roles (platform_admin, super_admin, admin) are protected in the controller.
   },
   permissions: { type: permissionsSchema, default: () => ({}) },
   branchId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },  // assigned branch for supervisors

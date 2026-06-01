@@ -69,6 +69,13 @@ const companySchema = new mongoose.Schema({
   lastPaymentAmount:      { type: Number },
   lastPaymentRef:         { type: String },
 
+  // ── Custom staff roles ──────────────────────────────────────────────────────
+  // Companies can define roles beyond the built-in set (supervisor, hr_staff, etc.)
+  staffRoles: [{
+    value: { type: String, required: true, trim: true },  // slug, e.g. "pump_supervisor"
+    label: { type: String, required: true, trim: true },  // display, e.g. "Pump Supervisor"
+  }],
+
   // ── Registration meta ───────────────────────────────────────────────────────
   registeredBy: { type: String },   // name of person who signed up
   notes:        { type: String },   // internal platform-admin notes

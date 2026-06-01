@@ -1,18 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Plus, Edit2, Trash2, Key, ToggleLeft, ToggleRight,
   Shield, ShieldCheck, UserCheck, Briefcase, ChevronDown, ChevronUp,
-  X, Save, Eye, EyeOff, Check, Hash, Link2,
+  X, Save, Eye, EyeOff, Check, Hash, Link2, Tag,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 
-const ROLES = [
-  { value: 'verification_officer', label: 'Verification Officer', color: 'bg-blue-100 text-blue-700' },
-  { value: 'supervisor',           label: 'Supervisor',           color: 'bg-purple-100 text-purple-700' },
-  { value: 'record_supervisor',    label: 'Record Supervisor',    color: 'bg-indigo-100 text-indigo-700' },
-  { value: 'hr_staff',             label: 'HR Staff',             color: 'bg-gray-100 text-gray-700' },
+// ── Built-in roles (always available) ────────────────────────────────────────
+const BUILTIN_ROLES = [
+  { value: 'verification_officer', label: 'Verification Officer', color: 'bg-blue-100 text-blue-700',   builtin: true },
+  { value: 'supervisor',           label: 'Supervisor',           color: 'bg-purple-100 text-purple-700', builtin: true },
+  { value: 'record_supervisor',    label: 'Record Supervisor',    color: 'bg-indigo-100 text-indigo-700', builtin: true },
+  { value: 'hr_staff',             label: 'HR Staff',             color: 'bg-gray-100 text-gray-700',    builtin: true },
 ];
 
 const ALL_PERMISSIONS = [
@@ -30,9 +31,13 @@ const ALL_PERMISSIONS = [
   { key: 'viewOwnShift',    label: 'View Own Shift Only', desc: 'Restricts worker view to their assigned shift only' },
 ];
 
-const ROLE_MAP = Object.fromEntries(ROLES.map(r => [r.value, r]));
+// Build a role map from merged (built-in + custom) roles list
+function makeRoleMap(allRoles) {
+  return Object.fromEntries((allRoles || BUILTIN_ROLES).map(r => [r.value, r]));
+}
 
-function RoleBadge({ role }) {
+function RoleBadge({ role, allRoles }) {
+  const roleMap = makeRoleMap(allRoles);
   if (role === 'super_admin') {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700">
@@ -40,17 +45,125 @@ function RoleBadge({ role }) {
       </span>
     );
   }
-  const r = ROLE_MAP[role];
-  if (!r) return <span className="text-xs text-gray-400">{role}</span>;
+  const r = roleMap[role];
+  if (!r) return <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">{role.replace(/_/g,' ')}</span>;
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${r.color}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${r.color || 'bg-orange-100 text-orange-700'}`}>
       {r.label}
     </span>
   );
 }
 
+// ─── Manage Custom Roles Panel ────────────────────────────────────────────────
+function ManageRolesPanel({ onClose, onChanged }) {
+  const notify = useNotify();
+  const [customRoles, setCustomRoles] = useState([]);
+  const [newLabel, setNewLabel]       = useState('');
+  const [adding, setAdding]           = useState(false);
+
+  const loadRoles = useCallback(async () => {
+    try {
+      const { data } = await api.get('/staff/custom-roles');
+      setCustomRoles(data.data || []);
+    } catch { notify('Failed to load custom roles', 'error'); }
+  }, [notify]);
+
+  useEffect(() => { loadRoles(); }, [loadRoles]);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!newLabel.trim()) return;
+    setAdding(true);
+    try {
+      await api.post('/staff/custom-roles', { label: newLabel.trim() });
+      notify(`Role "${newLabel.trim()}" added ✓`);
+      setNewLabel('');
+      await loadRoles();
+      onChanged();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to add role', 'error');
+    } finally { setAdding(false); }
+  };
+
+  const handleDelete = async (role) => {
+    if (!confirm(`Delete role "${role.label}"? Staff with this role will keep it but it won't appear in dropdowns.`)) return;
+    try {
+      await api.delete(`/staff/custom-roles/${role.value}`);
+      notify(`Role "${role.label}" deleted`);
+      await loadRoles();
+      onChanged();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed', 'error');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <Tag size={16} className="text-brand-600" /> Custom Staff Roles
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        {/* Built-in roles — read-only */}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Built-in Roles</p>
+          <div className="flex flex-wrap gap-2">
+            {BUILTIN_ROLES.map(r => (
+              <span key={r.value} className={`text-xs px-3 py-1 rounded-full font-medium ${r.color}`}>{r.label}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom roles list */}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Your Custom Roles</p>
+          {customRoles.length === 0 ? (
+            <p className="text-sm text-gray-400 italic">No custom roles yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {customRoles.map(r => (
+                <div key={r.value} className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+                  <div>
+                    <p className="text-sm font-semibold text-orange-800">{r.label}</p>
+                    <p className="text-xs text-orange-400 font-mono">{r.value}</p>
+                  </div>
+                  <button onClick={() => handleDelete(r)}
+                    className="p-1 text-red-400 hover:bg-red-50 rounded-lg transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Add new */}
+        <form onSubmit={handleAdd} className="flex gap-2">
+          <input
+            className="input flex-1"
+            placeholder="New role, e.g. Pump Supervisor"
+            value={newLabel}
+            onChange={e => setNewLabel(e.target.value)}
+            maxLength={50}
+          />
+          <button type="submit" disabled={adding || !newLabel.trim()} className="btn-primary shrink-0">
+            {adding ? '…' : <><Plus size={14} /> Add</>}
+          </button>
+        </form>
+
+        <p className="text-xs text-gray-400">
+          Custom roles appear in the dropdown when adding or editing staff. Built-in roles cannot be deleted.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Add / Edit Staff Form ────────────────────────────────────────────────────
-function StaffForm({ existing, onSave, onCancel }) {
+function StaffForm({ existing, allRoles, onSave, onCancel }) {
   const notify = useNotify();
   const [form, setForm] = useState({
     name:  existing?.name  || '',
@@ -146,7 +259,9 @@ function StaffForm({ existing, onSave, onCancel }) {
         <div>
           <label className="label">Role *</label>
           <select className="input" value={form.role} onChange={set('role')} required>
-            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            {(allRoles || BUILTIN_ROLES).map(r => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -177,7 +292,7 @@ function StaffForm({ existing, onSave, onCancel }) {
           <label className="label mb-0">Permissions</label>
           <button type="button" onClick={applyRoleDefaults}
             className="text-xs text-brand-600 hover:underline">
-            Apply {ROLE_MAP[form.role]?.label || 'role'} defaults
+            Apply {makeRoleMap(allRoles)[form.role]?.label || 'role'} defaults
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -349,22 +464,41 @@ function SetPinModal({ staff, onClose }) {
 export default function StaffManagement() {
   const notify      = useNotify();
   const { user }    = useAuth();
-  const [staff, setStaff]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [showForm, setShowForm]   = useState(false);
-  const [editing, setEditing]     = useState(null);
-  const [resetFor, setResetFor]   = useState(null);
-  const [pinFor,   setPinFor  ]   = useState(null);
-  const [expanded, setExpanded]   = useState(null);
+  const [staff, setStaff]               = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [showForm, setShowForm]         = useState(false);
+  const [editing, setEditing]           = useState(null);
+  const [resetFor, setResetFor]         = useState(null);
+  const [pinFor,   setPinFor  ]         = useState(null);
+  const [expanded, setExpanded]         = useState(null);
+  const [customRoles, setCustomRoles]   = useState([]);
+  const [showRoleMgr, setShowRoleMgr]   = useState(false);
 
-  const load = async () => {
+  // All roles = built-in + custom
+  const allRoles = [
+    ...BUILTIN_ROLES,
+    ...customRoles.map(r => ({ ...r, color: 'bg-orange-100 text-orange-700' })),
+  ];
+
+  const loadCustomRoles = useCallback(async () => {
+    try {
+      const { data } = await api.get('/staff/custom-roles');
+      setCustomRoles(data.data || []);
+    } catch { /* silent */ }
+  }, []);
+
+  const load = useCallback(async () => {
     try {
       const { data } = await api.get('/staff');
       setStaff(data.data);
     } catch { notify('Failed to load staff', 'error'); }
     finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
+  }, [notify]);
+
+  useEffect(() => {
+    load();
+    loadCustomRoles();
+  }, [load, loadCustomRoles]);
 
   const handleToggleActive = async (s) => {
     try {
@@ -395,16 +529,22 @@ export default function StaffManagement() {
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Staff Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{staff.length} team member{staff.length !== 1 ? 's' : ''}</p>
         </div>
-        {!showForm && (
-          <button onClick={() => { setEditing(null); setShowForm(true); }} className="btn-primary">
-            <Plus size={16} /> Add Staff
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowRoleMgr(true)}
+            className="btn-secondary text-sm flex items-center gap-1.5">
+            <Tag size={14} /> Manage Roles
           </button>
-        )}
+          {!showForm && (
+            <button onClick={() => { setEditing(null); setShowForm(true); }} className="btn-primary">
+              <Plus size={16} /> Add Staff
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Add / Edit form */}
@@ -414,7 +554,7 @@ export default function StaffManagement() {
             <h2 className="font-bold text-gray-900">{editing ? `Edit — ${editing.name}` : 'Add New Staff Member'}</h2>
             <button onClick={closeForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
           </div>
-          <StaffForm existing={editing} onSave={afterSave} onCancel={closeForm} />
+          <StaffForm existing={editing} allRoles={allRoles} onSave={afterSave} onCancel={closeForm} />
         </div>
       )}
 
@@ -458,7 +598,7 @@ export default function StaffManagement() {
                     </div>
                     <p className="text-xs text-gray-500 truncate">{s.email}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <RoleBadge role={s.role} />
+                      <RoleBadge role={s.role} allRoles={allRoles} />
                       {s.branchId?.name && (
                         <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">
                           🏢 {s.branchId.name}
@@ -544,6 +684,12 @@ export default function StaffManagement() {
 
       {resetFor && <ResetPwdModal staff={resetFor} onClose={() => { setResetFor(null); load(); }} />}
       {pinFor   && <SetPinModal   staff={pinFor}   onClose={() => setPinFor(null) } />}
+      {showRoleMgr && (
+        <ManageRolesPanel
+          onClose={() => setShowRoleMgr(false)}
+          onChanged={() => loadCustomRoles()}
+        />
+      )}
     </div>
   );
 }

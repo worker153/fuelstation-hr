@@ -17,7 +17,7 @@ import {
   List, AlignLeft, Heading1, Heading2, Type,
 } from 'lucide-react';
 import api from '../utils/api';
-import { useNotification } from '../context/NotificationContext';
+import { useNotify } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 
 const TYPE_CFG = {
@@ -272,7 +272,7 @@ function DocModal({ doc, onSave, onClose, allWorkers }) {
   });
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
-  const { notify } = useNotification();
+  const notify = useNotify();
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -417,7 +417,7 @@ export default function Documents() {
   const [preview,    setPreview   ] = useState(null);
   const [sigPanel,   setSigPanel  ] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
-  const { notify } = useNotification();
+  const notify = useNotify();
   const { user }   = useAuth();
 
   const load = useCallback(async () => {
