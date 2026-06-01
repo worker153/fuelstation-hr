@@ -30,6 +30,7 @@ import WorkerPins          from './pages/WorkerPins';
 import WorkerPinReset     from './pages/WorkerPinReset';
 import Attendance         from './pages/Attendance';
 import Breaks             from './pages/Breaks';
+import Documents          from './pages/Documents';
 import StaffPolicy        from './pages/StaffPolicy';
 import WorkerHandbook     from './pages/WorkerHandbook';
 import Offences           from './pages/Offences';
@@ -128,6 +129,7 @@ export default function App() {
               <Route path="/shortages"     element={<Shortages />} />
               <Route path="/attendance"    element={<Attendance />} />
               <Route path="/breaks"        element={<Breaks />} />
+              <Route path="/documents"     element={<Documents />} />
               <Route path="/offences"      element={<Offences />} />
               <Route path="/handbook"      element={<WorkerHandbook />} />
 

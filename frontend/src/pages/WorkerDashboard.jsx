@@ -157,14 +157,17 @@ export default function WorkerDashboard() {
   const [month,   setMonth  ] = useState(now.getMonth() + 1);
   const [year,    setYear   ] = useState(now.getFullYear());
   const [sheet,   setSheet  ] = useState(null);  // { title, emoji, rows }
+  const [docs,    setDocs   ] = useState(null);  // { pending, signed }
 
   const load = async (p, mo, yr) => {
     setLoading(true); setError('');
     try {
-      const { data: res } = await axios.get(
-        `${BASE}/shortages/worker/dashboard?pin=${p}&month=${mo}&year=${yr}`
-      );
-      setData(res.data);
+      const [dashRes, docsRes] = await Promise.all([
+        axios.get(`${BASE}/shortages/worker/dashboard?pin=${p}&month=${mo}&year=${yr}`),
+        axios.get(`${BASE}/documents/worker?pin=${p}`).catch(() => ({ data: { data: { pending: [], signed: [] } } })),
+      ]);
+      setData(dashRes.data.data);
+      setDocs(docsRes.data.data);
       setStep('dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid PIN — try again');
@@ -388,6 +391,45 @@ export default function WorkerDashboard() {
         <p className="text-center text-xs text-gray-400 pb-4">
           This shows approved deductions only · Values may change until payroll is finalised
         </p>
+
+        {/* ── DOCUMENTS ── */}
+        {docs && (docs.pending?.length > 0 || docs.signed?.length > 0) && (
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <p className="font-bold text-gray-800">📄 Company Documents</p>
+            </div>
+
+            {docs.pending?.length > 0 && (
+              <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100">
+                <p className="text-xs font-bold text-amber-700 mb-2">⚠️ Requires your signature</p>
+                {docs.pending.map(d => (
+                  <div key={d._id} className="flex items-center justify-between py-1.5">
+                    <p className="text-sm font-medium text-gray-800 truncate">{d.title}</p>
+                    <a href="/worker" className="text-xs text-brand-600 font-semibold underline shrink-0 ml-2">Sign →</a>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {docs.signed?.length > 0 && (
+              <div className="divide-y divide-gray-50">
+                {docs.signed.map(d => (
+                  <div key={d._id} className="px-4 py-3 flex items-center gap-3">
+                    <span className="text-xl shrink-0">📄</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800 truncate">{d.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Signed {d.signedAt ? new Date(d.signedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full shrink-0">✓ SIGNED</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

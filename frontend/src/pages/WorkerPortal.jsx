@@ -15,7 +15,7 @@ import {
   Leaf, LogIn, LogOut, Delete, Loader, AlertTriangle, LayoutDashboard,
   Key, ChevronLeft, ChevronRight, CheckCircle, XCircle, X,
   ChevronDown, ChevronUp, ShieldCheck, UserCircle2, Eye,
-  RotateCcw, MapPin, Coffee, Play, Square, FileWarning, Users,
+  RotateCcw, MapPin, Coffee, Play, Square, FileWarning, Users, BookOpen, PenLine,
 } from 'lucide-react';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 
@@ -593,6 +593,15 @@ function MenuView({ session, onNavigate }) {
           sub="See who is active and who is on break"
           color="bg-teal-600"
           onClick={() => onNavigate('shift_board')}
+        />
+
+        {/* Documents to sign */}
+        <MenuCard
+          icon={BookOpen}
+          label="Documents"
+          sub="View and sign company documents"
+          color="bg-indigo-600"
+          onClick={() => onNavigate('documents')}
         />
 
         {/* Book Offence + Shortage — approved device only */}
@@ -2149,6 +2158,248 @@ function ChangePinView({ session, onBack, onSuccess }) {
   );
 }
 
+// ── Documents ──────────────────────────────────────────────────────────────────
+const DOC_TYPE = {
+  handbook:  { emoji: '📖', label: 'Staff Handbook'  },
+  policy:    { emoji: '📋', label: 'Policy'          },
+  notice:    { emoji: '📢', label: 'Notice'          },
+  agreement: { emoji: '🤝', label: 'Agreement'       },
+  other:     { emoji: '📄', label: 'Document'        },
+};
+
+function DocumentsView({ session, onBack }) {
+  const { pin, worker } = session;
+  const [data,        setData       ] = useState(null);
+  const [loading,     setLoading    ] = useState(true);
+  const [error,       setError      ] = useState('');
+  const [selected,    setSelected   ] = useState(null);   // doc to read/sign
+  const [docBody,     setDocBody    ] = useState('');
+  const [docLoading,  setDocLoading ] = useState(false);
+  const [sigName,     setSigName    ] = useState('');
+  const [signing,     setSigning    ] = useState(false);
+  const [sigError,    setSigError   ] = useState('');
+  const [sigSuccess,  setSigSuccess ] = useState(false);
+  const [tab,         setTab        ] = useState('pending');
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const { data: res } = await axios.get(`${BASE}/documents/worker`, { params: { pin } });
+      setData(res.data);
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not load documents');
+    } finally { setLoading(false); }
+  }, [pin]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openDoc = async (doc) => {
+    setSelected(doc); setSigName(''); setSigError(''); setSigSuccess(false); setDocBody('');
+    setDocLoading(true);
+    try {
+      const { data: res } = await axios.get(`${BASE}/documents/${doc._id}/read`, { params: { pin } });
+      setDocBody(res.data.body || '');
+      if (res.data.alreadySigned) setSigSuccess(true);
+    } catch (e) {
+      setDocBody('');
+    } finally { setDocLoading(false); }
+  };
+
+  const handleSign = async () => {
+    if (!sigName.trim()) { setSigError('Please type your full name to confirm'); return; }
+    setSigning(true); setSigError('');
+    try {
+      await axios.post(`${BASE}/documents/${selected._id}/sign`, {
+        pin, workerId: worker._id, signatureName: sigName.trim()
+      });
+      setSigSuccess(true);
+      // Refresh list so signed doc moves to signed tab
+      load();
+    } catch (e) {
+      setSigError(e.response?.data?.message || 'Could not sign document');
+    } finally { setSigning(false); }
+  };
+
+  // ── Reading a document ──────────────────────────────────────────────────────
+  if (selected) {
+    const tc = DOC_TYPE[selected.type] || DOC_TYPE.other;
+    const isSigned = sigSuccess || data?.signed?.some(s => s._id === selected._id);
+    return (
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 pt-6 pb-3 shrink-0">
+          <button onClick={() => setSelected(null)}
+            className="bg-white/10 hover:bg-white/20 rounded-xl p-2.5 transition-colors">
+            <ChevronLeft size={20} className="text-white" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-bold text-sm truncate">{selected.title}</p>
+            <p className="text-white/40 text-xs">{tc.emoji} {tc.label}</p>
+          </div>
+        </div>
+
+        {/* Document body */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="mx-4 mb-4 bg-white rounded-2xl shadow-sm overflow-hidden">
+            {/* Letterhead */}
+            <div className="bg-brand-700 px-5 py-4 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white font-black shrink-0">S</div>
+              <div>
+                <p className="text-white font-bold text-xs">Sage Energy & Natural Resources</p>
+                <p className="text-white/60 text-[10px]">{tc.label}</p>
+              </div>
+            </div>
+
+            <div className="px-5 py-4">
+              <h2 className="text-gray-900 font-black text-xl mb-3">{selected.title}</h2>
+              {docLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader size={20} className="animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <div
+                  className="text-sm text-gray-800 leading-relaxed
+                    [&_h2]:text-lg [&_h2]:font-black [&_h2]:text-gray-900 [&_h2]:mt-5 [&_h2]:mb-2
+                    [&_h3]:font-bold [&_h3]:text-gray-800 [&_h3]:mt-3 [&_h3]:mb-1
+                    [&_p]:mb-2.5 [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:mb-2.5
+                    [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:mb-2.5 [&_li]:mb-1
+                    [&_hr]:my-4 [&_hr]:border-gray-200
+                    [&_strong]:font-bold [&_em]:italic [&_u]:underline"
+                  dangerouslySetInnerHTML={{ __html: docBody || '<p><em>Document content unavailable.</em></p>' }}
+                />
+              )}
+
+              {/* Signature section */}
+              {selected.requiresSignature && !isSigned && (
+                <div className="mt-6 pt-5 border-t-2 border-gray-200">
+                  <p className="font-bold text-gray-800 text-sm mb-1 flex items-center gap-1.5">
+                    <PenLine size={14} /> Sign this document
+                  </p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    By typing your name below, you confirm that you have read and understood this document.
+                  </p>
+                  <input
+                    className="w-full border-b-2 border-gray-300 focus:border-brand-600 outline-none py-1.5 text-sm text-gray-800 bg-transparent mb-1 transition-colors"
+                    placeholder="Type your full name here…"
+                    value={sigName}
+                    onChange={e => { setSigName(e.target.value); setSigError(''); }}
+                  />
+                  {sigError && <p className="text-red-500 text-xs mb-2">{sigError}</p>}
+                  <button onClick={handleSign} disabled={signing || !sigName.trim()}
+                    className="w-full mt-3 py-3 rounded-xl bg-brand-700 hover:bg-brand-600 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-colors">
+                    {signing ? <Loader size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                    I confirm — Sign Document
+                  </button>
+                </div>
+              )}
+
+              {/* Already signed */}
+              {isSigned && (
+                <div className="mt-5 pt-4 border-t-2 border-green-200 bg-green-50 rounded-xl px-4 py-3 flex items-center gap-2">
+                  <CheckCircle size={18} className="text-green-600 shrink-0" />
+                  <div>
+                    <p className="text-green-800 font-bold text-sm">You have signed this document</p>
+                    <p className="text-green-600 text-xs mt-0.5">Your signature is saved in your profile</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Document list ────────────────────────────────────────────────────────────
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 pt-6 pb-4 shrink-0">
+        <button onClick={onBack}
+          className="bg-white/10 hover:bg-white/20 rounded-xl p-2.5 transition-colors">
+          <ChevronLeft size={20} className="text-white" />
+        </button>
+        <div>
+          <h1 className="text-white font-bold text-lg">Documents</h1>
+          <p className="text-white/50 text-xs">Company handbooks & policies</p>
+        </div>
+        <button onClick={() => { setLoading(true); load(); }}
+          className="ml-auto bg-white/10 hover:bg-white/20 rounded-xl p-2.5 transition-colors">
+          <RotateCcw size={16} className="text-white/70" />
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-0 px-4 mb-3 shrink-0">
+        {[['pending', `Pending (${data?.pending?.length || 0})`], ['signed', `Signed (${data?.signed?.length || 0})`]].map(([t, lbl]) => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-colors ${tab === t ? 'bg-white text-brand-700 shadow-sm' : 'text-white/60 hover:text-white'}`}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-10 space-y-3">
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <Loader size={24} className="animate-spin text-white/40" />
+            <p className="text-white/40 text-sm">Loading…</p>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="bg-red-500/20 border border-red-500/30 rounded-2xl p-4 text-center">
+            <p className="text-red-300 text-sm">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && tab === 'pending' && (
+          data?.pending?.length === 0
+            ? (
+              <div className="text-center py-12">
+                <p className="text-3xl mb-2">🎉</p>
+                <p className="text-white font-semibold">All caught up!</p>
+                <p className="text-white/40 text-sm mt-1">No documents waiting for your signature</p>
+              </div>
+            )
+            : data.pending.map(doc => {
+              const tc = DOC_TYPE[doc.type] || DOC_TYPE.other;
+              return (
+                <button key={doc._id} onClick={() => openDoc(doc)}
+                  className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/20 border border-amber-400/30 rounded-2xl px-4 py-3.5 text-left transition-colors">
+                  <span className="text-2xl shrink-0">{tc.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{doc.title}</p>
+                    <p className="text-white/40 text-xs mt-0.5">{tc.label} · Requires your signature</p>
+                  </div>
+                  <span className="text-[10px] bg-amber-400/30 text-amber-300 font-bold px-2 py-0.5 rounded-full shrink-0">SIGN</span>
+                </button>
+              );
+            })
+        )}
+
+        {!loading && !error && tab === 'signed' && (
+          data?.signed?.length === 0
+            ? <p className="text-center text-white/40 text-sm py-10">No signed documents yet</p>
+            : data.signed.map(doc => {
+              const tc = DOC_TYPE[doc.type] || DOC_TYPE.other;
+              return (
+                <button key={doc._id} onClick={() => openDoc(doc)}
+                  className="w-full flex items-center gap-3 bg-white/8 hover:bg-white/15 border border-green-500/20 rounded-2xl px-4 py-3.5 text-left transition-colors">
+                  <span className="text-2xl shrink-0">{tc.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{doc.title}</p>
+                    <p className="text-white/40 text-xs mt-0.5">Signed {fmtT(doc.signedAt) !== '—' ? new Date(doc.signedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</p>
+                  </div>
+                  <span className="text-[10px] bg-green-500/20 text-green-300 font-bold px-2 py-0.5 rounded-full shrink-0">✓ SIGNED</span>
+                </button>
+              );
+            })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Shift Status Board ─────────────────────────────────────────────────────────
 function ShiftBoardView({ session, onBack }) {
   const { deviceToken, worker } = session;
@@ -2439,6 +2690,11 @@ export default function WorkerPortal() {
       {/* ── Shift Board ────────────────────────────────────────────────────── */}
       {step === 'shift_board' && session && (
         <ShiftBoardView session={session} onBack={() => setStep('menu')} />
+      )}
+
+      {/* ── Documents ──────────────────────────────────────────────────────── */}
+      {step === 'documents' && session && (
+        <DocumentsView session={session} onBack={() => setStep('menu')} />
       )}
     </Shell>
   );

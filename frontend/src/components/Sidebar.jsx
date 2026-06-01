@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
-  AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen,
+  AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -50,7 +50,8 @@ export default function Sidebar({ onClose }) {
     {
       label: 'Resources',
       items: [
-        { to: '/handbook', icon: BookOpen, label: 'Worker Handbook', show: true  },
+        { to: '/documents', icon: FileText,  label: 'Documents',       show: isSuperAdmin() || can('manageBranches') },
+        { to: '/handbook',  icon: BookOpen,  label: 'Worker Handbook', show: true  },
       ],
     },
   ];
