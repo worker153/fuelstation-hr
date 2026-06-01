@@ -37,6 +37,7 @@ import Offences           from './pages/Offences';
 import OpsView            from './pages/OpsView';
 import AdminPinLogin      from './pages/AdminPinLogin';
 import AdminDashboard     from './pages/AdminDashboard';
+import AdminLanding       from './pages/AdminLanding';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -116,7 +117,8 @@ export default function App() {
             <Route path="/terminal" element={<AttendanceTerminal />} />
             <Route path="/worker"   element={<WorkerPortal />} />
             <Route path="/my-pin"   element={<WorkerPinReset />} />
-            <Route path="/admin/:userId"  element={<AdminPinLogin />} />
+            <Route path="/admin"           element={<AdminLanding />} />
+            <Route path="/admin/:userId"   element={<AdminPinLogin />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
 
             <Route element={<PrivateRoute><Layout /></PrivateRoute>}>

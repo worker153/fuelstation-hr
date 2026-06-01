@@ -1,9 +1,9 @@
 {
-  "id": "/admin-dashboard",
+  "id": "/admin",
   "name": "Sage Admin Dashboard",
   "short_name": "Sage Admin",
   "description": "Supervisor & admin dashboard — staff, shortages, bookings, quick actions",
-  "start_url": "/admin-dashboard",
+  "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import PWAInstallBanner from '../components/PWAInstallBanner';
 
 const API = import.meta.env.VITE_API_URL || '/api';
 
@@ -98,7 +99,9 @@ export default function AdminPinLogin() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-800 to-green-950 flex flex-col items-center justify-center px-4 py-10 select-none">
+    <div className="min-h-screen bg-gradient-to-b from-green-800 to-green-950 flex flex-col select-none">
+      <PWAInstallBanner manifest="/admin-manifest.json" />
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-10">
 
       {/* Company + name */}
       <div className="text-center mb-8">
@@ -177,6 +180,7 @@ export default function AdminPinLogin() {
       <p className="text-green-400/60 text-xs mt-10 text-center">
         Forgot PIN? Contact your manager
       </p>
+    </div>
     </div>
   );
 }
