@@ -442,7 +442,7 @@ function WorkerBadge({ worker, sub }) {
 function Shell({ session, onSignOut, children }) {
   const now = useClock();
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 flex flex-col select-none">
+    <div className="h-[100dvh] bg-gradient-to-br from-brand-900 via-brand-800 to-brand-700 flex flex-col select-none overflow-hidden">
       <PWAInstallBanner manifest="/worker-manifest.json" />
       <div className="flex items-center justify-between px-4 py-3 bg-black/20 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2">
@@ -461,7 +461,9 @@ function Shell({ session, onSignOut, children }) {
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">{children}</div>
+      {/* min-h-0 is required: without it flex-1 won't shrink below content size
+          and overflow-y-auto won't activate on iOS */}
+      <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
     </div>
   );
 }
@@ -543,7 +545,7 @@ function MenuView({ session, onNavigate }) {
   };
 
   return (
-    <div className="p-4 max-w-sm mx-auto">
+    <div className="p-4 max-w-sm mx-auto pb-10">
       {/* Worker identity card */}
       <div className="flex items-center gap-3 bg-white/10 rounded-2xl p-4 mb-5 border border-white/20">
         {worker.photo
@@ -1210,7 +1212,7 @@ function BreakView({ session, onBack }) {
   };
 
   return (
-    <div className="p-4 max-w-sm mx-auto">
+    <div className="p-4 max-w-sm mx-auto pb-10">
       {/* Header — hidden during face scan and result */}
       {bStep !== 'face_start' && bStep !== 'face_end' && bStep !== 'result' && (
       <div className="flex items-center gap-3 mb-4">
