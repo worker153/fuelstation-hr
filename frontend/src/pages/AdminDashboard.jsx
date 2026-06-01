@@ -1,9 +1,11 @@
 /**
  * AdminDashboard — /admin-dashboard
  * Simple, icon-heavy, mobile-first dashboard for admins/supervisors.
- * PIN-login only. Token stored in sessionStorage.adminToken.
+ * PIN-login only. Token stored in localStorage (persists across PWA sessions).
  *
  * Features:
+ *  - Installable as standalone PWA (admin-manifest.json)
+ *  - Embedded PIN re-auth when token is missing/expired (no redirect to /login)
  *  - Browse any past date (← / Today / →)
  *  - Staff tab: per-shift groups with ✅ All Present badge
  *  - Shortage tab: day view + full month history grouped by date
@@ -13,13 +15,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import PWAInstallBanner from '../components/PWAInstallBanner';
 
 const API = import.meta.env.VITE_API_URL || '/api';
 
-// Axios instance using sessionStorage token
+// Axios instance using localStorage token
 const adminApi = axios.create({ baseURL: API });
 adminApi.interceptors.request.use(cfg => {
-  const t = sessionStorage.getItem('adminToken');
+  const t = localStorage.getItem('adminToken');
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
   return cfg;
 });
@@ -566,15 +569,46 @@ export default function AdminDashboard() {
   const [shortageView, setShortageView] = useState('day');   // 'day' | 'month'
   const [offenceView,  setOffenceView ] = useState('day');   // 'day' | 'month'
 
+  const [authScreen, setAuthScreen] = useState(
+    () => !localStorage.getItem('adminToken')
+  );
+  const [rePin,    setRePin   ] = useState('');
+  const [reError,  setReError ] = useState('');
+  const [reLoading,setReLoading] = useState(false);
+
   const user = useMemo(() => {
-    try { return JSON.parse(sessionStorage.getItem('adminUser') || 'null'); }
+    try { return JSON.parse(localStorage.getItem('adminUser') || 'null'); }
     catch { return null; }
-  }, []);
+  }, [authScreen]); // re-derive after successful re-auth
   const isAdmin = ['super_admin', 'admin'].includes(user?.role);
 
+  // PIN re-auth (used when token is missing or expired)
+  const PAD_KEYS = [['1','2','3'],['4','5','6'],['7','8','9'],['del','0','ok']];
+  const pressPin = (k) => {
+    setReError('');
+    if (k === 'del') { setRePin(p => p.slice(0, -1)); return; }
+    if (k === 'ok')  { if (rePin.length === 4) doReAuth(rePin); return; }
+    setRePin(p => p.length < 4 ? p + k : p);
+  };
   useEffect(() => {
-    if (!sessionStorage.getItem('adminToken')) navigate('/login', { replace: true });
-  }, [navigate]);
+    if (rePin.length === 4) doReAuth(rePin);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rePin]);
+
+  const doReAuth = async (pin) => {
+    if (!user?._id) { setReError('Session lost. Open your admin link again.'); return; }
+    setReLoading(true); setReError('');
+    try {
+      const { data } = await axios.post(`${API}/auth/pin-login`, { userId: user._id, pin });
+      localStorage.setItem('adminToken', data.token);
+      localStorage.setItem('adminUser',  JSON.stringify(data.user));
+      setAuthScreen(false);
+      setRePin('');
+    } catch (e) {
+      setReError(e.response?.data?.message || 'Wrong PIN');
+      setRePin('');
+    } finally { setReLoading(false); }
+  };
 
   const load = useCallback(async (date = selDate) => {
     setLoading(true);
@@ -588,7 +622,10 @@ export default function AdminDashboard() {
         setSelBranch(String(res.data.summary[0]._id));
       }
     } catch (e) {
-      if (e.response?.status === 401) navigate('/login', { replace: true });
+      if (e.response?.status === 401) {
+        localStorage.removeItem('adminToken');
+        setAuthScreen(true);
+      }
     } finally { setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, user, navigate, selBranch]);
@@ -610,9 +647,10 @@ export default function AdminDashboard() {
   }, [selDate, load]);
 
   const logout = () => {
-    sessionStorage.removeItem('adminToken');
-    sessionStorage.removeItem('adminUser');
-    navigate('/login', { replace: true });
+    localStorage.removeItem('adminToken');
+    // keep adminUser so the re-auth screen knows who to authenticate
+    setAuthScreen(true);
+    setRePin(''); setReError('');
   };
 
   const changeDate = (delta) => {
@@ -632,11 +670,97 @@ export default function AdminDashboard() {
   const isToday  = selDate === todayUTC();
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  // ── PIN re-auth screen (shown when token is missing or expired) ───────────
+  if (authScreen) {
+    const roleLabel = (r) => ({
+      super_admin: 'Super Admin', admin: 'Admin', supervisor: 'Supervisor',
+      record_supervisor: 'Record Supervisor', hr_staff: 'HR Staff',
+    }[r] || r || 'Staff');
+    const noUserId = !user?._id;
+
+    return (
+      <div className="h-[100dvh] bg-gradient-to-b from-green-800 to-green-950 flex flex-col items-center justify-center px-4 py-10 select-none overflow-hidden">
+        <PWAInstallBanner manifest="/admin-manifest.json" />
+
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 rounded-full bg-white/20 border-4 border-white/40 flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl font-black text-white">
+              {user?.company?.name?.[0]?.toUpperCase() || '⛽'}
+            </span>
+          </div>
+          {user ? (
+            <>
+              <p className="text-green-200 text-xs font-semibold uppercase tracking-widest mb-1">
+                {user.company?.name || 'Sage Energy'}
+              </p>
+              <h1 className="text-white text-3xl font-black leading-tight">{user.name}</h1>
+              <p className="text-green-300 text-sm mt-1">{roleLabel(user.role)}</p>
+              <p className="text-green-400/70 text-xs mt-3">Enter your PIN to continue</p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-white text-2xl font-black">Admin Dashboard</h1>
+              <p className="text-red-300 text-sm mt-2">Session expired — open your admin link to log in again</p>
+              <a href="/login" className="inline-block mt-4 text-green-300 text-sm underline">Go to login →</a>
+            </>
+          )}
+        </div>
+
+        {!noUserId && (
+          <>
+            {/* PIN dots */}
+            <div className="flex gap-4 mb-8">
+              {[0,1,2,3].map(i => (
+                <div key={i}
+                  className={`w-5 h-5 rounded-full border-2 border-white/60 transition-all duration-150
+                    ${i < rePin.length ? 'bg-white scale-110' : 'bg-transparent'}`} />
+              ))}
+            </div>
+
+            {reError && (
+              <div className="mb-5 bg-red-500/20 border border-red-400/40 rounded-xl px-5 py-2.5 text-center">
+                <p className="text-red-200 font-semibold text-sm">{reError}</p>
+              </div>
+            )}
+            {reLoading && (
+              <div className="mb-5">
+                <div className="w-7 h-7 rounded-full border-t-white animate-spin mx-auto" style={{ borderWidth: 3, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
+              {PAD_KEYS.flat().map((key) => {
+                if (key === 'del') return (
+                  <button key="del" onPointerDown={() => pressPin('del')}
+                    className="h-16 rounded-2xl bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 flex items-center justify-center text-white text-2xl font-bold transition-all active:scale-95">⌫</button>
+                );
+                if (key === 'ok') return (
+                  <button key="ok" onPointerDown={() => pressPin('ok')} disabled={rePin.length !== 4 || reLoading}
+                    className={`h-16 rounded-2xl border flex items-center justify-center text-xl font-bold transition-all active:scale-95
+                      ${rePin.length === 4 ? 'bg-white text-green-800 hover:bg-green-50 border-white shadow-lg' : 'bg-white/10 border-white/20 text-white/40'}`}>✓</button>
+                );
+                return (
+                  <button key={key} onPointerDown={() => pressPin(key)} disabled={reLoading}
+                    className="h-16 rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/35 border border-white/20 flex items-center justify-center text-white text-2xl font-bold transition-all active:scale-95">{key}</button>
+                );
+              })}
+            </div>
+            <p className="text-green-400/60 text-xs mt-8 text-center">Forgot PIN? Contact your manager</p>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-lg mx-auto">
+    <div className="h-[100dvh] bg-gray-50 flex flex-col max-w-lg mx-auto overflow-hidden">
+
+      {/* ── PWA Install Banner ───────────────────────────────────────────────── */}
+      <PWAInstallBanner manifest="/admin-manifest.json" />
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="bg-green-800 text-white px-4 pt-5 pb-3 sticky top-0 z-40 shadow-lg">
+      <div className="bg-green-800 text-white px-4 pt-5 pb-3 shrink-0 shadow-lg z-40">
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-green-300 text-xs font-semibold uppercase tracking-widest">
@@ -692,7 +816,7 @@ export default function AdminDashboard() {
 
       {/* ── Branch tab strip — always visible if multiple branches ───────────── */}
       {data?.summary?.length > 1 && (
-        <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[calc(var(--header-h,140px))] z-30">
+        <div className="bg-white border-b border-gray-200 shadow-sm shrink-0 z-30">
           <div className="flex overflow-x-auto gap-0 scrollbar-none">
             {data.summary.map(b => {
               const active  = String(b._id) === selBranch;
@@ -734,7 +858,7 @@ export default function AdminDashboard() {
 
       {/* ── Content ──────────────────────────────────────────────────────────── */}
       {!loading && branch && (
-        <div className="flex-1 overflow-y-auto pb-24">
+        <div className="flex-1 min-h-0 overflow-y-auto pb-24">
 
           {/* ════ HOME TAB ══════════════════════════════════════════════════════ */}
           {tab === 'home' && (
@@ -1098,7 +1222,7 @@ export default function AdminDashboard() {
 
       {/* ── Empty state ──────────────────────────────────────────────────────── */}
       {!loading && !branch && (
-        <div className="flex-1 flex items-center justify-center p-6">
+        <div className="flex-1 min-h-0 flex items-center justify-center p-6">
           <div className="text-center">
             <p className="text-5xl mb-4">🏢</p>
             <p className="text-gray-600 font-semibold">No branch data available</p>

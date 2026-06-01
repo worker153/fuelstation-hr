@@ -1,7 +1,8 @@
 /**
  * AdminPinLogin — /admin/:userId
  * Large-button PIN pad. Works for supervisors, managers, any admin.
- * On success stores token + user in sessionStorage → redirects to /admin-dashboard.
+ * On success stores token + user in localStorage → redirects to /admin-dashboard.
+ * (localStorage so the PWA stays logged in across sessions)
  */
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -49,8 +50,8 @@ export default function AdminPinLogin() {
     setError('');
     try {
       const { data } = await axios.post(`${API}/auth/pin-login`, { userId, pin: enteredPin });
-      sessionStorage.setItem('adminToken', data.token);
-      sessionStorage.setItem('adminUser',  JSON.stringify(data.user));
+      localStorage.setItem('adminToken', data.token);
+      localStorage.setItem('adminUser',  JSON.stringify(data.user));
       navigate('/admin-dashboard', { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || 'Wrong PIN');
