@@ -470,129 +470,145 @@ export default function Payroll() {
     if (!payroll || sharingPDF) return;
     setSharingPDF(true);
     try {
-      const { jsPDF }          = await import('jspdf');
+      const { jsPDF }              = await import('jspdf');
       const { default: autoTable } = await import('jspdf-autotable');
 
       const companyName = user?.company?.name || 'HR System';
-      const today = new Date().toLocaleDateString('en-NG',
+      const today    = new Date().toLocaleDateString('en-NG',
         { day: 'numeric', month: 'long', year: 'numeric' });
       const filename = `Payroll-${payroll.label.replace(/\s+/g, '-')}.pdf`;
-
-      // jsPDF doesn't support ₦ in built-in fonts — use NGN prefix instead
+      // jsPDF built-in fonts don't support ₦ — use NGN prefix
       const N = (n) => `NGN ${Number(n || 0).toLocaleString('en-NG')}`;
 
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const PW  = doc.internal.pageSize.getWidth();
+      // Portrait A4 — reads much better on phone screens
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const PW  = doc.internal.pageSize.getWidth();   // 210 mm
 
-      // ── Header ────────────────────────────────────────────────────────────
+      // ── Green header banner ────────────────────────────────────────────────
+      doc.setFillColor(20, 83, 45);
+      doc.rect(0, 0, PW, 36, 'F');
+
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(15);
-      doc.setTextColor(20, 83, 45);       // dark green
-      doc.text(companyName, 14, 15);
+      doc.setFontSize(17);
+      doc.setTextColor(255, 255, 255);
+      doc.text(companyName.toUpperCase(), 14, 13);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.setTextColor(80);
-      doc.text(`Payroll Sheet  |  ${payroll.label}  |  ${payroll.status === 'finalised' ? 'FINALISED' : 'DRAFT'}`, 14, 22);
-      doc.text(`Printed: ${today}  ·  ${entries.length} workers  ·  Branch: ${payroll.branchName || '—'}`, 14, 27);
+      doc.setTextColor(166, 228, 166);
+      doc.text(
+        `PAYROLL SHEET  |  ${payroll.label}  |  ${payroll.status === 'finalised' ? 'FINALISED' : 'DRAFT'}`,
+        14, 21
+      );
+      doc.setFontSize(8);
+      doc.setTextColor(120, 190, 120);
+      doc.text(
+        `Branch: ${payroll.branchName || '—'}   ·   ${entries.length} workers   ·   Printed: ${today}`,
+        14, 29
+      );
 
-      // thin rule
-      doc.setDrawColor(180);
-      doc.line(14, 30, PW - 14, 30);
+      // ── Summary bar ───────────────────────────────────────────────────────
+      const SY = 39;
+      doc.setFillColor(240, 250, 240);
+      doc.rect(0, SY, PW, 20, 'F');
+      doc.setDrawColor(200, 230, 200);
+      doc.line(0, SY, PW, SY);
+      doc.line(0, SY + 20, PW, SY + 20);
 
-      // ── Summary strip ─────────────────────────────────────────────────────
-      doc.setFillColor(240, 247, 240);
-      doc.roundedRect(14, 33, PW - 28, 12, 2, 2, 'F');
-      doc.setFontSize(8.5);
-      doc.setTextColor(50);
-      let sx = 19;
+      // Gross
+      doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
-      doc.text(`Gross: `, sx, 41); doc.setFont('helvetica', 'bold'); doc.text(N(totalGross), sx + 15, 41); sx += 48;
+      doc.setTextColor(110);
+      doc.text('GROSS SALARY', 14, SY + 7);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(30);
+      doc.text(N(totalGross), 14, SY + 15);
+
+      // Shortage (if any)
       if (totalShortage > 0) {
-        doc.setFont('helvetica', 'normal'); doc.setTextColor(180, 0, 0);
-        doc.text(`Shortage: `, sx, 41); doc.setFont('helvetica', 'bold'); doc.text(`-${N(totalShortage)}`, sx + 20, 41); sx += 52;
-        doc.setTextColor(50);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(160, 0, 0);
+        doc.text('TOTAL SHORTAGE', 82, SY + 7);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10.5);
+        doc.text(`-${N(totalShortage)}`, 82, SY + 15);
       }
-      if (totalBonus > 0) {
-        doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 100, 0);
-        doc.text(`Bonus: `, sx, 41); doc.setFont('helvetica', 'bold'); doc.text(`+${N(totalBonus)}`, sx + 15, 41); sx += 48;
-        doc.setTextColor(50);
-      }
-      doc.setFont('helvetica', 'normal'); doc.setTextColor(20, 83, 45);
-      doc.text(`Net Payable:`, PW - 80, 41);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-      doc.text(N(totalNet), PW - 55, 41);
+
+      // Net Payable — right-aligned, prominent
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(20, 83, 45);
+      doc.text('NET PAYABLE', PW - 14, SY + 7, { align: 'right' });
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text(N(totalNet), PW - 14, SY + 16, { align: 'right' });
 
       // ── Workers table ─────────────────────────────────────────────────────
+      // Portrait columns: # | Worker+Role | Bank+Account | Gross | Net Pay
+      // Total usable width = 210 - 28 = 182 mm
       const rows = entries.map((e, idx) => {
-        const net      = computeNetPay(e);
-        const wdm      = e.workingDaysInMonth || 26;
-        const absDed   = (e.absentDays || 0) * ((e.grossSalary || 0) / wdm);
-        const earned   = e.calculatedSalary != null ? e.calculatedSalary : e.grossSalary;
-        const isProrat = e.isProrated && earned < (e.grossSalary || 0);
+        const net   = computeNetPay(e);
+        const notes = [];
+        if (e.shortage > 0)  notes.push(`-${N(e.shortage)} shortage`);
+        if (e.absentDays > 0) notes.push(`${e.absentDays}d absent`);
+        if (e.bonus > 0)     notes.push(`+${N(e.bonus)} bonus`);
+        const isProrat = e.isProrated && e.calculatedSalary != null
+          && e.calculatedSalary < (e.grossSalary || 0);
+        if (isProrat) notes.push(`prorated ${e.daysWorked}/${e.daysInMonth}d`);
+
         return [
           idx + 1,
-          e.fullName + (isProrat ? ` (${e.daysWorked}/${e.daysInMonth}d)` : ''),
-          e.role || '',
-          e.bankName || '—',
-          e.accountNumber || '—',
+          `${e.fullName}\n${e.role || ''}`,
+          `${e.bankName || '—'}\n${e.accountNumber || ''}`,
           N(e.grossSalary),
-          isProrat ? N(earned) : '—',
-          e.absentDays > 0 ? `${e.absentDays}d (-${N(absDed)})` : '—',
-          e.shortage > 0 ? `-${N(e.shortage)}` : '—',
-          e.bonus    > 0 ? `+${N(e.bonus)}`    : '—',
-          N(net),
+          notes.length > 0 ? `${N(net)}\n${notes.join('  ·  ')}` : N(net),
         ];
       });
 
       autoTable(doc, {
-        startY: 48,
-        head: [['#', 'Worker', 'Role', 'Bank', 'Acct No.', 'Gross', 'Earned', 'Absent', 'Shortage', 'Bonus', 'Net Pay']],
+        startY: SY + 23,
+        head: [['#', 'Worker', 'Bank Details', 'Gross', 'Net Pay']],
         body: rows,
         foot: [[
-          '', `TOTAL (${entries.length} workers)`, '', '', '',
-          N(totalGross), '', '',
-          totalShortage > 0 ? `-${N(totalShortage)}` : '—',
-          totalBonus    > 0 ? `+${N(totalBonus)}`    : '—',
-          N(totalNet),
+          '', `TOTAL — ${entries.length} workers`, '',
+          N(totalGross), N(totalNet),
         ]],
-        styles:           { fontSize: 7.5, cellPadding: 1.8 },
-        headStyles:       { fillColor: [20, 83, 45], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
-        footStyles:       { fillColor: [220, 237, 220], textColor: [20, 83, 45], fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [248, 252, 248] },
+        rowPageBreak:       'avoid',
+        styles:             { fontSize: 8.5, cellPadding: 3.5, lineColor: [220, 230, 220], lineWidth: 0.1 },
+        headStyles:         { fillColor: [20, 83, 45], textColor: 255, fontStyle: 'bold', fontSize: 8.5, cellPadding: 4 },
+        footStyles:         { fillColor: [218, 240, 218], textColor: [20, 83, 45], fontStyle: 'bold', fontSize: 9 },
+        alternateRowStyles: { fillColor: [248, 253, 248] },
         columnStyles: {
-          0:  { cellWidth: 8,  halign: 'right'  },
-          1:  { cellWidth: 42 },
-          2:  { cellWidth: 26 },
-          3:  { cellWidth: 26 },
-          4:  { cellWidth: 24, font: 'courier' },
-          5:  { cellWidth: 28, halign: 'right'  },
-          6:  { cellWidth: 24, halign: 'right'  },
-          7:  { cellWidth: 28, halign: 'right'  },
-          8:  { cellWidth: 28, halign: 'right', textColor: [180, 0, 0]   },
-          9:  { cellWidth: 24, halign: 'right', textColor: [0, 120, 0]   },
-          10: { cellWidth: 28, halign: 'right', fontStyle: 'bold', textColor: [20, 83, 45] },
+          0: { cellWidth: 8,  halign: 'right', fontSize: 8, textColor: [160, 160, 160] },
+          1: { cellWidth: 58 },
+          2: { cellWidth: 52 },
+          3: { cellWidth: 32, halign: 'right' },
+          4: { cellWidth: 32, halign: 'right', fontStyle: 'bold', textColor: [20, 83, 45] },
         },
         didParseCell: (data) => {
-          // Colour negative shortage red in body
-          if (data.section === 'body' && data.column.index === 8 && data.cell.raw !== '—')
-            data.cell.styles.textColor = [180, 0, 0];
-          if (data.section === 'body' && data.column.index === 9 && data.cell.raw !== '—')
-            data.cell.styles.textColor = [0, 120, 0];
+          // Make role text and account number smaller + gray
+          if (data.section === 'body' && (data.column.index === 1 || data.column.index === 2)) {
+            // secondary line (after \n) shown smaller — we just reduce overall font slightly
+            data.cell.styles.fontSize = 8;
+          }
+          // Make deduction notes in net pay column smaller
+          if (data.section === 'body' && data.column.index === 4) {
+            data.cell.styles.fontSize = 8;
+          }
         },
       });
 
       // ── Signature lines ───────────────────────────────────────────────────
-      const sigY = doc.lastAutoTable?.finalY ?? (doc.internal.pageSize.getHeight() - 30);
-      if (sigY + 30 < doc.internal.pageSize.getHeight()) {
+      const finalY = (doc.lastAutoTable?.finalY ?? 240) + 14;
+      if (finalY + 30 < doc.internal.pageSize.getHeight()) {
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(120);
-        const labels = ['Prepared By', 'Reviewed By', 'Authorised By'];
-        const cols   = [14, PW / 3 + 7, (PW / 3) * 2 + 14];
-        labels.forEach((lbl, i) => {
-          doc.line(cols[i], sigY + 22, cols[i] + 70, sigY + 22);
-          doc.text(`${lbl}  — Signature & Date`, cols[i], sigY + 27);
+        doc.setFontSize(7.5);
+        doc.setTextColor(130);
+        [['Prepared By', 14], ['Reviewed By', 80], ['Authorised By', 147]].forEach(([lbl, x]) => {
+          doc.line(x, finalY + 16, x + 54, finalY + 16);
+          doc.text(`${lbl}  —  Signature & Date`, x, finalY + 21);
         });
       }
 
@@ -607,7 +623,7 @@ export default function Payroll() {
           files: [file],
         });
       } else {
-        // Desktop / unsupported — trigger download
+        // Desktop fallback — download
         const url = URL.createObjectURL(blob);
         const a   = document.createElement('a');
         a.href = url; a.download = filename; a.click();
