@@ -2,6 +2,7 @@ const Attendance       = require('../models/Attendance');
 const AttendanceDevice = require('../models/AttendanceDevice');
 const Worker           = require('../models/Worker');
 const Branch           = require('../models/Branch');
+const Shift            = require('../models/Shift');
 const cloudinary       = require('../config/cloudinary');
 const { createAttendanceShortage } = require('./shortageController');
 const { isWorkerOnDuty, getSettingsForRole } = require('../utils/attendanceHelpers');
@@ -169,7 +170,11 @@ const terminalClock = async (req, res) => {
         console.log(`[AUTO-DEDUCT] exempt worker — skipping`);
       }
       // Skip all deductions if today is this worker's scheduled off day
-      else if (!isWorkerOnDuty(worker, now)) {
+      // Populate shift so isWorkerOnDuty can check fixed-shift days as well
+      else if (!isWorkerOnDuty(
+        { ...worker, shiftId: worker.shiftId ? await Shift.findById(worker.shiftId).lean() : null },
+        now
+      )) {
         console.log(`[AUTO-DEDUCT] off-duty day — skipping`);
       }
       else {
@@ -241,7 +246,8 @@ const terminalClock = async (req, res) => {
   // ── Step 8: auto-deduction for early clock-out ──────────────────────────────
   if (type === 'clock_out') {
     try {
-      if (isWorkerOnDuty(worker, now)) {
+      const populatedWorkerCO = { ...worker, shiftId: worker.shiftId ? await Shift.findById(worker.shiftId).lean() : null };
+      if (isWorkerOnDuty(populatedWorkerCO, now)) {
       const branch   = await Branch.findById(device.branch).lean();
       const settings = getSettingsForRole(branch, worker.role);
 
@@ -430,7 +436,9 @@ const processAbsences = async (req, res) => {
       return res.json({ success: true, processed: 0, total: 0, message: 'Not a configured work day for this branch' });
   }
 
-  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active', clockInRequired: { $ne: false } }).lean();
+  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active', clockInRequired: { $ne: false } })
+    .populate('shiftId', 'shiftType days rotationPattern')
+    .lean();
   const clockedIn = await Attendance.find({ company: cid, branch: branchId, date, type: 'clock_in' })
     .distinct('worker');
   const clockedSet = new Set(clockedIn.map(String));
@@ -465,7 +473,7 @@ const processAbsences = async (req, res) => {
   }
 
   const offDutyCount = workers.filter(w =>
-    !clockedSet.has(String(w._id)) && !isWorkerOnDuty(w, localDate)
+    !clockedSet.has(String(w._id)) && !isWorkerOnDuty(w, localDate)   // shiftId already populated
   ).length;
 
   res.json({

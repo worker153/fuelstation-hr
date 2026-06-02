@@ -186,9 +186,9 @@ const getActiveWorkers = async (req, res) => {
   const total   = await Worker.countDocuments(filter);
   const workers = await Worker.find(filter)
     .populate('branchId', 'name')
-    .populate('shiftId',  'name startTime endTime')
+    .populate('shiftId',  'name shiftType startTime endTime days rotationPattern')
     .populate('activatedBy', 'name')
-    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary rotationSchedule')
+    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary rotationSchedule clockInRequired')
     .sort({ employmentStatus: 1, fullName: 1 })
     .skip((page - 1) * limit)
     .limit(Number(limit));

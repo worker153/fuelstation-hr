@@ -30,7 +30,22 @@ function fmtHours(inTs, outTs) {
 }
 
 // Determine whether a worker is on their scheduled duty day (frontend mirror of controller helper)
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
 function isWorkerOnDuty(worker, dateStr) {
+  const checkDate = new Date(dateStr);
+
+  // ── 1. Fixed-shift day check ─────────────────────────────────────────────
+  const shift = worker.shiftId;
+  if (shift && typeof shift === 'object' && shift.shiftType === 'fixed') {
+    const shiftDays = shift.days;
+    if (Array.isArray(shiftDays) && shiftDays.length > 0 && shiftDays.length < 7) {
+      const todayName = DAY_NAMES[checkDate.getDay()];
+      if (!shiftDays.includes(todayName)) return false;
+    }
+  }
+
+  // ── 2. Rotation-cycle check ──────────────────────────────────────────────
   const sched = worker.rotationSchedule;
   if (!sched || !sched.pattern || sched.pattern === 'none' || !sched.startDate) return true;
   const [onStr, offStr] = sched.pattern.split('_');
@@ -39,8 +54,7 @@ function isWorkerOnDuty(worker, dateStr) {
   const cycleLen = onDays + offDays;
   const start    = new Date(sched.startDate);
   const startUTC = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  const check    = new Date(dateStr);
-  const checkUTC = Date.UTC(check.getUTCFullYear(), check.getUTCMonth(), check.getUTCDate());
+  const checkUTC = Date.UTC(checkDate.getUTCFullYear(), checkDate.getUTCMonth(), checkDate.getUTCDate());
   const daysDiff   = Math.round((checkUTC - startUTC) / 86400000);
   const posInCycle = ((daysDiff % cycleLen) + cycleLen) % cycleLen;
   return posInCycle < onDays;
