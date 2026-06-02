@@ -365,6 +365,7 @@ export default function Payroll() {
   const [finalising, setFinalising] = useState(false);
   const [unlocking,  setUnlocking ] = useState(false);
   const [deleting,   setDeleting  ] = useState(false);
+  const [sharingPDF, setSharingPDF] = useState(false);
   const [listKey,    setListKey   ] = useState(0);
 
   // Open a payroll by ID
@@ -464,51 +465,160 @@ export default function Payroll() {
   // ── Print ─────────────────────────────────────────────────────────────────
   const handlePrint = () => window.print();
 
-  // ── WhatsApp ──────────────────────────────────────────────────────────────
-  const handleWhatsApp = () => {
-    if (!payroll) return;
-    const companyName = user?.company?.name || 'HR System';
+  // ── Share as PDF ──────────────────────────────────────────────────────────
+  const handleSharePDF = async () => {
+    if (!payroll || sharingPDF) return;
+    setSharingPDF(true);
+    try {
+      const { jsPDF }          = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
 
-    const totalGross    = entries.reduce((s, e) => s + (e.grossSalary || 0), 0);
-    const totalShortage = entries.reduce((s, e) => s + (e.shortage    || 0), 0);
-    const totalBonus    = entries.reduce((s, e) => s + (e.bonus       || 0), 0);
-    const totalNet      = entries.reduce((s, e) => s + computeNetPay(e), 0);
+      const companyName = user?.company?.name || 'HR System';
+      const today = new Date().toLocaleDateString('en-NG',
+        { day: 'numeric', month: 'long', year: 'numeric' });
+      const filename = `Payroll-${payroll.label.replace(/\s+/g, '-')}.pdf`;
 
-    const lines = [
-      `💰 *PAYROLL — ${payroll.label}*`,
-      payroll.status === 'finalised' ? `✅ FINALISED` : `📝 DRAFT`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🏢 *${payroll.branchName || 'Branch'}* · ${entries.length} worker${entries.length !== 1 ? 's' : ''}`,
-      ``
-    ];
+      // jsPDF doesn't support ₦ in built-in fonts — use NGN prefix instead
+      const N = (n) => `NGN ${Number(n || 0).toLocaleString('en-NG')}`;
 
-    entries.forEach((e, i) => {
-      const net   = computeNetPay(e);
-      const parts = [`${i + 1}. ${e.fullName} (${e.role}) — *${fmt(net)}*`];
-      if (e.isProrated && e.daysWorked != null)
-        parts.push(`  ↳ Prorated: ${e.daysWorked}/${e.daysInMonth} days (${fmt(e.calculatedSalary)} earned)`);
-      if (e.absentDays > 0)
-        parts.push(`  ↳ Absent: ${e.absentDays} day${e.absentDays !== 1 ? 's' : ''} deducted`);
-      if (e.shortage > 0) parts.push(`  ↳ Shortage: −${fmt(e.shortage)}`);
-      if (e.bankName)     parts.push(`  ↳ ${e.bankName}: ${e.accountNumber}`);
-      lines.push(parts.join('\n'));
-    });
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const PW  = doc.internal.pageSize.getWidth();
 
-    lines.push(
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📊 *TOTALS*`,
-      `Gross Salary:  ${fmt(totalGross)}`,
-      totalShortage > 0 ? `Total Shortage: −${fmt(totalShortage)}` : null,
-      totalBonus    > 0 ? `Total Bonus:   +${fmt(totalBonus)}`    : null,
-      `*Net Payable:  ${fmt(totalNet)}*`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `_${companyName}_`,
-      `_${new Date().toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}_`
-    );
+      // ── Header ────────────────────────────────────────────────────────────
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(20, 83, 45);       // dark green
+      doc.text(companyName, 14, 15);
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(lines.filter(l => l !== null).join('\n'))}`, '_blank');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(80);
+      doc.text(`Payroll Sheet  |  ${payroll.label}  |  ${payroll.status === 'finalised' ? 'FINALISED' : 'DRAFT'}`, 14, 22);
+      doc.text(`Printed: ${today}  ·  ${entries.length} workers  ·  Branch: ${payroll.branchName || '—'}`, 14, 27);
+
+      // thin rule
+      doc.setDrawColor(180);
+      doc.line(14, 30, PW - 14, 30);
+
+      // ── Summary strip ─────────────────────────────────────────────────────
+      doc.setFillColor(240, 247, 240);
+      doc.roundedRect(14, 33, PW - 28, 12, 2, 2, 'F');
+      doc.setFontSize(8.5);
+      doc.setTextColor(50);
+      let sx = 19;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Gross: `, sx, 41); doc.setFont('helvetica', 'bold'); doc.text(N(totalGross), sx + 15, 41); sx += 48;
+      if (totalShortage > 0) {
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(180, 0, 0);
+        doc.text(`Shortage: `, sx, 41); doc.setFont('helvetica', 'bold'); doc.text(`-${N(totalShortage)}`, sx + 20, 41); sx += 52;
+        doc.setTextColor(50);
+      }
+      if (totalBonus > 0) {
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 100, 0);
+        doc.text(`Bonus: `, sx, 41); doc.setFont('helvetica', 'bold'); doc.text(`+${N(totalBonus)}`, sx + 15, 41); sx += 48;
+        doc.setTextColor(50);
+      }
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(20, 83, 45);
+      doc.text(`Net Payable:`, PW - 80, 41);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(N(totalNet), PW - 55, 41);
+
+      // ── Workers table ─────────────────────────────────────────────────────
+      const rows = entries.map((e, idx) => {
+        const net      = computeNetPay(e);
+        const wdm      = e.workingDaysInMonth || 26;
+        const absDed   = (e.absentDays || 0) * ((e.grossSalary || 0) / wdm);
+        const earned   = e.calculatedSalary != null ? e.calculatedSalary : e.grossSalary;
+        const isProrat = e.isProrated && earned < (e.grossSalary || 0);
+        return [
+          idx + 1,
+          e.fullName + (isProrat ? ` (${e.daysWorked}/${e.daysInMonth}d)` : ''),
+          e.role || '',
+          e.bankName || '—',
+          e.accountNumber || '—',
+          N(e.grossSalary),
+          isProrat ? N(earned) : '—',
+          e.absentDays > 0 ? `${e.absentDays}d (-${N(absDed)})` : '—',
+          e.shortage > 0 ? `-${N(e.shortage)}` : '—',
+          e.bonus    > 0 ? `+${N(e.bonus)}`    : '—',
+          N(net),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 48,
+        head: [['#', 'Worker', 'Role', 'Bank', 'Acct No.', 'Gross', 'Earned', 'Absent', 'Shortage', 'Bonus', 'Net Pay']],
+        body: rows,
+        foot: [[
+          '', `TOTAL (${entries.length} workers)`, '', '', '',
+          N(totalGross), '', '',
+          totalShortage > 0 ? `-${N(totalShortage)}` : '—',
+          totalBonus    > 0 ? `+${N(totalBonus)}`    : '—',
+          N(totalNet),
+        ]],
+        styles:           { fontSize: 7.5, cellPadding: 1.8 },
+        headStyles:       { fillColor: [20, 83, 45], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+        footStyles:       { fillColor: [220, 237, 220], textColor: [20, 83, 45], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 252, 248] },
+        columnStyles: {
+          0:  { cellWidth: 8,  halign: 'right'  },
+          1:  { cellWidth: 42 },
+          2:  { cellWidth: 26 },
+          3:  { cellWidth: 26 },
+          4:  { cellWidth: 24, font: 'courier' },
+          5:  { cellWidth: 28, halign: 'right'  },
+          6:  { cellWidth: 24, halign: 'right'  },
+          7:  { cellWidth: 28, halign: 'right'  },
+          8:  { cellWidth: 28, halign: 'right', textColor: [180, 0, 0]   },
+          9:  { cellWidth: 24, halign: 'right', textColor: [0, 120, 0]   },
+          10: { cellWidth: 28, halign: 'right', fontStyle: 'bold', textColor: [20, 83, 45] },
+        },
+        didParseCell: (data) => {
+          // Colour negative shortage red in body
+          if (data.section === 'body' && data.column.index === 8 && data.cell.raw !== '—')
+            data.cell.styles.textColor = [180, 0, 0];
+          if (data.section === 'body' && data.column.index === 9 && data.cell.raw !== '—')
+            data.cell.styles.textColor = [0, 120, 0];
+        },
+      });
+
+      // ── Signature lines ───────────────────────────────────────────────────
+      const sigY = doc.lastAutoTable?.finalY ?? (doc.internal.pageSize.getHeight() - 30);
+      if (sigY + 30 < doc.internal.pageSize.getHeight()) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        const labels = ['Prepared By', 'Reviewed By', 'Authorised By'];
+        const cols   = [14, PW / 3 + 7, (PW / 3) * 2 + 14];
+        labels.forEach((lbl, i) => {
+          doc.line(cols[i], sigY + 22, cols[i] + 70, sigY + 22);
+          doc.text(`${lbl}  — Signature & Date`, cols[i], sigY + 27);
+        });
+      }
+
+      // ── Share or download ─────────────────────────────────────────────────
+      const blob = doc.output('blob');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `Payroll — ${payroll.label}`,
+          text:  `${companyName} · ${payroll.label} payroll`,
+          files: [file],
+        });
+      } else {
+        // Desktop / unsupported — trigger download
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError')
+        notify('Failed to generate PDF — try the Print button instead', 'error');
+    } finally {
+      setSharingPDF(false);
+    }
   };
 
   // Computed totals from local state
@@ -542,9 +652,9 @@ export default function Payroll() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors">
                   <Printer size={14} /> Print
                 </button>
-                <button onClick={handleWhatsApp}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition-colors">
-                  <Share2 size={14} /> WhatsApp
+                <button onClick={handleSharePDF} disabled={sharingPDF}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition-colors disabled:opacity-60">
+                  {sharingPDF ? <Loader size={14} className="animate-spin" /> : <><Share2 size={14} /> Share PDF</>}
                 </button>
                 {canManage && !readonly && (
                   <button onClick={handleSave} disabled={saving}
