@@ -889,10 +889,10 @@ export default function AdminDashboard() {
                   color="green" onClick={() => setTab('staff')} />
                 <StatCard emoji="❌" value={branch.absent?.length ?? 0}
                   label="Absent Today" color="red" onClick={() => setTab('staff')} />
-                <StatCard emoji="💸"
+                <StatCard emoji="☕"
                   value={`₦${(branch.dayShortageTotal || 0).toLocaleString()}`}
                   label={`Total Break Taken ${isToday ? 'Today' : fmtDateLabel(selDate)}`}
-                  color="amber" onClick={() => setTab('shortage')} />
+                  color="amber" onClick={() => navigate('/breaks')} />
                 <StatCard emoji="⚠️" value={branch.dayOffences?.length ?? 0}
                   label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Bookings`}
                   color="orange" onClick={() => setTab('bookings')} />
