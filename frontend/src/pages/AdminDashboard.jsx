@@ -898,15 +898,6 @@ export default function AdminDashboard() {
                   color="orange" onClick={() => setTab('bookings')} />
               </div>
 
-              {/* "Off today" info strip */}
-              {(branch.offCount || 0) > 0 && (
-                <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 flex items-center gap-2">
-                  <span className="text-base">📅</span>
-                  <p className="text-sm text-gray-500 font-medium">
-                    <strong className="text-gray-700">{branch.offCount}</strong> worker{branch.offCount !== 1 ? 's' : ''} scheduled off today — not counted in absent
-                  </p>
-                </div>
-              )}
 
               {/* Attendance bar — uses totalExpected (on-duty workers only) */}
               {(branch.totalExpected ?? branch.totalActive) > 0 && (
