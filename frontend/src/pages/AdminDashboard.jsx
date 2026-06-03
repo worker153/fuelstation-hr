@@ -1153,6 +1153,40 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
+              {/* Currently on break — live highlight */}
+              {(() => {
+                const onBreak = (breakData?.breaks || []).filter(b => b.status === 'active');
+                if (!breakData) return null;
+                return onBreak.length > 0 ? (
+                  <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4">
+                    <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">
+                      🔴 Live · {onBreak.length} Worker{onBreak.length !== 1 ? 's' : ''} Currently on Break
+                    </p>
+                    <div className="space-y-2">
+                      {onBreak.map((b, i) => (
+                        <div key={i} className="flex items-center gap-3 bg-white rounded-xl px-3 py-2.5 shadow-sm">
+                          <span className="text-xl">{BREAK_EMOJI[b.breakType] || '☕'}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-gray-900 truncate">{b.workerName}</p>
+                            <p className="text-xs text-gray-500">{BREAK_LABEL[b.breakType] || b.breakType}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-bold animate-pulse">On Break</span>
+                            {b.startTime && (
+                              <p className="text-[10px] text-gray-400 mt-0.5">since {fmtTime(b.startTime)}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 text-center">
+                    <p className="text-sm font-semibold text-green-700">✅ No one is currently on break</p>
+                  </div>
+                );
+              })()}
+
               {breakLoading && (
                 <div className="flex justify-center py-10">
                   <div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
