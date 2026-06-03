@@ -449,14 +449,16 @@ const getBreakSummary = async (req, res) => {
 
   const breaks = await Break.find(filter).lean();
 
-  // Load branch break settings to know which slots are enabled
+  // Load branch break settings to know which slots are enabled + their custom labels
   const Branch = require('../models/Branch');
   let enabledSlots = new Set(['morning', 'afternoon', 'night']);
+  let customLabels = {};
   if (branchId) {
     const branch = await Branch.findById(branchId).lean();
     if (branch?.breakSettings) {
       Object.entries(branch.breakSettings).forEach(([key, cfg]) => {
         if (cfg?.enabled) enabledSlots.add(key);
+        if (cfg?.label) customLabels[key] = cfg.label;
       });
     }
   }
@@ -475,7 +477,7 @@ const getBreakSummary = async (req, res) => {
     // Include if: has records OR is an enabled break slot in this branch
     if (rows.length === 0 && !enabledSlots.has(type)) continue;
     summary.byType[type] = {
-      label:      BREAK_LABELS[type],
+      label:      customLabels[type] || BREAK_LABELS[type],
       total:      rows.length,
       completed:  rows.filter(b => b.status === 'completed').length,
       overstayed: rows.filter(b => b.status === 'overstayed').length,
