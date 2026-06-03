@@ -915,69 +915,6 @@ export default function AdminDashboard() {
               </div>
 
 
-              {/* Attendance bar — uses totalExpected (on-duty workers only) */}
-              {(branch.totalExpected ?? branch.totalActive) > 0 && (
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="font-bold text-gray-800 text-sm">
-                      Attendance {!isToday && `· ${fmtDateLabel(selDate)}`}
-                    </p>
-                    <p className="text-sm font-semibold text-gray-600">
-                      {branch.clockedIn?.length} / {branch.totalExpected ?? branch.totalActive} expected
-                    </p>
-                  </div>
-                  <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
-                    {(() => {
-                      const exp = branch.totalExpected ?? branch.totalActive;
-                      const pct = exp > 0 ? Math.round((branch.clockedIn?.length / exp) * 100) : 0;
-                      return (
-                        <div className={`h-full rounded-full transition-all duration-500
-                          ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                          style={{ width: `${pct}%` }} />
-                      );
-                    })()}
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1.5 text-right">
-                    {(() => {
-                      const exp = branch.totalExpected ?? branch.totalActive;
-                      return exp > 0 ? Math.round((branch.clockedIn?.length / exp) * 100) : 0;
-                    })()}% of expected workers present
-                  </p>
-                </div>
-              )}
-
-              {/* All-present celebration */}
-              {(branch.totalExpected ?? 0) > 0 && branch.absent?.length === 0 && branch.clockedIn?.length > 0 && (
-                <div className="bg-green-500 rounded-2xl p-4 text-center text-white shadow-md">
-                  <p className="text-3xl mb-1">🎉</p>
-                  <p className="font-black text-lg">All {branch.totalExpected} Expected Workers Present!</p>
-                  <p className="text-green-100 text-sm">
-                    Great attendance {isToday ? 'today' : 'on this day'}!
-                    {(branch.offCount || 0) > 0 && ` (${branch.offCount} on scheduled day off)`}
-                  </p>
-                </div>
-              )}
-
-              {/* Absent alert — only on-duty workers who didn't show up */}
-              {branch.absent?.length > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-                  <p className="font-black text-red-700 text-base mb-2">
-                    ❌ {branch.absent.length} Worker{branch.absent.length !== 1 ? 's' : ''} Absent
-                    <span className="font-normal text-red-500 text-sm"> (supposed to work today)</span>
-                  </p>
-                  {branch.absent.slice(0, 4).map((w, i) => (
-                    <p key={i} className="text-red-600 font-semibold text-sm">
-                      • {w.fullName}
-                      {w.shiftName && <span className="font-normal opacity-60"> · {w.shiftName}</span>}
-                    </p>
-                  ))}
-                  {branch.absent.length > 4 && (
-                    <button onClick={() => setTab('staff')} className="text-red-400 text-xs font-bold mt-1 underline">
-                      +{branch.absent.length - 4} more — see Staff tab
-                    </button>
-                  )}
-                </div>
-              )}
 
               {/* Quick actions */}
               {isToday && (
