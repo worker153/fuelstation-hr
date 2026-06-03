@@ -46,8 +46,29 @@ const terminalClock = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Worker account is not active' });
 
   // ── 2.5. Duplicate check — one clock-in and one clock-out per worker per day ──
-  const now     = new Date();
-  const dateStr = now.toISOString().split('T')[0];
+  const now    = new Date();
+  // Use WAT (UTC+1) for the shift date so midnight Nigeria is the boundary
+  const watNow = new Date(now.getTime() + 60 * 60 * 1000);
+  const toDateStr = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  let dateStr = toDateStr(watNow);
+
+  // Overnight shift handling: if clocking OUT and no clock-in exists for today,
+  // check if there is a clock-in from yesterday (worker is finishing a night shift).
+  // If so, record the clock-out against yesterday's shift date.
+  if (type === 'clock_out') {
+    const todayClockIn = await Attendance.findOne({
+      company: device.company, worker: worker._id, date: dateStr, type: 'clock_in',
+    }).lean();
+    if (!todayClockIn) {
+      const watYest   = new Date(watNow.getTime() - 24 * 60 * 60 * 1000);
+      const yesterday = toDateStr(watYest);
+      const prevClockIn = await Attendance.findOne({
+        company: device.company, worker: worker._id, date: yesterday, type: 'clock_in',
+      }).lean();
+      if (prevClockIn) dateStr = yesterday; // overnight — tie clock-out to previous shift date
+    }
+  }
 
   const existing = await Attendance.findOne({
     company: device.company,
