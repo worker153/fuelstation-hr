@@ -549,10 +549,13 @@ function EmptyState({ msg }) {
 const TABS = [
   { id: 'home',     icon: '🏠', label: 'Home'     },
   { id: 'staff',    icon: '👥', label: 'Staff'    },
-  { id: 'shortage', icon: '💸', label: 'Shortage' },
+  { id: 'breaks',   icon: '☕', label: 'Breaks'   },
   { id: 'bookings', icon: '⚠️', label: 'Bookings' },
   { id: 'add',      icon: '➕', label: 'Add'      },
 ];
+
+const BREAK_EMOJI = { morning: '🌅', afternoon: '☀️', night: '🌙', break_4: '⭐', break_5: '💫', break_6: '🔔' };
+const BREAK_LABEL = { morning: 'Morning Break', afternoon: 'Afternoon Break', night: 'Night Break', break_4: 'Break 4', break_5: 'Break 5', break_6: 'Break 6' };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
@@ -578,6 +581,8 @@ export default function AdminDashboard() {
   const [showOffence,  setShowOffence ] = useState(false);
   const [lastRefresh,  setLastRefresh ] = useState(null);
   const [touchStartX,  setTouchStartX] = useState(null);
+  const [breakData,    setBreakData   ] = useState(null);
+  const [breakLoading, setBreakLoading] = useState(false);
   const [shortageView, setShortageView] = useState('day');   // 'day' | 'month'
   const [offenceView,  setOffenceView ] = useState('day');   // 'day' | 'month'
 
@@ -650,9 +655,19 @@ export default function AdminDashboard() {
     } catch {}
   }, [selBranch]);
 
+  const loadBreaks = useCallback(async (date = selDate) => {
+    if (!selBranch) return;
+    setBreakLoading(true);
+    try {
+      const { data: res } = await adminApi.get(`/breaks/summary?date=${date}&branchId=${selBranch}`);
+      setBreakData(res.data);
+    } catch {} finally { setBreakLoading(false); }
+  }, [selBranch, selDate]);
+
   // Load when date changes
   useEffect(() => { load(selDate); }, [selDate]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadWorkers(); }, [loadWorkers]);
+  useEffect(() => { if (tab === 'breaks') loadBreaks(selDate); }, [tab, selDate, selBranch]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const t = setInterval(() => { if (selDate === todayUTC()) load(selDate); }, 5 * 60 * 1000);
     return () => clearInterval(t);
@@ -892,7 +907,7 @@ export default function AdminDashboard() {
                 <StatCard emoji="☕"
                   value={`₦${(branch.dayShortageTotal || 0).toLocaleString()}`}
                   label={`Total Break Taken ${isToday ? 'Today' : fmtDateLabel(selDate)}`}
-                  color="amber" onClick={() => navigate('/breaks')} />
+                  color="amber" onClick={() => setTab('breaks')} />
                 <StatCard emoji="⚠️" value={branch.dayOffences?.length ?? 0}
                   label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Bookings`}
                   color="orange" onClick={() => setTab('bookings')} />
@@ -1123,6 +1138,96 @@ export default function AdminDashboard() {
                         <HistoryDateGroup key={i} group={g} type="shortage" />
                       ))}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* ════ BREAKS TAB ════════════════════════════════════════════════════ */}
+          {tab === 'breaks' && (
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-black text-gray-700">☕ Break Activity · {fmtDateLabel(selDate)}</p>
+                <button onClick={() => loadBreaks(selDate)} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">
+                  <span className="text-xs">🔄</span>
+                </button>
+              </div>
+
+              {breakLoading && (
+                <div className="flex justify-center py-10">
+                  <div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+
+              {!breakLoading && breakData && (
+                <>
+                  {/* Summary counts */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { label: 'Total',     value: breakData.summary?.total      ?? 0, cls: 'bg-blue-50 text-blue-700'   },
+                      { label: 'Done',      value: breakData.summary?.completed  ?? 0, cls: 'bg-green-50 text-green-700' },
+                      { label: 'Overstay',  value: breakData.summary?.overstayed ?? 0, cls: 'bg-red-50 text-red-700'     },
+                      { label: 'Missed',    value: breakData.summary?.missed     ?? 0, cls: 'bg-gray-50 text-gray-600'   },
+                    ].map(c => (
+                      <div key={c.label} className={`${c.cls} rounded-xl p-3 text-center`}>
+                        <p className="text-xl font-black">{c.value}</p>
+                        <p className="text-[10px] font-semibold mt-0.5">{c.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Per-type breakdown */}
+                  {breakData.summary?.byType && Object.keys(breakData.summary.byType).length > 0 && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">By Break Type</p>
+                      {Object.entries(breakData.summary.byType).map(([type, stats]) => (
+                        <div key={type} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                          <span className="text-lg w-6 text-center">{BREAK_EMOJI[type] || '☕'}</span>
+                          <span className="text-sm font-medium text-gray-700 flex-1">{stats.label || BREAK_LABEL[type] || type}</span>
+                          <div className="flex gap-1 flex-wrap justify-end">
+                            {stats.completed  > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{stats.completed} done</span>}
+                            {stats.overstayed > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{stats.overstayed} over</span>}
+                            {stats.active     > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{stats.active} active</span>}
+                            {stats.missed     > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{stats.missed} missed</span>}
+                            {stats.total === 0 && <span className="text-xs text-gray-400">No records</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Individual break records */}
+                  {breakData.breaks?.length === 0
+                    ? <EmptyState msg={`No break records on ${fmtDateLabel(selDate)}`} />
+                    : (
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50 overflow-hidden">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-3">All Break Records</p>
+                        {(breakData.breaks || []).map((b, i) => (
+                          <div key={i} className="px-4 py-3 flex items-center gap-3">
+                            <span className="text-xl">{BREAK_EMOJI[b.breakType] || '☕'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{b.workerName}</p>
+                              <p className="text-xs text-gray-500">{BREAK_LABEL[b.breakType] || b.breakType} · {b.workerRole}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                b.status === 'completed'  ? 'bg-green-100 text-green-700' :
+                                b.status === 'overstayed' ? 'bg-red-100 text-red-700'     :
+                                b.status === 'active'     ? 'bg-blue-100 text-blue-700'   :
+                                'bg-gray-100 text-gray-600'
+                              }`}>{b.status}</span>
+                              {b.durationMinutes != null && (
+                                <p className="text-[10px] text-gray-400 mt-0.5">{b.durationMinutes} min</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </>
+              )}
+
+              {!breakLoading && !breakData && (
+                <EmptyState msg="Select a branch to view breaks" />
               )}
             </div>
           )}
