@@ -1,11 +1,19 @@
 const webpush          = require('web-push');
 const PushSubscription = require('../models/PushSubscription');
 
-webpush.setVapidDetails(
-  process.env.VAPID_MAILTO || 'mailto:admin@sage-energy.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY,
-);
+// Lazy VAPID init — only configure once keys are present (avoids crash on startup if vars missing)
+let _vapidReady = false;
+function initVapid() {
+  if (_vapidReady) return true;
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return false;
+  webpush.setVapidDetails(
+    process.env.VAPID_MAILTO || 'mailto:admin@sage-energy.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY,
+  );
+  _vapidReady = true;
+  return true;
+}
 
 // ── POST /api/push/subscribe ──────────────────────────────────────────────────
 const subscribe = async (req, res) => {
@@ -42,7 +50,7 @@ const getVapidPublicKey = (req, res) => {
 
 // ── Internal helper: fire push to all admin devices in a company ──────────────
 const sendPushToCompany = async (companyId, payload) => {
-  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+  if (!initVapid()) return;
 
   const subs = await PushSubscription.find({ company: companyId }).lean();
   if (!subs.length) return;
