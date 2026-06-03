@@ -338,6 +338,23 @@ const terminalClock = async (req, res) => {
     }
   }
 
+  // Fire push notification to all subscribed admin devices (non-blocking)
+  setImmediate(async () => {
+    try {
+      const { sendPushToCompany } = require('./pushController');
+      const watTime = new Date(now.getTime() + 60 * 60 * 1000);
+      const timeStr = watTime.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+      await sendPushToCompany(device.company, {
+        title: type === 'clock_in'
+          ? `🟢 ${worker.fullName} clocked in`
+          : `🔴 ${worker.fullName} clocked out`,
+        body:  `${device.branchName} · ${timeStr}`,
+        tag:   `attendance-${worker._id}-${type}`,
+        url:   '/admin-dashboard',
+      });
+    } catch { /* never break the clock response */ }
+  });
+
   res.status(201).json({
     success: true,
     message: `${type === 'clock_in' ? 'Clocked in' : 'Clocked out'} — ${worker.fullName}`,

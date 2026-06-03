@@ -242,6 +242,21 @@ const startBreak = async (req, res) => {
     { upsert: true, new: true }
   );
 
+  // Fire push notification (non-blocking)
+  setImmediate(async () => {
+    try {
+      const { sendPushToCompany } = require('./pushController');
+      const timeStr = new Date(now.getTime() + 60 * 60 * 1000)
+        .toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+      await sendPushToCompany(company, {
+        title: `☕ ${worker.fullName} started break`,
+        body:  `${BREAK_LABELS[breakType]} · ${branchName} · ${timeStr}`,
+        tag:   `break-start-${worker._id}`,
+        url:   '/admin-dashboard',
+      });
+    } catch { /* ignore */ }
+  });
+
   res.json({
     success: true,
     message: `${BREAK_LABELS[breakType]} started — you have ${cfg.allowedMinutes} minutes`,
@@ -296,6 +311,22 @@ const endBreak = async (req, res) => {
   });
 
   await activeBreak.save();
+
+  // Fire push notification (non-blocking)
+  setImmediate(async () => {
+    try {
+      const { sendPushToCompany } = require('./pushController');
+      const timeStr = new Date(now.getTime() + 60 * 60 * 1000)
+        .toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const overNote = overstayed ? ` ⚠️ ${excessMins} min over` : ` · ${actualMins} min`;
+      await sendPushToCompany(company, {
+        title: `✅ ${activeBreak.workerName} returned from break`,
+        body:  `${BREAK_LABELS[activeBreak.breakType]} · ${activeBreak.branchName} · ${timeStr}${overNote}`,
+        tag:   `break-end-${workerId}`,
+        url:   '/admin-dashboard',
+      });
+    } catch { /* ignore */ }
+  });
 
   res.json({
     success: true,

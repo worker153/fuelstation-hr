@@ -586,6 +586,7 @@ export default function AdminDashboard() {
   const [breakLoading, setBreakLoading] = useState(false);
   const [shortageView, setShortageView] = useState('day');   // 'day' | 'month'
   const [offenceView,  setOffenceView ] = useState('day');   // 'day' | 'month'
+  const [notifStatus,  setNotifStatus ] = useState('idle');  // 'idle'|'on'|'loading'|'denied'
 
   const [authScreen, setAuthScreen] = useState(
     () => !localStorage.getItem('adminToken')
@@ -599,6 +600,58 @@ export default function AdminDashboard() {
     catch { return null; }
   }, [authScreen]); // re-derive after successful re-auth
   const isAdmin = ['super_admin', 'admin'].includes(user?.role);
+
+  // ── Push notification subscription ───────────────────────────────────────────
+  useEffect(() => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+    if (Notification.permission === 'denied') { setNotifStatus('denied'); return; }
+    navigator.serviceWorker.ready.then(reg => {
+      reg.pushManager.getSubscription().then(sub => {
+        setNotifStatus(sub ? 'on' : 'idle');
+      });
+    }).catch(() => {});
+  }, [authScreen]);
+
+  const toggleNotifications = async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      alert('Push notifications are not supported in this browser.');
+      return;
+    }
+    if (notifStatus === 'on') {
+      // Unsubscribe
+      setNotifStatus('loading');
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await sub.unsubscribe();
+          await adminApi.post('/push/unsubscribe', { endpoint: sub.endpoint });
+        }
+        setNotifStatus('idle');
+      } catch { setNotifStatus('idle'); }
+      return;
+    }
+    // Subscribe
+    setNotifStatus('loading');
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') { setNotifStatus('denied'); return; }
+      const { data: kd } = await adminApi.get('/push/vapid-public-key');
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly:      true,
+        applicationServerKey: kd.publicKey,
+      });
+      await adminApi.post('/push/subscribe', {
+        subscription: sub.toJSON(),
+        label:        navigator.userAgent.slice(0, 60),
+      });
+      setNotifStatus('on');
+    } catch (e) {
+      console.error('Push subscribe failed:', e);
+      setNotifStatus('idle');
+    }
+  };
 
   // PIN re-auth (used when token is missing or expired)
   const PAD_KEYS = [['1','2','3'],['4','5','6'],['7','8','9'],['del','0','ok']];
@@ -801,6 +854,20 @@ export default function AdminDashboard() {
               <button onClick={() => load(selDate)} title="Refresh"
                 className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-lg transition-all">
                 🔄
+              </button>
+            )}
+            {/* Notification bell */}
+            {'Notification' in window && (
+              <button
+                onClick={toggleNotifications}
+                title={notifStatus === 'on' ? 'Notifications on — tap to turn off' : notifStatus === 'denied' ? 'Notifications blocked in browser settings' : 'Enable notifications'}
+                disabled={notifStatus === 'loading' || notifStatus === 'denied'}
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-lg transition-all
+                  ${notifStatus === 'on'      ? 'bg-amber-400/30 text-amber-200'
+                  : notifStatus === 'denied'  ? 'bg-white/5 opacity-40 cursor-not-allowed'
+                  : notifStatus === 'loading' ? 'bg-white/10 animate-pulse'
+                  : 'bg-white/10 hover:bg-white/20'}`}>
+                {notifStatus === 'on' ? '🔔' : notifStatus === 'denied' ? '🔕' : '🔕'}
               </button>
             )}
             <button onClick={logout} title="Sign out"

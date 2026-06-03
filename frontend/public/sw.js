@@ -4,7 +4,7 @@
  * offline fallback to cached shell for navigation.
  */
 
-const CACHE_VERSION  = 'v13';
+const CACHE_VERSION  = 'v14';
 const SHELL_CACHE    = `fuelstation-shell-${CACHE_VERSION}`;
 const ASSET_CACHE    = `fuelstation-assets-${CACHE_VERSION}`;
 const API_BASE       = '/api';
@@ -99,4 +99,36 @@ self.addEventListener('fetch', event => {
 // Listen for skip-waiting message from app
 self.addEventListener('message', event => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ── Push notifications ────────────────────────────────────────────────────────
+self.addEventListener('push', event => {
+  if (!event.data) return;
+  let payload = {};
+  try { payload = event.data.json(); } catch { return; }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title || 'Sage Admin', {
+      body:      payload.body  || '',
+      icon:      '/icon-192.png',
+      badge:     '/icon-192.png',
+      tag:       payload.tag   || 'sage-admin',
+      renotify:  true,
+      vibrate:   [150, 80, 150],
+      data:      { url: payload.url || '/admin-dashboard' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = event.notification.data?.url || '/admin-dashboard';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if (c.url.includes('/admin') && 'focus' in c) return c.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(target);
+    })
+  );
 });
