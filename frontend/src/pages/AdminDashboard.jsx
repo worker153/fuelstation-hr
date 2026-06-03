@@ -577,6 +577,7 @@ export default function AdminDashboard() {
   const [showShortage, setShowShortage] = useState(false);
   const [showOffence,  setShowOffence ] = useState(false);
   const [lastRefresh,  setLastRefresh ] = useState(null);
+  const [touchStartX,  setTouchStartX] = useState(null);
   const [shortageView, setShortageView] = useState('day');   // 'day' | 'month'
   const [offenceView,  setOffenceView ] = useState('day');   // 'day' | 'month'
 
@@ -793,8 +794,20 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Date navigation */}
-        <div className="flex items-center justify-between bg-white/10 rounded-xl px-2 py-1.5">
+        {/* Date navigation — tap arrows or swipe left/right */}
+        <div
+          className="flex items-center justify-between bg-white/10 rounded-xl px-2 py-1.5"
+          onTouchStart={e => setTouchStartX(e.touches[0].clientX)}
+          onTouchEnd={e => {
+            if (touchStartX === null) return;
+            const diff = touchStartX - e.changedTouches[0].clientX;
+            if (Math.abs(diff) > 40) {
+              if (diff > 0 && !isToday) changeDate(1);
+              if (diff < 0) changeDate(-1);
+            }
+            setTouchStartX(null);
+          }}
+        >
           <button onClick={() => changeDate(-1)}
             className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold text-lg active:scale-90 transition-all">
             ‹
@@ -830,25 +843,19 @@ export default function AdminDashboard() {
         <div className="bg-white border-b border-gray-200 shadow-sm shrink-0 z-30">
           <div className="flex overflow-x-auto gap-0 scrollbar-none">
             {data.summary.map(b => {
-              const active  = String(b._id) === selBranch;
-              const present = b.clockedIn?.length ?? 0;
-              const absent  = b.absent?.length ?? 0;
+              const active = String(b._id) === selBranch;
               return (
                 <button
                   key={b._id}
                   onClick={() => setSelBranch(String(b._id))}
-                  className={`flex-shrink-0 px-4 py-3 text-left transition-all border-b-[3px]
+                  className={`flex-shrink-0 px-5 py-3 text-left transition-all border-b-[3px]
                     ${active
                       ? 'border-green-600 bg-green-50'
                       : 'border-transparent bg-white hover:bg-gray-50'}`}
                 >
-                  <p className={`text-sm font-black leading-tight whitespace-nowrap
-                    ${active ? 'text-green-800' : 'text-gray-700'}`}>
+                  <p className={`text-sm font-bold leading-tight whitespace-nowrap
+                    ${active ? 'text-green-800' : 'text-gray-600'}`}>
                     {b.name}
-                  </p>
-                  <p className="text-[11px] font-semibold mt-0.5 whitespace-nowrap">
-                    <span className="text-green-600">✅ {present}</span>
-                    {absent > 0 && <span className="text-red-500 ml-2">❌ {absent}</span>}
                   </p>
                 </button>
               );
