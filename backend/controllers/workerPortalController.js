@@ -58,9 +58,9 @@ const workerPortalAuth = async (req, res) => {
     clockOutTime: todayOut?.timestamp || null,
   };
 
-  // ── Shift workers (supervisor + approved device only) ─────────────────────────
+  // ── Shift workers (all supervisors — device not required for offence booking) ───
   let shiftWorkers = [];
-  if (isSupervisor && deviceApproved) {
+  if (isSupervisor) {
     const filter = {
       company:          worker.company,
       branchId:         worker.branchId?._id || worker.branchId,
@@ -161,7 +161,7 @@ const workerChangePin = async (req, res) => {
 };
 
 // ─── POST /api/worker/book-offence ───────────────────────────────────────────
-// Device-token authenticated. Supervisor PIN required. Books an offence for a worker.
+// PIN-authenticated (device token optional). Supervisor-only. Books an offence for a worker.
 const bookOffence = async (req, res) => {
   const {
     deviceToken, pin, workerId,
@@ -169,19 +169,26 @@ const bookOffence = async (req, res) => {
     action, deductionAmount, witness, date,
   } = req.body;
 
-  if (!deviceToken) return res.status(400).json({ success: false, message: 'Device token required' });
   if (!pin)         return res.status(400).json({ success: false, message: 'PIN required' });
   if (!workerId)    return res.status(400).json({ success: false, message: 'Worker is required' });
   if (!offenceType) return res.status(400).json({ success: false, message: 'Offence type is required' });
   if (!severity)    return res.status(400).json({ success: false, message: 'Severity is required' });
 
-  // Validate device
-  const device = await AttendanceDevice.findOne({ deviceToken, status: 'approved' }).lean();
-  if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+  // Derive company: from device token if provided, or from supervisor PIN lookup
+  let company;
+  if (deviceToken) {
+    const device = await AttendanceDevice.findOne({ deviceToken, status: 'approved' }).lean();
+    if (!device) return res.status(401).json({ success: false, message: 'Invalid or unapproved device' });
+    company = device.company;
+  }
 
-  // Validate supervisor's PIN
-  const supervisor = await Worker.findOne({ pin: String(pin).trim(), company: device.company }).lean();
+  // Validate supervisor's PIN (within company if known, else any active worker)
+  const pinQuery = { pin: String(pin).trim(), employmentStatus: 'active' };
+  if (company) pinQuery.company = company;
+  const supervisor = await Worker.findOne(pinQuery).lean();
   if (!supervisor) return res.status(401).json({ success: false, message: 'Invalid PIN — supervisor not found' });
+
+  if (!company) company = supervisor.company;
 
   const isSup = ['supervisor', 'outside supervisor']
     .includes((supervisor.role || '').toLowerCase());
@@ -189,11 +196,11 @@ const bookOffence = async (req, res) => {
     return res.status(403).json({ success: false, message: 'Only supervisors can book offences' });
 
   // Validate target worker
-  const worker = await Worker.findOne({ _id: workerId, company: device.company }).lean();
+  const worker = await Worker.findOne({ _id: workerId, company }).lean();
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
 
   const offence = await Offence.create({
-    company:         device.company,
+    company,
     worker:          worker._id,
     workerName:      worker.fullName,
     workerRole:      worker.role,

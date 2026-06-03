@@ -604,24 +604,25 @@ function MenuView({ session, onNavigate }) {
           onClick={() => onNavigate('documents')}
         />
 
-        {/* Book Offence + Shortage — approved device only */}
+        {/* Book Offence — supervisors can always (device not required) */}
+        {worker.isSupervisor && (
+          <MenuCard
+            icon={FileWarning}
+            label="Book Offence"
+            sub="Record a worker offence"
+            color="bg-red-600"
+            onClick={() => onNavigate('offence')}
+          />
+        )}
+        {/* Report Shortage — approved device only */}
         {deviceApproved && (
-          <>
-            <MenuCard
-              icon={FileWarning}
-              label="Book Offence"
-              sub="Record a worker offence"
-              color="bg-red-600"
-              onClick={() => onNavigate('offence')}
-            />
-            <MenuCard
-              icon={AlertTriangle}
-              label="Report Shortage"
-              sub="Submit a cash or fuel shortage"
-              color="bg-amber-600"
-              onClick={() => onNavigate('shortage')}
-            />
-          </>
+          <MenuCard
+            icon={AlertTriangle}
+            label="Report Shortage"
+            sub="Submit a cash or fuel shortage"
+            color="bg-amber-600"
+            onClick={() => onNavigate('shortage')}
+          />
         )}
         <MenuCard
           icon={LayoutDashboard}
