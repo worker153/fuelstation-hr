@@ -891,7 +891,7 @@ export default function AdminDashboard() {
                   label="Absent Today" color="red" onClick={() => setTab('staff')} />
                 <StatCard emoji="💸"
                   value={`₦${(branch.dayShortageTotal || 0).toLocaleString()}`}
-                  label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Shortage`}
+                  label={`Total Break Taken ${isToday ? 'Today' : fmtDateLabel(selDate)}`}
                   color="amber" onClick={() => setTab('shortage')} />
                 <StatCard emoji="⚠️" value={branch.dayOffences?.length ?? 0}
                   label={`${isToday ? 'Today' : fmtDateLabel(selDate)} Bookings`}
