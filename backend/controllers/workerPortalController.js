@@ -61,12 +61,18 @@ const workerPortalAuth = async (req, res) => {
   // ── Shift workers (all supervisors — device not required for offence booking) ───
   let shiftWorkers = [];
   if (isSupervisor) {
+    const isOutsideSup = (worker.role || '').toLowerCase() === 'outside supervisor';
     const filter = {
       company:          worker.company,
       branchId:         worker.branchId?._id || worker.branchId,
       employmentStatus: 'active',
     };
-    if (worker.shiftId) filter.shiftId = worker.shiftId;
+    if (isOutsideSup) {
+      // Outside supervisors see all pump attendants in their branch only
+      filter.role = { $regex: '^pump attendant$', $options: 'i' };
+    } else if (worker.shiftId) {
+      filter.shiftId = worker.shiftId;
+    }
 
     const ws = await Worker.find(filter)
       .select('fullName role passportPhoto shiftId faceDescriptor')
