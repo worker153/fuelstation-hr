@@ -550,6 +550,7 @@ const TABS = [
   { id: 'home',     icon: '🏠', label: 'Home'     },
   { id: 'staff',    icon: '👥', label: 'Staff'    },
   { id: 'breaks',   icon: '☕', label: 'Breaks'   },
+  { id: 'shortage', icon: '💸', label: 'Shortage' },
   { id: 'bookings', icon: '⚠️', label: 'Bookings' },
   { id: 'add',      icon: '➕', label: 'Add'      },
 ];
