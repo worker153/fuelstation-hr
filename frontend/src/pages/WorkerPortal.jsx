@@ -1129,9 +1129,27 @@ function BreakView({ session, onBack }) {
   const [result,          setResult         ] = useState(null);
   const [elapsedSec,      setElapsedSec     ] = useState(0);
   const [pendingBreakType,setPendingBreakType] = useState(null);
+  const [cachedGps,       setCachedGps      ] = useState(null);
+  const [gpsReady,        setGpsReady       ] = useState(false);
 
   // Is the selected worker the logged-in worker? (face required for self only)
   const isSelf = !selWorker || String(selWorker._id) === String(worker._id);
+
+  // Proactively capture GPS on mount for personal phone — avoids permission-dialog timeout at break start
+  useEffect(() => {
+    if (!isPersonalPhone) return;
+    let cancelled = false;
+    navigator.geolocation?.getCurrentPosition(
+      pos => {
+        if (cancelled) return;
+        setCachedGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setGpsReady(true);
+      },
+      () => { if (!cancelled) setGpsReady(true); },
+      { timeout: 15000, maximumAge: 30000, enableHighAccuracy: true }
+    );
+    return () => { cancelled = true; };
+  }, [isPersonalPhone]);
 
   // Build auth params — device token if on approved device, PIN if on personal phone
   // NOTE: session.pin is the 4-digit PIN the worker typed at login.
@@ -1177,7 +1195,8 @@ function BreakView({ session, onBack }) {
   const doStart = async (breakType) => {
     setActLoading(true); setError('');
     try {
-      const gps = isPersonalPhone ? await getGPS() : null;
+      // Use proactively-cached GPS; fall back to fresh fetch only if cache missed
+      const gps = isPersonalPhone ? (cachedGps || await getGPS()) : null;
       const body = isPersonalPhone
         ? { pin: session.pin, workerId: selWorker._id, breakType, gps }
         : { deviceToken: deviceInfo.deviceToken, workerId: selWorker._id, breakType };
@@ -1234,8 +1253,8 @@ function BreakView({ session, onBack }) {
             {bStep === 'pick' ? 'Select Worker' : 'Breaks'}
           </h2>
           {isPersonalPhone && bStep === 'status' && (
-            <p className="text-white/40 text-[10px] flex items-center gap-1 mt-0.5">
-              <MapPin size={9} /> GPS required · personal phone
+            <p className={`text-[10px] flex items-center gap-1 mt-0.5 ${cachedGps ? 'text-green-400' : gpsReady ? 'text-amber-400' : 'text-white/40'}`}>
+              <MapPin size={9} /> {cachedGps ? 'GPS ready' : gpsReady ? 'GPS unavailable' : 'Getting GPS…'}
             </p>
           )}
         </div>

@@ -270,7 +270,7 @@ const startBreak = async (req, res) => {
 const endBreak = async (req, res) => {
   const { deviceToken, pin, gps, workerId: reqWorkerId } = req.body;
 
-  const ctx = await resolveBreakContext({ deviceToken, pin, gps, reqWorkerId });
+  const ctx = await resolveBreakContext({ deviceToken, pin, gps, reqWorkerId, requireGPS: false });
   if (ctx.error) return res.status(401).json({ success: false, message: ctx.error });
 
   const { company, authType } = ctx;
