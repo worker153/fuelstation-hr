@@ -188,7 +188,7 @@ const getActiveWorkers = async (req, res) => {
     .populate('branchId', 'name')
     .populate('shiftId',  'name shiftType startTime endTime days rotationPattern')
     .populate('activatedBy', 'name')
-    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary rotationSchedule clockInRequired')
+    .select('fullName role branch branchId shiftId schedule passportPhoto verificationStatus employmentStatus activatedAt phone salary rotationSchedule clockInRequired alwaysPresent')
     .sort({ employmentStatus: 1, fullName: 1 })
     .skip((page - 1) * limit)
     .limit(Number(limit));
@@ -971,6 +971,15 @@ const updateClockInRequired = async (req, res) => {
   res.json({ success: true, data: { clockInRequired: worker.clockInRequired } });
 };
 
+// ─── PUT /api/workers/:id/always-present ─────────────────────────────────────
+const updateAlwaysPresent = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  worker.alwaysPresent = !!req.body.alwaysPresent;
+  await worker.save();
+  res.json({ success: true, data: { alwaysPresent: worker.alwaysPresent } });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   getWorkerPins, bulkGeneratePins, selfResetPin, searchByName,
@@ -984,5 +993,5 @@ module.exports = {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin, updateRotationSchedule, updateClockInRequired,
+  updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent,
 };

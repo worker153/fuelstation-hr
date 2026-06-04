@@ -176,6 +176,10 @@ const workerSchema = new mongoose.Schema({
   // Attendance tracking — set false for salary workers (mechanics, accountants, etc.)
   // who don't clock in/out and should never appear as No Show or receive auto-deductions
   clockInRequired: { type: Boolean, default: true },
+
+  // Set true for workers who are always considered present (e.g. owner/manager on-site full time)
+  // They appear as Present in all attendance views without ever needing to clock in
+  alwaysPresent: { type: Boolean, default: false },
 }, { timestamps: true });
 
 workerSchema.index({ company: 1 });

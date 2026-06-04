@@ -474,7 +474,7 @@ const processAbsences = async (req, res) => {
       return res.json({ success: true, processed: 0, total: 0, message: 'Not a configured work day for this branch' });
   }
 
-  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active', clockInRequired: { $ne: false } })
+  const workers   = await Worker.find({ company: cid, branchId, employmentStatus: 'active', clockInRequired: { $ne: false }, alwaysPresent: { $ne: true } })
     .populate('shiftId', 'shiftType days rotationPattern')
     .lean();
   const clockedIn = await Attendance.find({ company: cid, branch: branchId, date, type: 'clock_in' })

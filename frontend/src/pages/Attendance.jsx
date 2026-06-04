@@ -262,6 +262,7 @@ export default function Attendance() {
       // Show all workers for branch — each worker uses settings for their own role
       return allWorkers
         .filter(w => {
+          if (w.alwaysPresent) return true; // always include
           // Exempt workers (salary/flexible): only show if they actually clocked in
           if (w.clockInRequired === false) return !!clockInMap[String(w._id)];
           return true;
@@ -270,12 +271,13 @@ export default function Attendance() {
           const wid      = String(w._id);
           const ci       = clockInMap[wid];
           const co       = clockOutMap[wid];
-          const settings = w.clockInRequired === false ? null : getSettingsForRole(selectedBranch, w.role);
-          const onDuty   = w.clockInRequired === false ? true : isWorkerOnDuty(w, filterDate);
-          // If off duty and didn't clock in → off_duty; if off duty but came in → on_time (voluntary)
-          const status   = w.clockInRequired === false
+          const settings = (w.alwaysPresent || w.clockInRequired === false) ? null : getSettingsForRole(selectedBranch, w.role);
+          const onDuty   = (w.alwaysPresent || w.clockInRequired === false) ? true : isWorkerOnDuty(w, filterDate);
+          const status   = w.alwaysPresent
             ? 'on_time'
-            : (!onDuty && !ci ? 'off_duty' : computeStatus(ci, settings));
+            : w.clockInRequired === false
+              ? 'on_time'
+              : (!onDuty && !ci ? 'off_duty' : computeStatus(ci, settings));
           return {
             _id: wid, fullName: w.fullName, role: w.role, branch: w.branch,
             clockIn: ci, clockOut: co,
@@ -284,6 +286,7 @@ export default function Attendance() {
             onDuty,
             settings,
             exempt: w.clockInRequired === false,
+            alwaysPresent: !!w.alwaysPresent,
           };
         });
     }
@@ -752,7 +755,12 @@ export default function Attendance() {
                     <div className="flex sm:block items-center gap-2">
                       <span className="sm:hidden text-xs text-gray-400 w-20 shrink-0">Status:</span>
                       {filterBranch
-                        ? <StatusBadge status={row.status} />
+                        ? <>
+                            <StatusBadge status={row.status} />
+                            {row.alwaysPresent && (
+                              <span className="mt-1 inline-block text-[10px] bg-blue-50 text-blue-600 border border-blue-100 rounded-full px-2 py-0.5">Always Present</span>
+                            )}
+                          </>
                         : <span className="text-xs text-gray-400">— select branch</span>
                       }
                     </div>

@@ -486,6 +486,8 @@ function EmploymentTab({ worker, branches, onRefresh }) {
   const [savingRot,     setSavingRot    ] = useState(false);
   const [clockInReq,    setClockInReq   ] = useState(worker.clockInRequired !== false);
   const [savingCIR,     setSavingCIR    ] = useState(false);
+  const [alwaysPresent, setAlwaysPresent] = useState(!!worker.alwaysPresent);
+  const [savingAP,      setSavingAP     ] = useState(false);
 
   const done = () => { setModal(null); onRefresh(); };
 
@@ -527,6 +529,17 @@ function EmploymentTab({ worker, branches, onRefresh }) {
       onRefresh();
     } catch { notify('Failed to save', 'error'); }
     finally { setSavingCIR(false); }
+  };
+
+  const saveAlwaysPresent = async (val) => {
+    setSavingAP(true);
+    try {
+      await api.put(`/workers/${worker._id}/always-present`, { alwaysPresent: val });
+      setAlwaysPresent(val);
+      notify(val ? 'Worker will always show as Present ✓' : 'Always-present removed ✓');
+      onRefresh();
+    } catch { notify('Failed to save', 'error'); }
+    finally { setSavingAP(false); }
   };
 
   return (
@@ -753,6 +766,35 @@ function EmploymentTab({ worker, branches, onRefresh }) {
                   : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
             >
               {savingCIR ? '…' : clockInReq ? 'Mark Exempt' : 'Require Clock-in'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Always present */}
+      <div className="rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Always Present</p>
+            <p className="text-sm text-gray-800 font-medium">
+              {alwaysPresent ? '✅ Always shown as present' : '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {alwaysPresent
+                ? 'Worker appears as Present on all days — no clock-in needed, never flagged absent.'
+                : 'Enable for workers who are always on site (e.g. owner, on-site manager).'}
+            </p>
+          </div>
+          {canEdit && (
+            <button
+              onClick={() => saveAlwaysPresent(!alwaysPresent)}
+              disabled={savingAP}
+              className={`ml-4 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0
+                ${alwaysPresent
+                  ? 'bg-green-50 text-green-700 hover:bg-red-50 hover:text-red-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700'}`}
+            >
+              {savingAP ? '…' : alwaysPresent ? 'Remove' : 'Enable'}
             </button>
           )}
         </div>
