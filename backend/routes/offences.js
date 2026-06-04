@@ -2,17 +2,18 @@ const express    = require('express');
 const router     = express.Router();
 const { protect }            = require('../middleware/auth');
 const { checkSubscription }  = require('../middleware/subscription');
-const { requirePermission, superAdminOnly } = require('../middleware/permissions');
+const { requirePermission, superAdminOnly, requireActive } = require('../middleware/permissions');
 const {
   getOffences, createOffence, resolveOffence, deleteOffence, getWorkerOffences
 } = require('../controllers/offenceController');
 
 router.use(protect, checkSubscription);
 
-// Any staff with bookOffences permission (or admin) can list + create
-router.get('/',                   requirePermission('bookOffences'), getOffences);
-router.post('/',                  requirePermission('bookOffences'), createOffence);
-router.get('/worker/:workerId',   requirePermission('bookOffences'), getWorkerOffences);
+// Any active authenticated staff can list + create offences
+// (admin token is sufficient — bookOffences permission grants access to non-admin staff too)
+router.get('/',                   requireActive, getOffences);
+router.post('/',                  requireActive, createOffence);
+router.get('/worker/:workerId',   requireActive, getWorkerOffences);
 
 // Only admin / super_admin can resolve or delete
 router.patch('/:id/resolve',      superAdminOnly, resolveOffence);

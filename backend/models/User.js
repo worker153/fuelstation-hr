@@ -12,6 +12,7 @@ const permissionsSchema = new mongoose.Schema({
   viewWorkers:      { type: Boolean, default: true  },
   addWorkers:       { type: Boolean, default: false },
   submitShortages:  { type: Boolean, default: false },  // supervisor can submit shortages for approval
+  bookOffences:     { type: Boolean, default: false },  // supervisor can book worker offences
   viewOwnShift:     { type: Boolean, default: false }   // restrict view to own shift only (within branch)
 }, { _id: false });
 
