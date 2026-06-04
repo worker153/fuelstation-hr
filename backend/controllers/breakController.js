@@ -89,30 +89,25 @@ async function resolveBreakContext({ deviceToken, pin, gps, reqWorkerId, require
     };
   }
   if (pin) {
-    if (requireGPS && (!gps?.lat || !gps?.lng))
-      return { error: 'GPS location is required when starting a break from your personal phone. Please allow location access.' };
     const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
       .populate('branchId', 'name breakSettings restroomSettings location personalPhoneRadius')
       .lean();
     if (!worker) return { error: 'Invalid PIN — worker not found' };
     const branch = worker.branchId; // populated
 
-    // ── GPS radius check (personal phone only, mutating ops) ─────────────────
-    if (requireGPS && gps?.lat != null && gps?.lng != null) {
-      const bLat   = branch?.location?.lat;
-      const bLng   = branch?.location?.lng;
-      const radius = branch?.personalPhoneRadius ?? 150;
+    // ── GPS radius check — only when branch has coordinates AND a radius set ──
+    const bLat   = branch?.location?.lat;
+    const bLng   = branch?.location?.lng;
+    const radius = branch?.personalPhoneRadius ?? 0;
+    const branchHasGPS = bLat != null && bLng != null && radius > 0;
 
-      if (radius > 0) {
-        if (bLat == null || bLng == null) {
-          // Admin set a radius but forgot to pin branch GPS — block until fixed
-          return { error: 'Branch GPS location is not set. Contact admin to pin the branch on the map before using a personal phone for breaks.' };
-        }
-        const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
-        if (dist > radius) {
-          return { error: 'YOU ARE NOT IN LOCATION' };
-        }
-      }
+    if (requireGPS && branchHasGPS) {
+      // Branch has GPS configured — require worker to share location
+      if (!gps?.lat || !gps?.lng)
+        return { error: 'GPS location is required when starting a break from your personal phone. Please allow location access.' };
+      const dist = haversineDistance(gps.lat, gps.lng, bLat, bLng);
+      if (dist > radius)
+        return { error: 'YOU ARE NOT IN LOCATION' };
     }
 
     return {
