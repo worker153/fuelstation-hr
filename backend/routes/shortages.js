@@ -2,7 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const { protect }           = require('../middleware/auth');
 const { checkSubscription } = require('../middleware/subscription');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireActive } = require('../middleware/permissions');
 const {
   submitShortage, getShortages,
   approveShortage, rejectShortage,
@@ -22,11 +22,11 @@ router.use(protect, checkSubscription);
 router.get('/summary', requirePermission('manageBranches'), getShortagesSummary);
 
 router.get('/',  getShortages);
-router.post('/', requirePermission('submitShortages'), submitShortage);
+router.post('/', requireActive, submitShortage);
 
 router.delete('/:id', deleteShortage);
 router.post('/:id/approve', requirePermission('manageBranches'), approveShortage);
 router.post('/:id/reject',  requirePermission('manageBranches'), rejectShortage);
-router.post('/:id/join',    requirePermission('submitShortages'), joinShortage);
+router.post('/:id/join',    requireActive, joinShortage);
 
 module.exports = router;
