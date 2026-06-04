@@ -133,7 +133,12 @@ function ShortageModal({ workers, branchId, onClose, onSaved }) {
     if (!amount || isNaN(amount) || Number(amount) <= 0) return setError('Enter a valid amount');
     setSaving(true); setError('');
     try {
-      await adminApi.post('/shortages', { workerId, amount: Number(amount), reason, notes, branchId });
+      const now = new Date();
+      await adminApi.post('/shortages', {
+        workerId, amount: Number(amount), reason, notes, branchId,
+        month: now.getMonth() + 1,
+        year:  now.getFullYear(),
+      });
       onSaved();
     } catch (e) { setError(e.response?.data?.message || 'Failed to save'); }
     finally { setSaving(false); }
