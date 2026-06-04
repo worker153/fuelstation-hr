@@ -44,18 +44,39 @@ const workerPortalAuth = async (req, res) => {
   const isSupervisor = ['supervisor', 'outside supervisor']
     .includes((worker.role || '').toLowerCase());
 
-  // ── Today's attendance ────────────────────────────────────────────────────────
-  const today     = new Date().toISOString().split('T')[0];
+  // ── Today's attendance (WAT date, with overnight fallback) ───────────────────
+  const watNow    = new Date(Date.now() + 60 * 60 * 1000); // UTC+1
+  const toDateStr = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  const today     = toDateStr(watNow);
+  const yesterday = toDateStr(new Date(watNow.getTime() - 24 * 60 * 60 * 1000));
+
   const todayRecs = await Attendance.find({
     company: worker.company, worker: worker._id, date: today,
   }).select('type timestamp').lean();
-  const todayIn  = todayRecs.find(r => r.type === 'clock_in');
-  const todayOut = todayRecs.find(r => r.type === 'clock_out');
+  let todayIn  = todayRecs.find(r => r.type === 'clock_in');
+  let todayOut = todayRecs.find(r => r.type === 'clock_out');
+
+  // Overnight shift: no clock-in today but clocked in yesterday without clocking out
+  let isOvernight = false;
+  if (!todayIn && !todayOut) {
+    const yestRecs = await Attendance.find({
+      company: worker.company, worker: worker._id, date: yesterday,
+    }).select('type timestamp').lean();
+    const yestIn  = yestRecs.find(r => r.type === 'clock_in');
+    const yestOut = yestRecs.find(r => r.type === 'clock_out');
+    if (yestIn && !yestOut) {
+      todayIn     = yestIn;
+      isOvernight = true;
+    }
+  }
+
   const todayStatus = {
     clockedIn:    !!todayIn,
     clockedOut:   !!todayOut,
     clockInTime:  todayIn?.timestamp  || null,
     clockOutTime: todayOut?.timestamp || null,
+    isOvernight,
   };
 
   // ── Shift workers (all supervisors — device not required for offence booking) ───
@@ -79,18 +100,26 @@ const workerPortalAuth = async (req, res) => {
       .populate('shiftId', 'name')
       .lean();
 
-    // Fetch today's attendance for all shift workers
-    const swIds      = ws.map(w => w._id);
-    const swTodayRecs = await Attendance.find({
-      company: worker.company, worker: { $in: swIds }, date: today,
-    }).select('worker type').lean();
+    // Fetch today's attendance for all shift workers (+ yesterday for overnight)
+    const swIds       = ws.map(w => w._id);
+    const [swTodayRecs, swYestRecs] = await Promise.all([
+      Attendance.find({ company: worker.company, worker: { $in: swIds }, date: today    }).select('worker type timestamp').lean(),
+      Attendance.find({ company: worker.company, worker: { $in: swIds }, date: yesterday }).select('worker type timestamp').lean(),
+    ]);
 
     const swTodayMap = {};
     swTodayRecs.forEach(r => {
       const id = String(r.worker);
-      if (!swTodayMap[id]) swTodayMap[id] = { clockedIn: false, clockedOut: false };
-      if (r.type === 'clock_in')  swTodayMap[id].clockedIn  = true;
-      if (r.type === 'clock_out') swTodayMap[id].clockedOut = true;
+      if (!swTodayMap[id]) swTodayMap[id] = { clockedIn: false, clockedOut: false, clockInTime: null, clockOutTime: null };
+      if (r.type === 'clock_in')  { swTodayMap[id].clockedIn  = true; swTodayMap[id].clockInTime  = r.timestamp; }
+      if (r.type === 'clock_out') { swTodayMap[id].clockedOut = true; swTodayMap[id].clockOutTime = r.timestamp; }
+    });
+    // Overnight fallback for shift workers
+    swYestRecs.forEach(r => {
+      const id = String(r.worker);
+      if (swTodayMap[id]?.clockedIn || swTodayMap[id]?.clockedOut) return; // today has data
+      if (!swTodayMap[id]) swTodayMap[id] = { clockedIn: false, clockedOut: false, clockInTime: null, clockOutTime: null };
+      if (r.type === 'clock_in') { swTodayMap[id].clockedIn = true; swTodayMap[id].clockInTime = r.timestamp; swTodayMap[id].isOvernight = true; }
     });
 
     shiftWorkers = ws.map(w => ({
@@ -101,7 +130,7 @@ const workerPortalAuth = async (req, res) => {
       photo:          w.passportPhoto?.url,
       faceDescriptor: w.faceDescriptor,
       hasFace:        (w.faceDescriptor?.length || 0) > 0,
-      todayStatus:    swTodayMap[String(w._id)] || { clockedIn: false, clockedOut: false },
+      todayStatus:    swTodayMap[String(w._id)] || { clockedIn: false, clockedOut: false, clockInTime: null, clockOutTime: null },
     }));
   }
 

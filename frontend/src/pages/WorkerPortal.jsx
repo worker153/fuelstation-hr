@@ -838,7 +838,9 @@ function TerminalView({ session, onBack, onClockSuccess }) {
                 <button onClick={() => { setClockType('clock_out'); setTStep('face'); }}
                   className="py-8 rounded-2xl bg-red-500 hover:bg-red-400 text-white font-bold flex flex-col items-center gap-2 transition-colors">
                   <LogOut size={32} /><span className="text-lg">Clock Out</span>
-                  <span className="text-red-200 text-xs font-normal">Clocked in at {fmtT(todayStatus.clockInTime)}</span>
+                  <span className="text-red-200 text-xs font-normal">
+                    {todayStatus.isOvernight ? 'Night shift · ' : ''}Clocked in at {fmtT(todayStatus.clockInTime)}
+                  </span>
                 </button>
               )}
             </div>
