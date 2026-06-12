@@ -180,6 +180,10 @@ const workerSchema = new mongoose.Schema({
   // Set true for workers who are always considered present (e.g. owner/manager on-site full time)
   // They appear as Present in all attendance views without ever needing to clock in
   alwaysPresent: { type: Boolean, default: false },
+
+  // Pump assignment — links worker to a specific pump on the forecourt controller
+  pumpId:    { type: String },   // default pump this worker operates
+  pumpLabel: { type: String },
 }, { timestamps: true });
 
 workerSchema.index({ company: 1 });

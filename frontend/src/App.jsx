@@ -35,9 +35,11 @@ import StaffPolicy        from './pages/StaffPolicy';
 import WorkerHandbook     from './pages/WorkerHandbook';
 import Offences           from './pages/Offences';
 import OpsView            from './pages/OpsView';
-import AdminPinLogin      from './pages/AdminPinLogin';
-import AdminDashboard     from './pages/AdminDashboard';
-import AdminLanding       from './pages/AdminLanding';
+import AdminPinLogin          from './pages/AdminPinLogin';
+import AdminDashboard         from './pages/AdminDashboard';
+import AdminLanding           from './pages/AdminLanding';
+import StationIntegrations    from './pages/StationIntegrations';
+import PumpShifts             from './pages/PumpShifts';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -148,6 +150,8 @@ export default function App() {
               <Route path="/staff"                element={<AdminRoute><StaffManagement /></AdminRoute>} />
               <Route path="/attendance-devices"   element={<AdminRoute><AttendanceDevices /></AdminRoute>} />
               <Route path="/worker-pins"          element={<AdminRoute><WorkerPins /></AdminRoute>} />
+              <Route path="/station-integrations" element={<AdminRoute><StationIntegrations /></AdminRoute>} />
+              <Route path="/pump-shifts"          element={<PumpShifts />} />
             </Route>
           </Routes>
         </BrowserRouter>

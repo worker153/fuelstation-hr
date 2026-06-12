@@ -356,6 +356,31 @@ const terminalClock = async (req, res) => {
     } catch { /* never break the clock response */ }
   });
 
+  // ── Pump meter: capture opening meter on clock-in (fire-and-forget) ──────────
+  if (type === 'clock_in') {
+    setImmediate(async () => {
+      try {
+        const { captureOpeningMeter } = require('../services/stationApi');
+        await captureOpeningMeter({
+          company:    device.company,
+          worker,
+          branchId:   device.branch,
+          branchName: device.branchName,
+          date:       dateStr,
+          shiftName:  worker.shiftId?.name || '',
+        });
+      } catch (e) { console.error('[PumpMeter] open error:', e.message); }
+    });
+  }
+  if (type === 'clock_out') {
+    setImmediate(async () => {
+      try {
+        const { captureClosingMeter } = require('../services/stationApi');
+        await captureClosingMeter({ company: device.company, worker, date: dateStr });
+      } catch (e) { console.error('[PumpMeter] close error:', e.message); }
+    });
+  }
+
   res.status(201).json({
     success: true,
     message: `${type === 'clock_in' ? 'Clocked in' : 'Clocked out'} — ${worker.fullName}`,
