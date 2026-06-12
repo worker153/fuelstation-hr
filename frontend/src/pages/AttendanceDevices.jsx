@@ -111,8 +111,8 @@ function RegisterModal({ branches, onClose, onCreated }) {
               </select>
             </div>
             <div>
-              <label className="label">GPS Radius (m)</label>
-              <input type="number" min="10" max="2000" className="input" value={allowedRadius}
+              <label className="label">GPS Radius (m) <span className="text-gray-400 font-normal normal-case">(0 = disabled)</span></label>
+              <input type="number" min="0" max="5000" className="input" value={allowedRadius}
                 onChange={e => setAllowedRadius(Number(e.target.value))} />
             </div>
           </div>
@@ -184,8 +184,8 @@ function EditModal({ device, branches, onClose, onUpdated }) {
               </select>
             </div>
             <div>
-              <label className="label">GPS Radius (m)</label>
-              <input type="number" min="10" max="2000" className="input" value={allowedRadius}
+              <label className="label">GPS Radius (m) <span className="text-gray-400 font-normal normal-case">(0 = disabled)</span></label>
+              <input type="number" min="0" max="5000" className="input" value={allowedRadius}
                 onChange={e => setAllowedRadius(Number(e.target.value))} />
             </div>
           </div>

@@ -95,8 +95,12 @@ const terminalClock = async (req, res) => {
   let gpsDistance  = null;
 
   // ── 3. GPS verification ──────────────────────────────────────────────────────
+  // allowedRadius === 0 means GPS enforcement is disabled for this device
   const branchGPS = device.branchGPS;
-  if (gps?.lat != null && gps?.lng != null && branchGPS?.lat != null) {
+  if (!branchGPS?.lat || device.allowedRadius === 0) {
+    // No GPS pin set OR enforcement disabled — skip check
+    gpsVerified = true;
+  } else if (gps?.lat != null && gps?.lng != null) {
     gpsDistance  = haversineDistance(gps.lat, gps.lng, branchGPS.lat, branchGPS.lng);
     if (gpsDistance <= device.allowedRadius) {
       gpsVerified = true;
@@ -107,9 +111,6 @@ const terminalClock = async (req, res) => {
         data:         { gpsDistance: Math.round(gpsDistance), allowedRadius: device.allowedRadius }
       });
     }
-  } else if (!branchGPS?.lat) {
-    // Branch has no GPS set — GPS check skipped
-    gpsVerified = true;
   } else {
     failReasons.push('GPS unavailable on device');
     gpsVerified = false;
