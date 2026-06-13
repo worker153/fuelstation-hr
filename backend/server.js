@@ -25,6 +25,8 @@ const documentRoutes      = require('./routes/documents');
 const pushRoutes               = require('./routes/push');
 const stationIntegrationRoutes = require('./routes/stationIntegrations');
 const pumpShiftRoutes          = require('./routes/pumpShifts');
+const pumpRoutes               = require('./routes/pumps');
+const pumpAssignmentRoutes     = require('./routes/pumpAssignments');
 
 const app = express();
 
@@ -57,6 +59,8 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/push',               pushRoutes);
 app.use('/api/station-integrations', stationIntegrationRoutes);
 app.use('/api/pump-shifts',          pumpShiftRoutes);
+app.use('/api/pumps',               pumpRoutes);
+app.use('/api/pump-assignments',    pumpAssignmentRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
   AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen, FileText,
-  Plug2, Gauge,
+  Plug2, Gauge, Fuel, ArrowLeftRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -46,8 +46,10 @@ export default function Sidebar({ onClose }) {
         { to: '/staff',                icon: UserCog,     label: 'Staff',              show: isSuperAdmin() },
         { to: '/attendance-devices',   icon: Smartphone,  label: 'Attendance Devices', show: isSuperAdmin() },
         { to: '/worker-pins',          icon: KeyRound,    label: 'Worker PINs',        show: isSuperAdmin() },
-        { to: '/station-integrations', icon: Plug2,       label: 'Station APIs',       show: isSuperAdmin() },
-        { to: '/pump-shifts',          icon: Gauge,       label: 'Pump Shifts',        show: isSuperAdmin() || can('manageBranches') },
+        { to: '/station-integrations', icon: Plug2,          label: 'Station APIs',       show: isSuperAdmin() },
+        { to: '/pump-shifts',          icon: Gauge,          label: 'Pump Shifts',        show: isSuperAdmin() || can('manageBranches') },
+        { to: '/pumps',                icon: Fuel,           label: 'Pumps',              show: isSuperAdmin() || can('manageBranches') },
+        { to: '/pump-assignments',     icon: ArrowLeftRight, label: 'Pump Assignments',   show: isSuperAdmin() || can('manageBranches') },
       ],
     },
     {

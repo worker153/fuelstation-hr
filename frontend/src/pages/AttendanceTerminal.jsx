@@ -1316,6 +1316,18 @@ export default function AttendanceTerminal() {
               <span className="text-white font-medium">{v}</span>
             </div>
           ))}
+          {result.data?.pumpAssignment && <>
+            <div className="border-t border-white/10 my-2" />
+            <div className="text-center">
+              <p className="text-white/40 text-xs mb-1">Today's Pump Assignment</p>
+              <p className="text-white text-xl font-bold">{result.data.pumpAssignment.pumpName}</p>
+              <p className={`text-sm font-semibold mt-0.5 ${
+                result.data.pumpAssignment.productType === 'PMS' ? 'text-green-300' :
+                result.data.pumpAssignment.productType === 'AGO' ? 'text-amber-300' : 'text-blue-300'
+              }`}>{result.data.pumpAssignment.productType}</p>
+              {result.data.pumpAssignment.isOverride && <p className="text-white/40 text-xs mt-1">⚡ Override assignment</p>}
+            </div>
+          </>}
         </div>
 
         <AutoReset onReset={reset} seconds={8} />

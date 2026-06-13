@@ -40,6 +40,8 @@ import AdminDashboard         from './pages/AdminDashboard';
 import AdminLanding           from './pages/AdminLanding';
 import StationIntegrations    from './pages/StationIntegrations';
 import PumpShifts             from './pages/PumpShifts';
+import Pumps                  from './pages/Pumps';
+import PumpAssignments        from './pages/PumpAssignments';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -152,6 +154,8 @@ export default function App() {
               <Route path="/worker-pins"          element={<AdminRoute><WorkerPins /></AdminRoute>} />
               <Route path="/station-integrations" element={<AdminRoute><StationIntegrations /></AdminRoute>} />
               <Route path="/pump-shifts"          element={<PumpShifts />} />
+              <Route path="/pumps"                element={<Pumps />} />
+              <Route path="/pump-assignments"     element={<PumpAssignments />} />
             </Route>
           </Routes>
         </BrowserRouter>

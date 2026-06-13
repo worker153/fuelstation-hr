@@ -339,6 +339,24 @@ const terminalClock = async (req, res) => {
     }
   }
 
+  // ── Step 6b: Auto-assign pump (synchronous — included in response) ─────────────
+  let pumpAssignment = null;
+  if (type === 'clock_in') {
+    try {
+      const { autoAssignPump } = require('../services/pumpService');
+      pumpAssignment = await autoAssignPump({
+        company:    device.company,
+        branchId:   device.branch,
+        branchName: device.branchName,
+        worker,
+        date:       dateStr,
+        shiftName:  '', // will populate if worker has shift
+      });
+    } catch (e) {
+      console.error('[PumpAssign] error:', e.message);
+    }
+  }
+
   // Fire push notification to all subscribed admin devices (non-blocking)
   setImmediate(async () => {
     try {
@@ -362,12 +380,13 @@ const terminalClock = async (req, res) => {
       try {
         const { captureOpeningMeter } = require('../services/stationApi');
         await captureOpeningMeter({
-          company:    device.company,
+          company:        device.company,
           worker,
-          branchId:   device.branch,
-          branchName: device.branchName,
-          date:       dateStr,
-          shiftName:  worker.shiftId?.name || '',
+          branchId:       device.branch,
+          branchName:     device.branchName,
+          date:           dateStr,
+          shiftName:      '',
+          pumpAssignment, // pass the assignment
         });
       } catch (e) { console.error('[PumpMeter] open error:', e.message); }
     });
@@ -394,6 +413,14 @@ const terminalClock = async (req, res) => {
       selfieUrl:   selfie.url,
       status,
       failReasons,
+      // Pump assignment (only on clock_in, null on clock_out)
+      pumpAssignment: pumpAssignment ? {
+        pumpName:     pumpAssignment.pumpName,
+        pumpNumber:   pumpAssignment.pumpNumber,
+        productType:  pumpAssignment.productType,
+        assignmentId: String(pumpAssignment._id),
+        isOverride:   pumpAssignment.isOverride,
+      } : null,
     }
   });
 };
