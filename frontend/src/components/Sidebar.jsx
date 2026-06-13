@@ -42,14 +42,19 @@ export default function Sidebar({ onClose }) {
     {
       label: 'Admin',
       items: [
-        { to: '/approval-queue',       icon: ShieldCheck, label: 'Approval Queue',    show: isSuperAdmin() },
-        { to: '/staff',                icon: UserCog,     label: 'Staff',              show: isSuperAdmin() },
-        { to: '/attendance-devices',   icon: Smartphone,  label: 'Attendance Devices', show: isSuperAdmin() },
-        { to: '/worker-pins',          icon: KeyRound,    label: 'Worker PINs',        show: isSuperAdmin() },
-        { to: '/station-integrations', icon: Plug2,          label: 'Station APIs',       show: isSuperAdmin() },
-        { to: '/pump-shifts',          icon: Gauge,          label: 'Pump Shifts',        show: isSuperAdmin() || can('manageBranches') },
-        { to: '/pumps',                icon: Fuel,           label: 'Pumps',              show: isSuperAdmin() || can('manageBranches') },
-        { to: '/pump-assignments',     icon: ArrowLeftRight, label: 'Pump Assignments',   show: isSuperAdmin() || can('manageBranches') },
+        { to: '/approval-queue',     icon: ShieldCheck, label: 'Approval Queue',    show: isSuperAdmin() },
+        { to: '/staff',              icon: UserCog,     label: 'Staff',              show: isSuperAdmin() },
+        { to: '/attendance-devices', icon: Smartphone,  label: 'Attendance Devices', show: isSuperAdmin() },
+        { to: '/worker-pins',        icon: KeyRound,    label: 'Worker PINs',        show: isSuperAdmin() },
+      ],
+    },
+    {
+      label: 'Station API',
+      items: [
+        { to: '/station-integrations', icon: Plug2,          label: 'API Connections',  show: isSuperAdmin() },
+        { to: '/pumps',                icon: Fuel,           label: 'Pumps',            show: isSuperAdmin() || can('manageBranches') },
+        { to: '/pump-assignments',     icon: ArrowLeftRight, label: 'Pump Assignments', show: isSuperAdmin() || can('manageBranches') },
+        { to: '/pump-shifts',          icon: Gauge,          label: 'Pump Shifts',      show: isSuperAdmin() || can('manageBranches') },
       ],
     },
     {
