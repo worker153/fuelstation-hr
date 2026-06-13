@@ -54,13 +54,14 @@ const EMPTY_FORM = {
 // ─── Integration Form Modal ───────────────────────────────────────────────────
 function IntegrationModal({ integration, onClose, onSaved }) {
   const notify = useNotify();
-  const [saving,      setSaving     ] = useState(false);
-  const [showKey,     setShowKey    ] = useState(false);
+  const [saving,       setSaving      ] = useState(false);
+  const [showKey,      setShowKey     ] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState(integration ? {
     name:             integration.name             || '',
     provider:         integration.provider         || 'generic_rest',
     baseUrl:          integration.baseUrl          || '',
-    apiKey:           '',  // never pre-fill for security
+    apiKey:           '',
     authMethod:       integration.authMethod       || 'api_key_header',
     apiKeyHeaderName: integration.apiKeyHeaderName || 'X-API-Key',
     pumpEndpoint:     integration.pumpEndpoint     || '/pumps',
@@ -73,16 +74,15 @@ function IntegrationModal({ integration, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.baseUrl.trim())
-      return notify('Name and Base URL are required', 'error');
+    if (!form.name.trim()) return notify('Name is required', 'error');
     setSaving(true);
     try {
       const payload = { ...form };
-      if (!payload.apiKey) delete payload.apiKey; // don't send empty string
+      if (!payload.apiKey) delete payload.apiKey;
       const res = integration
         ? await api.put(`/station-integrations/${integration._id}`, payload)
         : await api.post('/station-integrations', payload);
-      notify(integration ? 'Integration updated' : 'Integration created');
+      notify(integration ? 'Integration updated' : 'Integration saved');
       onSaved(res.data.data);
     } catch (err) {
       notify(err.response?.data?.message || 'Failed to save', 'error');
@@ -104,11 +104,9 @@ function IntegrationModal({ integration, onClose, onSaved }) {
               </div>
               <div>
                 <h3 className="font-bold text-gray-900 leading-tight">
-                  {integration ? 'Edit Integration' : 'New Integration'}
+                  {integration ? 'Edit Integration' : 'Connect Station API'}
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Connect to an external station API
-                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Enter your API key to get started</p>
               </div>
             </div>
             <button onClick={onClose}
@@ -117,27 +115,99 @@ function IntegrationModal({ integration, onClose, onSaved }) {
             </button>
           </div>
 
-          <form onSubmit={submit} className="divide-y divide-gray-100">
+          <form onSubmit={submit} className="px-6 py-5 space-y-4">
 
-            {/* Section: Basic */}
-            <div className="px-6 py-5 space-y-4">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Connection Details</p>
+            {/* Name */}
+            <div>
+              <label className="label">Connection Name *</label>
+              <input className="input" placeholder="e.g. Main Station"
+                value={form.name} onChange={e => set('name', e.target.value)} required />
+            </div>
 
-              <div>
-                <label className="label">Integration Name *</label>
-                <input className="input" placeholder="e.g. Main Station API"
-                  value={form.name} onChange={e => set('name', e.target.value)} required />
+            {/* Provider */}
+            <div>
+              <label className="label">Provider</label>
+              <select className="input" value={form.provider} onChange={e => set('provider', e.target.value)}>
+                {Object.entries(PROVIDER_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* API Key — the main thing users have */}
+            <div>
+              <label className="label">
+                API Key
+                {integration && <span className="text-gray-400 font-normal ml-1">(leave blank to keep existing)</span>}
+              </label>
+              <div className="relative">
+                <input
+                  className="input pr-10"
+                  type={showKey ? 'text' : 'password'}
+                  placeholder={integration ? '••••••••' : 'Paste your API key here'}
+                  value={form.apiKey}
+                  onChange={e => set('apiKey', e.target.value)}
+                  autoComplete="new-password"
+                />
+                <button type="button" onClick={() => setShowKey(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-4">
+            {/* Advanced toggle */}
+            <button type="button"
+              onClick={() => setShowAdvanced(v => !v)}
+              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors pt-1">
+              <ChevronDown size={15} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              Advanced settings {!showAdvanced && form.baseUrl && <span className="text-xs text-blue-500">(configured)</span>}
+            </button>
+
+            {/* Advanced fields — hidden by default */}
+            {showAdvanced && (
+              <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50">
+                <p className="text-xs text-gray-400">Only needed if your provider requires a custom setup.</p>
+
                 <div>
-                  <label className="label">Provider</label>
-                  <select className="input" value={form.provider} onChange={e => set('provider', e.target.value)}>
-                    {Object.entries(PROVIDER_LABELS).map(([v, l]) => (
+                  <label className="label">Base URL</label>
+                  <input className="input" placeholder="https://api.yourstation.com"
+                    value={form.baseUrl} onChange={e => set('baseUrl', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">The root URL of your station API</p>
+                </div>
+
+                <div>
+                  <label className="label">Auth Method</label>
+                  <select className="input" value={form.authMethod} onChange={e => set('authMethod', e.target.value)}>
+                    {Object.entries(AUTH_LABELS).map(([v, l]) => (
                       <option key={v} value={v}>{l}</option>
                     ))}
                   </select>
                 </div>
+
+                {form.authMethod === 'api_key_header' && (
+                  <div>
+                    <label className="label">Header Name</label>
+                    <input className="input" placeholder="X-API-Key"
+                      value={form.apiKeyHeaderName} onChange={e => set('apiKeyHeaderName', e.target.value)} />
+                  </div>
+                )}
+
+                <div>
+                  <label className="label">Pump List Endpoint</label>
+                  <input className="input font-mono text-sm" placeholder="/pumps"
+                    value={form.pumpEndpoint} onChange={e => set('pumpEndpoint', e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="label">Meter Reading Endpoint</label>
+                  <input className="input font-mono text-sm" placeholder="/pumps/{pumpId}/meter"
+                    value={form.meterEndpoint} onChange={e => set('meterEndpoint', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Use <code className="bg-white px-1 rounded border text-gray-600">{'{pumpId}'}</code> as placeholder
+                  </p>
+                </div>
+
                 <div>
                   <label className="label">Status</label>
                   <select className="input" value={form.status} onChange={e => set('status', e.target.value)}>
@@ -145,92 +215,19 @@ function IntegrationModal({ integration, onClose, onSaved }) {
                     <option value="active">Active</option>
                   </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="label">Base URL *</label>
-                <input className="input" placeholder="https://api.yourstation.com"
-                  value={form.baseUrl} onChange={e => set('baseUrl', e.target.value)} required />
-              </div>
-            </div>
-
-            {/* Section: Auth */}
-            <div className="px-6 py-5 space-y-4">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Authentication</p>
-
-              <div>
-                <label className="label">Auth Method</label>
-                <select className="input" value={form.authMethod} onChange={e => set('authMethod', e.target.value)}>
-                  {Object.entries(AUTH_LABELS).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
-              </div>
-
-              {form.authMethod !== 'none' && (
                 <div>
-                  <label className="label">
-                    {form.authMethod === 'basic_auth' ? 'Credentials (user:pass)' : 'API Key / Token'}
-                    {integration && <span className="text-gray-400 font-normal ml-1">(leave blank to keep existing)</span>}
-                  </label>
-                  <div className="relative">
-                    <input
-                      className="input pr-10"
-                      type={showKey ? 'text' : 'password'}
-                      placeholder={integration ? '••••••••' : 'Enter key or token'}
-                      value={form.apiKey}
-                      onChange={e => set('apiKey', e.target.value)}
-                      autoComplete="new-password"
-                    />
-                    <button type="button" onClick={() => setShowKey(v => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </div>
+                  <label className="label">Notes</label>
+                  <textarea className="input resize-none" rows={2} placeholder="Optional notes"
+                    value={form.notes} onChange={e => set('notes', e.target.value)} />
                 </div>
-              )}
-
-              {form.authMethod === 'api_key_header' && (
-                <div>
-                  <label className="label">Header Name</label>
-                  <input className="input" placeholder="X-API-Key"
-                    value={form.apiKeyHeaderName} onChange={e => set('apiKeyHeaderName', e.target.value)} />
-                </div>
-              )}
-            </div>
-
-            {/* Section: Endpoints */}
-            <div className="px-6 py-5 space-y-4">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Endpoints</p>
-
-              <div>
-                <label className="label">Pump List Endpoint</label>
-                <input className="input font-mono text-sm" placeholder="/pumps"
-                  value={form.pumpEndpoint} onChange={e => set('pumpEndpoint', e.target.value)} />
-                <p className="text-xs text-gray-400 mt-1">GET request — should return array of pump objects</p>
               </div>
-
-              <div>
-                <label className="label">Meter Reading Endpoint</label>
-                <input className="input font-mono text-sm" placeholder="/pumps/{pumpId}/meter"
-                  value={form.meterEndpoint} onChange={e => set('meterEndpoint', e.target.value)} />
-                <p className="text-xs text-gray-400 mt-1">
-                  Use <code className="bg-gray-100 px-1 rounded text-gray-600">{'{pumpId}'}</code> as placeholder for pump ID
-                </p>
-              </div>
-
-              <div>
-                <label className="label">Notes</label>
-                <textarea className="input resize-none" rows={2}
-                  placeholder="Optional notes about this integration"
-                  value={form.notes} onChange={e => set('notes', e.target.value)} />
-              </div>
-            </div>
+            )}
 
             {/* Footer */}
-            <div className="px-6 py-4 flex gap-3 bg-gray-50 rounded-b-2xl">
+            <div className="flex gap-3 pt-2">
               <button type="submit" disabled={saving} className="btn-primary flex-1 justify-center">
-                {saving ? <Loader size={15} className="animate-spin" /> : <><Save size={14} /> {integration ? 'Save Changes' : 'Create Integration'}</>}
+                {saving ? <Loader size={15} className="animate-spin" /> : <><Save size={14} /> {integration ? 'Save Changes' : 'Save Integration'}</>}
               </button>
               <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             </div>

@@ -19,7 +19,7 @@ const getIntegrations = async (req, res) => {
 const createIntegration = async (req, res) => {
   const cid = req.user.company._id;
   const { name, provider, baseUrl, apiKey, authMethod, apiKeyHeaderName, pumpEndpoint, meterEndpoint, notes, status } = req.body;
-  if (!name || !baseUrl) return res.status(400).json({ success: false, message: 'name and baseUrl required' });
+  if (!name) return res.status(400).json({ success: false, message: 'name is required' });
   const integration = await StationIntegration.create({
     company: cid, name, provider, baseUrl, apiKey, authMethod, apiKeyHeaderName,
     pumpEndpoint, meterEndpoint, notes,

@@ -5,7 +5,7 @@ const stationIntegrationSchema = new Schema({
   company:      { type: Schema.Types.ObjectId, ref: 'Company', required: true },
   name:         { type: String, required: true, trim: true },
   provider:     { type: String, enum: ['generic_rest', 'sage', 'forecourt', 'pump_monitor', 'custom'], default: 'generic_rest' },
-  baseUrl:      { type: String, required: true, trim: true },
+  baseUrl:      { type: String, default: '', trim: true },
   apiKey:       { type: String, select: false },
   authMethod:   { type: String, enum: ['api_key_header', 'api_key_query', 'bearer_token', 'basic_auth', 'none'], default: 'api_key_header' },
   apiKeyHeaderName: { type: String, default: 'X-API-Key' },
