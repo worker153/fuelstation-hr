@@ -49,19 +49,19 @@ export default function Sidebar({ onClose }) {
       ],
     },
     {
+      label: 'Resources',
+      items: [
+        { to: '/documents', icon: FileText,  label: 'Documents',       show: isSuperAdmin() || can('manageBranches') },
+        { to: '/handbook',  icon: BookOpen,  label: 'Worker Handbook', show: true  },
+      ],
+    },
+    {
       label: 'Station API',
       items: [
         { to: '/station-integrations', icon: Plug2,          label: 'API Connections',  show: isSuperAdmin() },
         { to: '/pumps',                icon: Fuel,           label: 'Pumps',            show: isSuperAdmin() || can('manageBranches') },
         { to: '/pump-assignments',     icon: ArrowLeftRight, label: 'Pump Assignments', show: isSuperAdmin() || can('manageBranches') },
         { to: '/pump-shifts',          icon: Gauge,          label: 'Pump Shifts',      show: isSuperAdmin() || can('manageBranches') },
-      ],
-    },
-    {
-      label: 'Resources',
-      items: [
-        { to: '/documents', icon: FileText,  label: 'Documents',       show: isSuperAdmin() || can('manageBranches') },
-        { to: '/handbook',  icon: BookOpen,  label: 'Worker Handbook', show: true  },
       ],
     },
   ];
