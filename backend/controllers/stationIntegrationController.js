@@ -79,4 +79,17 @@ const getPumps = async (req, res) => {
   }
 };
 
-module.exports = { getIntegrations, createIntegration, updateIntegration, deleteIntegration, testConnection, getPumps };
+// Fetch locations using credentials entered in the form (before saving)
+const fetchLocations = async (req, res) => {
+  const { baseUrl, apiKey } = req.body;
+  if (!baseUrl || !apiKey) return res.status(400).json({ success: false, message: 'baseUrl and apiKey are required' });
+  const adapter = new SageAdapter({ baseUrl, apiKey, locationId: '' });
+  try {
+    const locations = await adapter.getLocations();
+    res.json({ success: true, data: locations });
+  } catch (e) {
+    res.status(502).json({ success: false, message: e.message });
+  }
+};
+
+module.exports = { getIntegrations, createIntegration, updateIntegration, deleteIntegration, testConnection, getPumps, fetchLocations };

@@ -73,6 +73,27 @@ function IntegrationModal({ integration, onClose, onSaved }) {
   } : { ...EMPTY_FORM });
 
   const isSage = form.provider === 'sage';
+  const [locations,        setLocations       ] = useState([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+
+  const loadLocations = async () => {
+    if (!form.baseUrl || !form.apiKey) {
+      notify('Enter Base URL and API Key first, then load locations', 'error');
+      return;
+    }
+    setLoadingLocations(true);
+    try {
+      const res = await api.post('/station-integrations/fetch-locations', {
+        baseUrl: form.baseUrl, apiKey: form.apiKey,
+      });
+      setLocations(res.data.data || []);
+      if (!res.data.data?.length) notify('No locations found — check your Base URL and API Key', 'error');
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to load locations', 'error');
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -177,13 +198,33 @@ function IntegrationModal({ integration, onClose, onSaved }) {
                 </div>
 
                 <div>
-                  <label className="label">Location ID *</label>
-                  <input className="input font-mono text-sm"
-                    placeholder="e.g. 9b4ec324-...-242e"
-                    value={form.locationId}
-                    onChange={e => set('locationId', e.target.value)} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="label mb-0">Station (Location ID) *</label>
+                    <button type="button" onClick={loadLocations} disabled={loadingLocations}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 disabled:opacity-50">
+                      {loadingLocations ? <Loader size={11} className="animate-spin" /> : <Wifi size={11} />}
+                      Load stations
+                    </button>
+                  </div>
+
+                  {locations.length > 0 ? (
+                    <select className="input" value={form.locationId}
+                      onChange={e => set('locationId', e.target.value)}>
+                      <option value="">— Select station —</option>
+                      {locations.map(l => (
+                        <option key={l.location_id} value={l.location_id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className="input font-mono text-sm"
+                      placeholder="Click 'Load stations' to fetch automatically"
+                      value={form.locationId}
+                      onChange={e => set('locationId', e.target.value)} />
+                  )}
                   <p className="text-xs text-gray-400 mt-1">
-                    The UUID for this specific station — get it from StationDesk owner or run Test Connection to list all locations.
+                    Enter Base URL + API Key above, then click "Load stations" to pick your station from a list.
                   </p>
                 </div>
               </div>
