@@ -1320,12 +1320,65 @@ export default function AttendanceTerminal() {
             <div className="border-t border-white/10 my-2" />
             <div className="text-center">
               <p className="text-white/40 text-xs mb-1">Today's Pump Assignment</p>
-              <p className="text-white text-xl font-bold">{result.data.pumpAssignment.pumpName}</p>
+              <p className="text-white text-xl font-bold">
+                {result.data.pumpAssignment.islandName || result.data.pumpAssignment.pumpName}
+              </p>
               <p className={`text-sm font-semibold mt-0.5 ${
                 result.data.pumpAssignment.productType === 'PMS' ? 'text-green-300' :
                 result.data.pumpAssignment.productType === 'AGO' ? 'text-amber-300' : 'text-blue-300'
               }`}>{result.data.pumpAssignment.productType}</p>
+              {result.data.pumpAssignment.openingMeter != null ? (
+                <div className="mt-3 bg-white/10 rounded-xl px-4 py-2">
+                  <p className="text-white/50 text-xs">Opening Meter</p>
+                  <p className="text-white text-2xl font-black tracking-tight">
+                    {Number(result.data.pumpAssignment.openingMeter).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-white/40 text-xs">litres</p>
+                </div>
+              ) : (
+                <p className="text-white/30 text-xs mt-2">Opening meter not yet recorded in StationDesk</p>
+              )}
               {result.data.pumpAssignment.isOverride && <p className="text-white/40 text-xs mt-1">⚡ Override assignment</p>}
+            </div>
+          </>}
+
+          {result.data?.meterReadout && <>
+            <div className="border-t border-white/10 my-2" />
+            <div className="text-center">
+              <p className="text-white/40 text-xs mb-1">{result.data.meterReadout.pumpName}</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="bg-white/10 rounded-xl px-3 py-2">
+                  <p className="text-white/50 text-xs">Opening</p>
+                  <p className="text-white text-lg font-bold">
+                    {result.data.meterReadout.openingMeter != null
+                      ? Number(result.data.meterReadout.openingMeter).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                      : '—'}
+                  </p>
+                </div>
+                <div className="bg-white/10 rounded-xl px-3 py-2">
+                  <p className="text-white/50 text-xs">Closing</p>
+                  <p className="text-white text-lg font-bold">
+                    {result.data.meterReadout.closingMeter != null
+                      ? Number(result.data.meterReadout.closingMeter).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+              {result.data.meterReadout.litresSold != null && (
+                <div className="mt-2 bg-green-500/20 rounded-xl px-4 py-2">
+                  <p className="text-green-300 text-xs">Total Litres Sold</p>
+                  <p className="text-white text-3xl font-black">
+                    {Number(result.data.meterReadout.litresSold).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="text-base font-normal text-white/60 ml-1">L</span>
+                  </p>
+                  {!result.data.meterReadout.isFinal && (
+                    <p className="text-white/40 text-[10px] mt-0.5">⏳ Provisional — pending owner review</p>
+                  )}
+                </div>
+              )}
+              {result.data.meterReadout.closingMeter == null && (
+                <p className="text-white/30 text-xs mt-2">Closing meter not yet recorded in StationDesk</p>
+              )}
             </div>
           </>}
         </div>

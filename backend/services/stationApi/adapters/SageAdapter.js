@@ -65,23 +65,26 @@ class SageAdapter {
     }));
   }
 
-  // ── Get current meter reading for a nozzle (used on clock-in) ────────────
-  async getMeterReading(nozzleId) {
+  // ── Get full shift row for a nozzle on a given date ─────────────────────
+  async getShiftReading(nozzleId, date) {
     if (!this.locationId) return null;
-    const today = new Date().toISOString().slice(0, 10);
+    const d = date || new Date().toISOString().slice(0, 10);
     try {
       const data = await this._get('/hr-meter-readings', {
         location_id:   this.locationId,
-        business_date: today,
+        business_date: d,
         nozzle_id:     nozzleId,
         phase:         'both',
       });
-      const row = (data.data || [])[0];
-      if (!row) return null;
-      return row.opening?.effective_value ?? null;
+      return (data.data || [])[0] || null;
     } catch {
       return null;
     }
+  }
+
+  async getMeterReading(nozzleId) {
+    const row = await this.getShiftReading(nozzleId);
+    return row?.opening?.effective_value ?? null;
   }
 
   // ── Pull full day readings (opening + closing + litres sold) for all nozzles

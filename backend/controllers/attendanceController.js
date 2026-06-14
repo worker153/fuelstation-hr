@@ -377,7 +377,71 @@ const terminalClock = async (req, res) => {
     } catch { /* never break the clock response */ }
   });
 
-  // ── Pump meter: capture opening meter on clock-in (fire-and-forget) ──────────
+  // ── Pump meter: fetch synchronously so terminal can display readings ─────────
+  let openingMeter = null;
+  let meterReadout = null; // for clock-out display
+
+  if (isPumpAttendant) {
+    try {
+      const { getAdapter } = require('../services/stationApi');
+      const Pump            = require('../models/Pump');
+      const PumpAssignmentM = require('../models/PumpAssignment');
+
+      const withTimeout = (promise, ms) =>
+        Promise.race([promise, new Promise(r => setTimeout(() => r(null), ms))]);
+
+      const adapterResult = await withTimeout(getAdapter(device.company), 3000);
+
+      if (adapterResult && typeof adapterResult.adapter.getShiftReading === 'function') {
+        const { adapter } = adapterResult;
+
+        if (type === 'clock_in' && pumpAssignment?.pump) {
+          const pump = await Pump.findById(pumpAssignment.pump).lean();
+          if (pump?.externalId) {
+            const row = await withTimeout(adapter.getShiftReading(pump.externalId, dateStr), 5000);
+            openingMeter = row?.opening?.effective_value ?? null;
+            if (openingMeter != null) {
+              await PumpAssignmentM.findByIdAndUpdate(pumpAssignment._id, { openingMeter });
+            }
+          }
+        }
+
+        if (type === 'clock_out') {
+          const todayAssign = await PumpAssignmentM.findOne({
+            company: device.company, worker: worker._id, date: dateStr,
+            status: { $ne: 'cancelled' },
+          }).lean();
+          if (todayAssign?.pump) {
+            const pump = await Pump.findById(todayAssign.pump).lean();
+            if (pump?.externalId) {
+              const row = await withTimeout(adapter.getShiftReading(pump.externalId, dateStr), 5000);
+              if (row) {
+                const closingMeter = row.closing?.effective_value ?? null;
+                const litresSold   = row.litres_sold ?? null;
+                if (closingMeter != null) {
+                  await PumpAssignmentM.findByIdAndUpdate(todayAssign._id, {
+                    closingMeter, volume: litresSold, status: 'completed',
+                  });
+                }
+                meterReadout = {
+                  pumpName:     todayAssign.pumpName || todayAssign.islandName || pump.pumpName,
+                  productType:  todayAssign.productType,
+                  openingMeter: row.opening?.effective_value ?? todayAssign.openingMeter ?? null,
+                  closingMeter,
+                  litresSold,
+                  isFinal:      row.is_final || false,
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[PumpMeter] sync error:', e.message);
+    }
+  }
+
+  // Fire-and-forget: PumpShiftRecord creation (non-blocking)
   if (type === 'clock_in') {
     setImmediate(async () => {
       try {
@@ -389,7 +453,8 @@ const terminalClock = async (req, res) => {
           branchName:     device.branchName,
           date:           dateStr,
           shiftName:      '',
-          pumpAssignment, // pass the assignment
+          pumpAssignment,
+          preloadedMeter: openingMeter,
         });
       } catch (e) { console.error('[PumpMeter] open error:', e.message); }
     });
@@ -426,7 +491,9 @@ const terminalClock = async (req, res) => {
         productType:  pumpAssignment.productType,
         assignmentId: String(pumpAssignment._id),
         isOverride:   pumpAssignment.isOverride,
+        openingMeter,
       } : null,
+      meterReadout,
     }
   });
 };
