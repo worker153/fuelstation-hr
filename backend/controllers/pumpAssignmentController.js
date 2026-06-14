@@ -116,4 +116,4 @@ const deleteAssignment = async (req, res) => {
   res.json({ success: true });
 };
 
-module.exports = { getAssignments, override, getTodayBoard, deleteAssignment };
+module.exports = { getAssignments, override, getTodayBoard, syncMeters, deleteAssignment };
