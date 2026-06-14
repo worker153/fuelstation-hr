@@ -1,4 +1,5 @@
 const Pump           = require('../models/Pump');
+const PumpIsland     = require('../models/PumpIsland');
 const PumpAssignment = require('../models/PumpAssignment');
 
 /**
@@ -87,4 +88,92 @@ async function overrideAssignment({ assignmentId, newPumpId, overrideBy, overrid
   return assignment;
 }
 
-module.exports = { autoAssignPump, overrideAssignment };
+/**
+ * Auto-assign a pump ISLAND to a worker on clock-in.
+ * Returns the PumpAssignment, or null if no islands configured (falls back to autoAssignPump).
+ *
+ * Rules:
+ *  - Each island has a maxWorkers (1 or 2).
+ *  - Workers rotate through islands in rotationOrder.
+ *  - If all islands are at capacity, assign to the least-loaded island (overflow).
+ */
+async function autoAssignIsland({ company, branchId, branchName, worker, date, shiftName }) {
+  const islands = await PumpIsland.find({ company, branchId, status: 'active' })
+    .sort({ rotationOrder: 1 }).lean();
+  if (!islands.length) return null; // no islands — caller falls back to autoAssignPump
+
+  // Idempotency
+  const existing = await PumpAssignment.findOne({
+    company, worker: worker._id, date, status: { $ne: 'cancelled' },
+  }).lean();
+  if (existing) return existing;
+
+  // Count workers per island today
+  const todayAssignments = await PumpAssignment.find({
+    company, branchId, date, status: { $ne: 'cancelled' },
+    worker: { $ne: worker._id },
+  }).lean();
+
+  const islandCount = {};
+  todayAssignments.forEach(a => {
+    if (a.island) {
+      const k = String(a.island);
+      islandCount[k] = (islandCount[k] || 0) + 1;
+    }
+  });
+
+  // Find worker's last island (for rotation continuity)
+  const lastAssignment = await PumpAssignment.findOne({
+    company, branchId, worker: worker._id,
+    island: { $exists: true, $ne: null },
+    date: { $lt: date },
+  }).sort({ date: -1, createdAt: -1 }).lean();
+
+  let startOrder = -1;
+  if (lastAssignment?.island) {
+    const last = islands.find(i => String(i._id) === String(lastAssignment.island));
+    if (last) startOrder = last.rotationOrder;
+  }
+
+  // Sort islands in rotation order starting just after last assignment
+  const sorted = [...islands].sort((a, b) => {
+    const oa = a.rotationOrder > startOrder ? a.rotationOrder : a.rotationOrder + 100000;
+    const ob = b.rotationOrder > startOrder ? b.rotationOrder : b.rotationOrder + 100000;
+    return oa - ob;
+  });
+
+  // Pick first island under capacity; overflow: least loaded
+  let selected = sorted.find(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
+  if (!selected) {
+    selected = sorted.reduce((min, i) => {
+      return (islandCount[String(i._id)] || 0) < (islandCount[String(min._id)] || 0) ? i : min;
+    });
+  }
+
+  // Get primary pump for legacy meter tracking compatibility
+  const firstPump = selected.pumps?.length
+    ? await Pump.findById(selected.pumps[0]).lean()
+    : null;
+
+  const assignment = await PumpAssignment.create({
+    company, branchId, branchName,
+    island:       selected._id,
+    islandName:   selected.name,
+    includesGas:  selected.includesGas,
+    productTypes: selected.productTypes || [],
+    pump:         firstPump?._id,
+    pumpNumber:   firstPump?.pumpNumber,
+    pumpName:     firstPump?.pumpName || selected.name,
+    productType:  (selected.productTypes || [])[0] || firstPump?.productType || 'PMS',
+    worker:       worker._id,
+    workerName:   worker.fullName,
+    workerRole:   worker.role,
+    date,
+    shiftName:    shiftName || '',
+    assignedAt:   new Date(),
+  });
+
+  return assignment;
+}
+
+module.exports = { autoAssignPump, autoAssignIsland, overrideAssignment };

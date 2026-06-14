@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ArrowLeftRight, RefreshCw, X, Save, Loader, Fuel,
+  ArrowLeftRight, RefreshCw, X, Save, Loader, Fuel, Layers, Flame,
   ChevronLeft, ChevronRight, AlertCircle,
 } from 'lucide-react';
 import api from '../utils/api';
@@ -127,12 +127,33 @@ function BoardCard({ assignment, pumps, canManage, onOverride }) {
         <p className="text-xs text-gray-400 mt-0.5">{assignment.workerRole || '—'}</p>
       </div>
 
-      {/* Pump badge */}
-      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${pc.bg}`}>
-        <Fuel size={14} className={pc.text} />
-        <span className={`font-bold text-sm ${pc.text}`}>{assignment.pumpName}</span>
-        <span className={`text-xs font-semibold ${pc.text} opacity-70`}>{assignment.productType}</span>
-      </div>
+      {/* Island or Pump badge */}
+      {assignment.islandName ? (
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-100">
+            <Layers size={14} className="text-brand-700" />
+            <span className="font-bold text-sm text-brand-700">{assignment.islandName}</span>
+          </div>
+          {assignment.includesGas && (
+            <span className="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+              <Flame size={11} />AGO + Gas
+            </span>
+          )}
+          {assignment.productTypes?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {assignment.productTypes.map(pt => (
+                <span key={pt} className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${PRODUCT_COLORS[pt]?.bg} ${PRODUCT_COLORS[pt]?.text}`}>{pt}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${pc.bg}`}>
+          <Fuel size={14} className={pc.text} />
+          <span className={`font-bold text-sm ${pc.text}`}>{assignment.pumpName}</span>
+          <span className={`text-xs font-semibold ${pc.text} opacity-70`}>{assignment.productType}</span>
+        </div>
+      )}
 
       {/* Meter info */}
       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -394,11 +415,28 @@ export default function PumpAssignments() {
                             <p className="font-medium text-gray-900">{a.workerName}</p>
                             <p className="text-xs text-gray-400">{a.workerRole}</p>
                           </td>
-                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{a.pumpName}</td>
+                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                            {a.islandName ? (
+                              <span className="flex items-center gap-1.5">
+                                <Layers size={13} className="text-brand-600" />
+                                {a.islandName}
+                                {a.includesGas && <Flame size={12} className="text-amber-600" title="AGO + Gas" />}
+                              </span>
+                            ) : (a.pumpName || '—')}
+                          </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${pc.bg} ${pc.text}`}>
-                              {a.productType}
-                            </span>
+                            {a.productTypes?.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {a.productTypes.map(pt => {
+                                  const c = PRODUCT_COLORS[pt] || PRODUCT_COLORS.other;
+                                  return <span key={pt} className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${c.bg} ${c.text}`}>{pt}</span>;
+                                })}
+                              </div>
+                            ) : (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${pc.bg} ${pc.text}`}>
+                                {a.productType || '—'}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-xs">{fmtMeter(a.openingMeter)}</td>
                           <td className="px-4 py-3 text-right font-mono text-xs">{fmtMeter(a.closingMeter)}</td>

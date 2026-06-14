@@ -339,19 +339,21 @@ const terminalClock = async (req, res) => {
     }
   }
 
-  // ── Step 6b: Auto-assign pump (synchronous — included in response) ─────────────
+  // ── Step 6b: Auto-assign pump island (falls back to individual pump) ─────────
   let pumpAssignment = null;
   if (type === 'clock_in') {
     try {
-      const { autoAssignPump } = require('../services/pumpService');
-      pumpAssignment = await autoAssignPump({
+      const { autoAssignIsland, autoAssignPump } = require('../services/pumpService');
+      const params = {
         company:    device.company,
         branchId:   device.branch,
         branchName: device.branchName,
         worker,
         date:       dateStr,
-        shiftName:  '', // will populate if worker has shift
-      });
+        shiftName:  '',
+      };
+      pumpAssignment = await autoAssignIsland(params);
+      if (!pumpAssignment) pumpAssignment = await autoAssignPump(params);
     } catch (e) {
       console.error('[PumpAssign] error:', e.message);
     }
@@ -415,6 +417,9 @@ const terminalClock = async (req, res) => {
       failReasons,
       // Pump assignment (only on clock_in, null on clock_out)
       pumpAssignment: pumpAssignment ? {
+        islandName:   pumpAssignment.islandName || null,
+        includesGas:  pumpAssignment.includesGas || false,
+        productTypes: pumpAssignment.productTypes || [],
         pumpName:     pumpAssignment.pumpName,
         pumpNumber:   pumpAssignment.pumpNumber,
         productType:  pumpAssignment.productType,

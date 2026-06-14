@@ -42,6 +42,7 @@ import StationIntegrations    from './pages/StationIntegrations';
 import PumpShifts             from './pages/PumpShifts';
 import Pumps                  from './pages/Pumps';
 import PumpAssignments        from './pages/PumpAssignments';
+import PumpIslands            from './pages/PumpIslands';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -155,6 +156,7 @@ export default function App() {
               <Route path="/station-integrations" element={<AdminRoute><StationIntegrations /></AdminRoute>} />
               <Route path="/pump-shifts"          element={<PumpShifts />} />
               <Route path="/pumps"                element={<Pumps />} />
+              <Route path="/pump-islands"         element={<PumpIslands />} />
               <Route path="/pump-assignments"     element={<PumpAssignments />} />
             </Route>
           </Routes>
