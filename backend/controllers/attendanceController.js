@@ -339,9 +339,10 @@ const terminalClock = async (req, res) => {
     }
   }
 
-  // ── Step 6b: Auto-assign pump island (falls back to individual pump) ─────────
+  // ── Step 6b: Auto-assign pump island — Pump Attendants only ──────────────────
   let pumpAssignment = null;
-  if (type === 'clock_in') {
+  const isPumpAttendant = /pump.?attendant/i.test(worker.role || '');
+  if (type === 'clock_in' && isPumpAttendant) {
     try {
       const { autoAssignIsland, autoAssignPump } = require('../services/pumpService');
       const params = {
