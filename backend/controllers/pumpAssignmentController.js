@@ -49,4 +49,12 @@ const getTodayBoard = async (req, res) => {
   res.json({ success: true, data: assignments, date });
 };
 
-module.exports = { getAssignments, override, getTodayBoard };
+const deleteAssignment = async (req, res) => {
+  const cid = req.user.company._id;
+  const result = await PumpAssignment.deleteOne({ _id: req.params.id, company: cid });
+  if (result.deletedCount === 0)
+    return res.status(404).json({ success: false, message: 'Assignment not found' });
+  res.json({ success: true });
+};
+
+module.exports = { getAssignments, override, getTodayBoard, deleteAssignment };

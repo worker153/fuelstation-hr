@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ArrowLeftRight, RefreshCw, X, Save, Loader, Fuel, Layers, Flame,
+  ArrowLeftRight, RefreshCw, X, Save, Loader, Fuel, Layers, Flame, Trash2,
   ChevronLeft, ChevronRight, AlertCircle,
 } from 'lucide-react';
 import api from '../utils/api';
@@ -115,7 +115,7 @@ function OverrideModal({ assignment, pumps, onClose, onSaved }) {
 }
 
 // ─── Today Board Card ─────────────────────────────────────────────────────────
-function BoardCard({ assignment, pumps, canManage, onOverride }) {
+function BoardCard({ assignment, pumps, canManage, onOverride, onDelete }) {
   const pc  = PRODUCT_COLORS[assignment.productType] || PRODUCT_COLORS.other;
   const sta = STATUS_MAP[assignment.status] || STATUS_MAP.active;
 
@@ -176,14 +176,25 @@ function BoardCard({ assignment, pumps, canManage, onOverride }) {
           {assignment.isOverride && (
             <span className="text-[10px] text-amber-600 font-semibold">⚡ Override</span>
           )}
-          {canManage && assignment.status === 'active' && (
-            <button
-              onClick={() => onOverride(assignment)}
-              className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline"
-            >
-              Reassign
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {canManage && assignment.status === 'active' && (
+              <button
+                onClick={() => onOverride(assignment)}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline"
+              >
+                Reassign
+              </button>
+            )}
+            {canManage && (
+              <button
+                onClick={() => onDelete(assignment)}
+                className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="Delete assignment"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -267,6 +278,18 @@ export default function PumpAssignments() {
     setAssignments(prev => prev.map(a => a._id === updated._id ? updated : a));
     setBoardData(prev  => prev.map(a => a._id === updated._id ? updated : a));
     setOverrideTarget(null);
+  };
+
+  const handleDelete = async (assignment) => {
+    if (!window.confirm(`Delete pump assignment for ${assignment.workerName}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/pump-assignments/${assignment._id}`);
+      setAssignments(prev => prev.filter(a => a._id !== assignment._id));
+      setBoardData(prev  => prev.filter(a => a._id !== assignment._id));
+      notify('Assignment deleted');
+    } catch {
+      notify('Delete failed', 'error');
+    }
   };
 
   const totalPages = Math.ceil(total / LIMIT);
@@ -359,6 +382,7 @@ export default function PumpAssignments() {
                   pumps={branchPumps}
                   canManage={canManage}
                   onOverride={setOverrideTarget}
+                  onDelete={handleDelete}
                 />
               ))}
             </div>
@@ -454,14 +478,25 @@ export default function PumpAssignments() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            {canManage && a.status === 'active' && (
-                              <button
-                                onClick={() => setOverrideTarget(a)}
-                                className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline whitespace-nowrap"
-                              >
-                                Reassign
-                              </button>
-                            )}
+                            <div className="flex items-center justify-end gap-2">
+                              {canManage && a.status === 'active' && (
+                                <button
+                                  onClick={() => setOverrideTarget(a)}
+                                  className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline whitespace-nowrap"
+                                >
+                                  Reassign
+                                </button>
+                              )}
+                              {canManage && (
+                                <button
+                                  onClick={() => handleDelete(a)}
+                                  className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
