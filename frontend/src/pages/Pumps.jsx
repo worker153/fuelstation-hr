@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Fuel, Plus, Edit2, Trash2, X, Save, Loader,
-  ChevronDown, AlertCircle,
+  ChevronDown, AlertCircle, Download,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -266,6 +266,7 @@ export default function Pumps() {
   const [branchId,   setBranchId  ] = useState('');
   const [modal,      setModal     ] = useState(null); // null | 'new' | pump-object
   const [deleting,   setDeleting  ] = useState(null);
+  const [importing,  setImporting ] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -292,6 +293,21 @@ export default function Pumps() {
       return [...prev, saved];
     });
     setModal(null);
+  };
+
+  const handleImport = async () => {
+    if (!branchId) return notify('Select a branch first, then click Import', 'error');
+    if (!window.confirm(`Import pumps from StationDesk for this branch? Existing pumps will be updated, new ones created.`)) return;
+    setImporting(true);
+    try {
+      const res = await api.post('/pumps/import-from-api', { branchId });
+      notify(res.data.message);
+      load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Import failed', 'error');
+    } finally {
+      setImporting(false);
+    }
   };
 
   const handleDelete = async (pump) => {
@@ -336,9 +352,19 @@ export default function Pumps() {
             {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
           </select>
           {canManage && (
-            <button onClick={() => setModal('new')} className="btn-primary">
-              <Plus size={16} /> Add Pump
-            </button>
+            <>
+              <button onClick={handleImport} disabled={importing}
+                className="btn-secondary gap-1.5 text-sm"
+                title="Import pumps from StationDesk API">
+                {importing
+                  ? <Loader size={14} className="animate-spin" />
+                  : <Download size={14} />}
+                Import from API
+              </button>
+              <button onClick={() => setModal('new')} className="btn-primary">
+                <Plus size={16} /> Add Pump
+              </button>
+            </>
           )}
         </div>
       </div>
