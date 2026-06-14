@@ -18,10 +18,10 @@ const getIntegrations = async (req, res) => {
 
 const createIntegration = async (req, res) => {
   const cid = req.user.company._id;
-  const { name, provider, baseUrl, apiKey, authMethod, apiKeyHeaderName, pumpEndpoint, meterEndpoint, notes, status } = req.body;
+  const { name, provider, baseUrl, locationId, apiKey, authMethod, apiKeyHeaderName, pumpEndpoint, meterEndpoint, notes, status } = req.body;
   if (!name) return res.status(400).json({ success: false, message: 'name is required' });
   const integration = await StationIntegration.create({
-    company: cid, name, provider, baseUrl, apiKey, authMethod, apiKeyHeaderName,
+    company: cid, name, provider, baseUrl, locationId, apiKey, authMethod, apiKeyHeaderName,
     pumpEndpoint, meterEndpoint, notes,
     status: status || 'inactive',
   });
@@ -32,7 +32,7 @@ const updateIntegration = async (req, res) => {
   const cid = req.user.company._id;
   const integration = await StationIntegration.findOne({ _id: req.params.id, company: cid }).select('+apiKey');
   if (!integration) return res.status(404).json({ success: false, message: 'Integration not found' });
-  const fields = ['name', 'provider', 'baseUrl', 'authMethod', 'apiKeyHeaderName', 'pumpEndpoint', 'meterEndpoint', 'notes', 'status'];
+  const fields = ['name', 'provider', 'baseUrl', 'locationId', 'authMethod', 'apiKeyHeaderName', 'pumpEndpoint', 'meterEndpoint', 'notes', 'status'];
   fields.forEach(f => { if (req.body[f] !== undefined) integration[f] = req.body[f]; });
   if (req.body.apiKey) integration.apiKey = req.body.apiKey;
   await integration.save();

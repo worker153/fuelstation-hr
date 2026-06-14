@@ -1,5 +1,5 @@
-const PumpAssignment = require('../models/PumpAssignment');
-const Pump           = require('../models/Pump');
+const PumpAssignment    = require('../models/PumpAssignment');
+const Pump              = require('../models/Pump');
 const { overrideAssignment } = require('../services/pumpService');
 
 const getAssignments = async (req, res) => {
@@ -47,6 +47,65 @@ const getTodayBoard = async (req, res) => {
   const assignments = await PumpAssignment.find({ company: cid, branchId, date, status: { $ne: 'cancelled' } })
     .sort({ assignedAt: 1 }).lean();
   res.json({ success: true, data: assignments, date });
+};
+
+// Sync meter readings from StationDesk for a given date
+const syncMeters = async (req, res) => {
+  const cid = req.user.company._id;
+  const { date, branchId } = req.body;
+  if (!date) return res.status(400).json({ success: false, message: 'date is required' });
+
+  const { getAdapter } = require('../services/stationApi');
+  const result = await getAdapter(cid);
+  if (!result) return res.status(404).json({ success: false, message: 'No active station integration found. Go to API Connections and activate one.' });
+
+  const { adapter } = result;
+  if (typeof adapter.getDayReadings !== 'function') {
+    return res.status(400).json({ success: false, message: 'This integration does not support meter sync. Use Sage API provider.' });
+  }
+
+  let readings;
+  try {
+    readings = await adapter.getDayReadings(date);
+  } catch (e) {
+    return res.status(502).json({ success: false, message: `StationDesk API error: ${e.message}` });
+  }
+
+  if (!readings.length) {
+    return res.json({ success: true, synced: 0, message: 'No readings available for this date yet.' });
+  }
+
+  // Map nozzle_id → Pump
+  const pumps = await Pump.find({ company: cid }).lean();
+  const pumpByNozzle = {};
+  pumps.forEach(p => { if (p.externalId) pumpByNozzle[p.externalId] = p; });
+
+  // Load assignments for this date
+  const filter = { company: cid, date };
+  if (branchId) filter.branchId = branchId;
+  const assignments = await PumpAssignment.find(filter).lean();
+
+  let synced = 0;
+  for (const reading of readings) {
+    const pump = pumpByNozzle[reading.nozzle_id];
+    if (!pump) continue;
+
+    const assignment = assignments.find(a => String(a.pump) === String(pump._id));
+    if (!assignment) continue;
+
+    const update = {};
+    if (reading.opening?.effective_value != null)  update.openingMeter = reading.opening.effective_value;
+    if (reading.closing?.effective_value != null)   update.closingMeter = reading.closing.effective_value;
+    if (reading.litres_sold != null)                update.volume       = reading.litres_sold;
+    if (reading.is_final && update.closingMeter != null) update.status  = 'completed';
+
+    if (Object.keys(update).length) {
+      await PumpAssignment.findByIdAndUpdate(assignment._id, update);
+      synced++;
+    }
+  }
+
+  res.json({ success: true, synced, total: readings.length, message: `Synced ${synced} of ${readings.length} nozzle readings.` });
 };
 
 const deleteAssignment = async (req, res) => {

@@ -42,6 +42,7 @@ const EMPTY_FORM = {
   name:             '',
   provider:         'generic_rest',
   baseUrl:          '',
+  locationId:       '',
   apiKey:           '',
   authMethod:       'api_key_header',
   apiKeyHeaderName: 'X-API-Key',
@@ -61,6 +62,7 @@ function IntegrationModal({ integration, onClose, onSaved }) {
     name:             integration.name             || '',
     provider:         integration.provider         || 'generic_rest',
     baseUrl:          integration.baseUrl          || '',
+    locationId:       integration.locationId       || '',
     apiKey:           '',
     authMethod:       integration.authMethod       || 'api_key_header',
     apiKeyHeaderName: integration.apiKeyHeaderName || 'X-API-Key',
@@ -69,6 +71,8 @@ function IntegrationModal({ integration, onClose, onSaved }) {
     notes:            integration.notes            || '',
     status:           integration.status           || 'inactive',
   } : { ...EMPTY_FORM });
+
+  const isSage = form.provider === 'sage';
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -155,6 +159,35 @@ function IntegrationModal({ integration, onClose, onSaved }) {
                 </button>
               </div>
             </div>
+
+            {/* Sage-specific required fields */}
+            {isSage && (
+              <div className="space-y-4 border border-blue-100 rounded-xl p-4 bg-blue-50">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">StationDesk Setup</p>
+
+                <div>
+                  <label className="label">Base URL *</label>
+                  <input className="input font-mono text-sm"
+                    placeholder="https://xxxx.supabase.co/functions/v1"
+                    value={form.baseUrl}
+                    onChange={e => set('baseUrl', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">
+                    The project ref is in your StationDesk URL. Format: <code className="bg-white px-1 rounded border text-gray-600">https://{'<project-ref>'}.supabase.co/functions/v1</code>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="label">Location ID *</label>
+                  <input className="input font-mono text-sm"
+                    placeholder="e.g. 9b4ec324-...-242e"
+                    value={form.locationId}
+                    onChange={e => set('locationId', e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">
+                    The UUID for this specific station — get it from StationDesk owner or run Test Connection to list all locations.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Advanced toggle */}
             <button type="button"

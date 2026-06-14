@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeftRight, RefreshCw, X, Save, Loader, Fuel, Layers, Flame, Trash2,
-  ChevronLeft, ChevronRight, AlertCircle,
+  ChevronLeft, ChevronRight, AlertCircle, RefreshCcw,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -220,6 +220,7 @@ export default function PumpAssignments() {
   const [date,         setDate        ] = useState(today);
   const [page,         setPage        ] = useState(1);
   const [overrideTarget, setOverrideTarget] = useState(null);
+  const [syncing,        setSyncing        ] = useState(false);
   const LIMIT = 50;
 
   const isToday = date === today;
@@ -280,6 +281,24 @@ export default function PumpAssignments() {
     setOverrideTarget(null);
   };
 
+  const handleSyncMeters = async () => {
+    if (!date) return notify('Select a date first', 'error');
+    setSyncing(true);
+    try {
+      const res = await api.post('/pump-assignments/sync-meters', {
+        date,
+        branchId: branchId || undefined,
+      });
+      notify(res.data.message || `Synced ${res.data.synced} readings`);
+      loadAssignments();
+      loadBoard();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Sync failed', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleDelete = async (assignment) => {
     if (!window.confirm(`Delete pump assignment for ${assignment.workerName}? This cannot be undone.`)) return;
     try {
@@ -302,10 +321,24 @@ export default function PumpAssignments() {
           <h1 className="text-2xl font-bold text-gray-900">Pump Assignments</h1>
           <p className="text-sm text-gray-500 mt-0.5">Automatic rotation + meter tracking</p>
         </div>
-        <button onClick={() => { loadAssignments(); loadBoard(); }}
-          className="btn-secondary gap-1.5 text-sm">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSyncMeters}
+            disabled={syncing}
+            className="btn-primary gap-1.5 text-sm"
+            title="Pull opening/closing meter readings from StationDesk"
+          >
+            {syncing
+              ? <Loader size={14} className="animate-spin" />
+              : <RefreshCcw size={14} />
+            }
+            Sync Meters
+          </button>
+          <button onClick={() => { loadAssignments(); loadBoard(); }}
+            className="btn-secondary gap-1.5 text-sm">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
