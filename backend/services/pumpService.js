@@ -150,9 +150,15 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     });
   }
 
-  // Get primary pump for legacy meter tracking compatibility
-  const firstPump = selected.pumps?.length
-    ? await Pump.findById(selected.pumps[0]).lean()
+  // Assign a specific pump from the island to this worker.
+  // Workers already on this island today determine the index:
+  //   0 workers already → this worker gets pumps[0]
+  //   1 worker already  → this worker gets pumps[1]
+  // This ensures two workers on the same island each get a different nozzle.
+  const workerIndexOnIsland = islandCount[String(selected._id)] || 0;
+  const pumpIdAtIndex = selected.pumps?.[workerIndexOnIsland] ?? selected.pumps?.[0];
+  const assignedPump = pumpIdAtIndex
+    ? await Pump.findById(pumpIdAtIndex).lean()
     : null;
 
   const assignment = await PumpAssignment.create({
@@ -161,10 +167,10 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     islandName:   selected.name,
     includesGas:  selected.includesGas,
     productTypes: selected.productTypes || [],
-    pump:         firstPump?._id,
-    pumpNumber:   firstPump?.pumpNumber,
-    pumpName:     firstPump?.pumpName || selected.name,
-    productType:  (selected.productTypes || [])[0] || firstPump?.productType || 'PMS',
+    pump:         assignedPump?._id,
+    pumpNumber:   assignedPump?.pumpNumber,
+    pumpName:     assignedPump?.pumpName || selected.name,
+    productType:  assignedPump?.productType || (selected.productTypes || [])[0] || 'PMS',
     worker:       worker._id,
     workerName:   worker.fullName,
     workerRole:   worker.role,

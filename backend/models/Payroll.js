@@ -19,6 +19,11 @@ const entrySchema = new mongoose.Schema({
   // ── Per-day basis ───────────────────────────────────────────────────────────
   workingDaysInMonth: { type: Number, default: 26 }, // basis for daily rate
   dailyRate:          { type: Number, default: 0 },
+  // ── Per-litre payment ──────────────────────────────────────────────────────
+  paymentMode:   { type: String, enum: ['fixed', 'per_litre'], default: 'fixed' },
+  litreRate:     { type: Number, default: 0 },   // ₦ per litre (snapshot at payroll time)
+  litresSold:    { type: Number, default: 0 },   // total litres sold in the pay period
+  litreEarnings: { type: Number, default: 0 },   // litresSold × litreRate
   // ── Deductions / additions ─────────────────────────────────────────────────
   absentDays:        { type: Number, default: 0 },
   absenceDeduction:  { type: Number, default: 0 },   // absentDays × dailyRate
@@ -64,22 +69,25 @@ payrollSchema.pre('save', function(next) {
   const period = `${MONTHS[this.month - 1]} ${this.year}`;
   this.label   = this.branchName ? `${this.branchName} — ${period}` : period;
   this.entries.forEach(e => {
-    // Daily rate based on working days (default 26)
-    const wdm = e.workingDaysInMonth > 0 ? e.workingDaysInMonth : 26;
-    e.dailyRate = (e.grossSalary || 0) / wdm;
-
-    // calculatedSalary is set by the controller (at generation or on edit).
-    // Only default to grossSalary if it is somehow missing/zero.
-    if (!e.calculatedSalary) e.calculatedSalary = e.grossSalary || 0;
-
-    // Absence deduction = absent days × daily rate
-    e.absenceDeduction = Math.round((e.absentDays || 0) * e.dailyRate * 100) / 100;
-
-    // Net pay formula
-    e.netPay = Math.max(
-      0,
-      (e.calculatedSalary || 0) - e.absenceDeduction - (e.shortage || 0) + (e.bonus || 0)
-    );
+    if (e.paymentMode === 'per_litre') {
+      // Per-litre workers: earnings = litresSold × litreRate, no daily-rate deductions
+      e.litreEarnings  = Math.round((e.litresSold || 0) * (e.litreRate || 0) * 100) / 100;
+      e.grossSalary    = e.litreEarnings;
+      e.calculatedSalary = e.litreEarnings;
+      e.dailyRate        = 0;
+      e.absenceDeduction = 0;
+      e.netPay = Math.max(0, e.litreEarnings - (e.shortage || 0) + (e.bonus || 0));
+    } else {
+      // Fixed-salary workers: standard daily-rate proration and absence deduction
+      const wdm = e.workingDaysInMonth > 0 ? e.workingDaysInMonth : 26;
+      e.dailyRate = (e.grossSalary || 0) / wdm;
+      if (!e.calculatedSalary) e.calculatedSalary = e.grossSalary || 0;
+      e.absenceDeduction = Math.round((e.absentDays || 0) * e.dailyRate * 100) / 100;
+      e.netPay = Math.max(
+        0,
+        (e.calculatedSalary || 0) - e.absenceDeduction - (e.shortage || 0) + (e.bonus || 0)
+      );
+    }
   });
   this.totalGross    = this.entries.reduce((s, e) => s + (e.grossSalary || 0), 0);
   this.totalShortage = this.entries.reduce((s, e) => s + (e.shortage    || 0), 0);

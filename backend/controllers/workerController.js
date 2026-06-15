@@ -668,7 +668,7 @@ const transferWorker = async (req, res) => {
 
 // ─── PUT /api/workers/:id/salary ─────────────────────────────────────────────
 const updateSalary = async (req, res) => {
-  const { monthly, paymentStatus, payrollEnabled } = req.body;
+  const { monthly, paymentStatus, payrollEnabled, paymentMode, litreRate } = req.body;
   const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
   if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
 
@@ -676,6 +676,8 @@ const updateSalary = async (req, res) => {
   if (monthly        !== undefined) worker.salary.monthly        = Number(monthly);
   if (paymentStatus  !== undefined) worker.salary.paymentStatus  = paymentStatus;
   if (payrollEnabled !== undefined) worker.salary.payrollEnabled = Boolean(payrollEnabled);
+  if (paymentMode    !== undefined) worker.salary.paymentMode    = paymentMode;
+  if (litreRate      !== undefined) worker.salary.litreRate      = Number(litreRate);
   worker.markModified('salary');
 
   await worker.save();

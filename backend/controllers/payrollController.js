@@ -1,7 +1,8 @@
-const Payroll  = require('../models/Payroll');
-const Worker   = require('../models/Worker');
-const Branch   = require('../models/Branch');
-const Shortage = require('../models/Shortage');
+const Payroll         = require('../models/Payroll');
+const Worker          = require('../models/Worker');
+const Branch          = require('../models/Branch');
+const Shortage        = require('../models/Shortage');
+const PumpAssignment  = require('../models/PumpAssignment');
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -69,11 +70,70 @@ const generatePayroll = async (req, res) => {
   const m           = Number(month);
   const y           = Number(year);
 
-  const entries = workers.map(w => {
-    const gross = w.salary?.monthly || 0;
-    const wdm   = 26;  // standard working-day basis (Nigerian payroll norm)
+  // ── Pull litres sold per worker for per_litre payment mode ────────────────────
+  const monthStr = String(m).padStart(2, '0');
+  const dayStr   = String(totalDays).padStart(2, '0');
+  const periodStart = `${y}-${monthStr}-01`;
+  const periodEnd   = `${y}-${monthStr}-${dayStr}`;
 
-    // Proration: only if the worker's resumptionDate falls within this payroll month
+  // Gather all pump assignments for this branch/period that have volume recorded
+  const pumpAssignments = await PumpAssignment.find({
+    company:  cid,
+    branchId: branchId,
+    date:     { $gte: periodStart, $lte: periodEnd },
+    volume:   { $exists: true, $ne: null },
+  }).lean();
+
+  const litresByWorker = {};
+  pumpAssignments.forEach(a => {
+    const wid = String(a.worker);
+    litresByWorker[wid] = (litresByWorker[wid] || 0) + (a.volume || 0);
+  });
+
+  const entries = workers.map(w => {
+    const paymentMode = w.salary?.paymentMode || 'fixed';
+    const branchName_ = w.branchId?.name || w.branch || 'Unassigned';
+    const baseEntry = {
+      worker:        w._id,
+      fullName:      w.fullName,
+      role:          w.role,
+      branchId:      w.branchId?._id || null,
+      branchName:    branchName_,
+      paymentMode,
+      bankName:      w.bankDetails?.bankName      || '',
+      accountNumber: w.bankDetails?.accountNumber || '',
+      accountName:   w.bankDetails?.accountName   || '',
+      paid:          false,
+      notes:         '',
+    };
+
+    if (paymentMode === 'per_litre') {
+      const rate        = w.salary?.litreRate || 0;
+      const litresSold  = Math.round((litresByWorker[String(w._id)] || 0) * 100) / 100;
+      const litreEarnings = Math.round(litresSold * rate * 100) / 100;
+      return {
+        ...baseEntry,
+        litreRate:          rate,
+        litresSold,
+        litreEarnings,
+        grossSalary:        litreEarnings,
+        calculatedSalary:   litreEarnings,
+        workingDaysInMonth: 26,
+        dailyRate:          0,
+        daysInMonth:        totalDays,
+        daysWorked:         totalDays,
+        isProrated:         false,
+        absentDays:         0,
+        absenceDeduction:   0,
+        shortage:           0,
+        bonus:              0,
+        netPay:             litreEarnings,
+      };
+    }
+
+    // ── Fixed salary ─────────────────────────────────────────────────────────
+    const gross = w.salary?.monthly || 0;
+    const wdm   = 26;
     let isProrated    = false;
     let daysWorked    = totalDays;
     let resumDate     = null;
@@ -84,20 +144,13 @@ const generatePayroll = async (req, res) => {
       if (rd.getFullYear() === y && rd.getMonth() + 1 === m) {
         isProrated    = true;
         resumDate     = rd;
-        // Days worked = from resumption day to end of month (inclusive)
         daysWorked    = totalDays - rd.getDate() + 1;
         calculatedSal = Math.round((gross * daysWorked / totalDays) * 100) / 100;
       }
     }
 
-    const dailyRate = gross / wdm;
-
     return {
-      worker:             w._id,
-      fullName:           w.fullName,
-      role:               w.role,
-      branchId:           w.branchId?._id || null,
-      branchName:         w.branchId?.name || w.branch || 'Unassigned',
+      ...baseEntry,
       grossSalary:        gross,
       resumptionDate:     resumDate,
       isProrated,
@@ -105,17 +158,12 @@ const generatePayroll = async (req, res) => {
       daysWorked,
       calculatedSalary:   calculatedSal,
       workingDaysInMonth: wdm,
-      dailyRate:          Math.round(dailyRate * 100) / 100,
+      dailyRate:          Math.round((gross / wdm) * 100) / 100,
       absentDays:         0,
       absenceDeduction:   0,
       shortage:           0,
       bonus:              0,
       netPay:             calculatedSal,
-      bankName:           w.bankDetails?.bankName      || '',
-      accountNumber:      w.bankDetails?.accountNumber || '',
-      accountName:        w.bankDetails?.accountName   || '',
-      paid:               false,
-      notes:              ''
     };
   });
 

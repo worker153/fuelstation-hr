@@ -145,7 +145,9 @@ const workerSchema = new mongoose.Schema({
   salary: {
     monthly:        { type: Number, default: 0 },
     paymentStatus:  { type: String, enum: ['paid', 'unpaid', 'partial'], default: 'unpaid' },
-    payrollEnabled: { type: Boolean, default: false }
+    payrollEnabled: { type: Boolean, default: false },
+    paymentMode:    { type: String, enum: ['fixed', 'per_litre'], default: 'fixed' },
+    litreRate:      { type: Number, default: 0 },  // ₦ per litre sold (used when paymentMode='per_litre')
   },
   bankDetails: {
     bankName:      { type: String, trim: true },

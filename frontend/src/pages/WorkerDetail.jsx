@@ -1060,7 +1060,9 @@ function SalaryBankTab({ worker, onRefresh }) {
   const [salForm, setSalForm] = useState({
     monthly:        sal.monthly        || '',
     paymentStatus:  sal.paymentStatus  || 'unpaid',
-    payrollEnabled: sal.payrollEnabled || false
+    payrollEnabled: sal.payrollEnabled || false,
+    paymentMode:    sal.paymentMode    || 'fixed',
+    litreRate:      sal.litreRate      || '',
   });
   const [bankForm, setBankForm] = useState({
     bankName:      bank.bankName      || '',
@@ -1113,11 +1115,31 @@ function SalaryBankTab({ worker, onRefresh }) {
         {editSalary ? (
           <form onSubmit={saveSalary} className="p-5 space-y-4">
             <div>
-              <label className="label">Monthly Salary (₦)</label>
-              <NumInput className="input" placeholder="e.g. 100000"
-                value={Number(salForm.monthly) || 0}
-                onChange={v => setSalForm(f => ({ ...f, monthly: v }))} />
+              <label className="label">Payment Method</label>
+              <select className="input" value={salForm.paymentMode}
+                onChange={e => setSalForm(f => ({ ...f, paymentMode: e.target.value }))}>
+                <option value="fixed">Fixed Monthly Salary</option>
+                <option value="per_litre">Per Litre Sold</option>
+              </select>
             </div>
+
+            {salForm.paymentMode === 'fixed' ? (
+              <div>
+                <label className="label">Monthly Salary (₦)</label>
+                <NumInput className="input" placeholder="e.g. 100000"
+                  value={Number(salForm.monthly) || 0}
+                  onChange={v => setSalForm(f => ({ ...f, monthly: v }))} />
+              </div>
+            ) : (
+              <div>
+                <label className="label">Rate per Litre (₦)</label>
+                <NumInput className="input" placeholder="e.g. 5"
+                  value={Number(salForm.litreRate) || 0}
+                  onChange={v => setSalForm(f => ({ ...f, litreRate: v }))} />
+                <p className="text-xs text-gray-400 mt-1">Worker earns ₦{Number(salForm.litreRate) || 0} for every litre sold. Payroll will pull total litres from pump assignments.</p>
+              </div>
+            )}
+
             <div>
               <label className="label">Payment Status</label>
               <select className="input" value={salForm.paymentStatus}
@@ -1143,10 +1165,22 @@ function SalaryBankTab({ worker, onRefresh }) {
         ) : (
           <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-gray-400 mb-0.5">Monthly Salary</p>
-              <p className="text-xl font-bold text-gray-900">
-                {sal.monthly ? `₦${Number(sal.monthly).toLocaleString()}` : '—'}
-              </p>
+              {sal.paymentMode === 'per_litre' ? (
+                <>
+                  <p className="text-xs text-gray-400 mb-0.5">Rate per Litre</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {sal.litreRate ? `₦${Number(sal.litreRate).toLocaleString()}/L` : '₦0/L'}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-0.5">Per litre sold</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-400 mb-0.5">Monthly Salary</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {sal.monthly ? `₦${Number(sal.monthly).toLocaleString()}` : '—'}
+                  </p>
+                </>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-0.5">Payment Status</p>

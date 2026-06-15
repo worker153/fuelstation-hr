@@ -1320,8 +1320,11 @@ export default function AttendanceTerminal() {
             <div className="border-t border-white/10 my-2" />
             <div className="text-center">
               <p className="text-white/40 text-xs mb-1">Today's Pump Assignment</p>
-              <p className="text-white text-xl font-bold">
-                {result.data.pumpAssignment.islandName || result.data.pumpAssignment.pumpName}
+              {result.data.pumpAssignment.islandName && (
+                <p className="text-white/60 text-sm mb-0.5">{result.data.pumpAssignment.islandName}</p>
+              )}
+              <p className="text-white text-2xl font-black">
+                {result.data.pumpAssignment.pumpName || result.data.pumpAssignment.islandName}
               </p>
               <p className={`text-sm font-semibold mt-0.5 ${
                 result.data.pumpAssignment.productType === 'PMS' ? 'text-green-300' :

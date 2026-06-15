@@ -503,6 +503,100 @@ function CreateStaffAccountModal({ worker, onClose, onDone }) {
   );
 }
 
+// ─── Pay Mode quick-edit badge ────────────────────────────────────────────────
+function PayModeBadge({ worker, onUpdated }) {
+  const [open,    setOpen   ] = useState(false);
+  const [mode,    setMode   ] = useState(worker.salary?.paymentMode || 'fixed');
+  const [monthly, setMonthly] = useState(worker.salary?.monthly || 0);
+  const [rate,    setRate   ] = useState(worker.salary?.litreRate || 0);
+  const [saving,  setSaving ] = useState(false);
+  const ref = useRef(null);
+  const { notify } = useNotify();
+
+  // reset form when popup opens
+  const openPopup = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setMode(worker.salary?.paymentMode || 'fixed');
+    setMonthly(worker.salary?.monthly || 0);
+    setRate(worker.salary?.litreRate || 0);
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.put(`/workers/${worker._id}/salary`, {
+        paymentMode:    mode,
+        monthly:        mode === 'fixed' ? Number(monthly) : undefined,
+        litreRate:      mode === 'per_litre' ? Number(rate) : undefined,
+        payrollEnabled: worker.salary?.payrollEnabled,
+      });
+      notify('Pay mode updated ✓');
+      setOpen(false);
+      onUpdated();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to save', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const sal = worker.salary || {};
+  const label = sal.paymentMode === 'per_litre'
+    ? `₦${Number(sal.litreRate || 0).toLocaleString()}/L`
+    : sal.monthly ? `₦${Number(sal.monthly || 0).toLocaleString()}` : '—';
+  const badgeCls = sal.paymentMode === 'per_litre'
+    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+    : 'bg-gray-100 text-gray-600 border border-gray-200';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={openPopup}
+        title="Edit pay mode"
+        className={`text-xs px-2 py-1 rounded-lg font-medium tabular-nums whitespace-nowrap ${badgeCls} hover:ring-2 hover:ring-brand-300 transition-all`}>
+        {label}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-56">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Pay mode — {worker.fullName.split(' ')[0]}</p>
+          <form onSubmit={save} className="space-y-2">
+            <select className="input text-sm py-1.5" value={mode} onChange={e => setMode(e.target.value)}>
+              <option value="fixed">Fixed Monthly</option>
+              <option value="per_litre">Per Litre Sold</option>
+            </select>
+            {mode === 'fixed' ? (
+              <input type="number" min="0" className="input text-sm py-1.5" placeholder="Monthly ₦"
+                value={monthly} onChange={e => setMonthly(e.target.value)} />
+            ) : (
+              <div>
+                <input type="number" min="0" step="0.01" className="input text-sm py-1.5" placeholder="₦ per litre"
+                  value={rate} onChange={e => setRate(e.target.value)} />
+                <p className="text-xs text-gray-400 mt-1">Payroll multiplies litres sold × this rate</p>
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={saving}
+                className="btn-primary flex-1 justify-center text-xs py-1.5">
+                {saving ? <Loader size={12} className="animate-spin" /> : <><Check size={12} /> Save</>}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="btn-secondary text-xs py-1.5">
+                <X size={12} />
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Action dropdown (⋮ menu) ─────────────────────────────────────────────────
 function ActionMenu({ worker, onAction }) {
   const [open, setOpen] = useState(false);
@@ -747,6 +841,13 @@ export default function Workers() {
                   <EmploymentBadge status={es} />
                   <VerificationBadge status={w.verificationStatus} />
                 </div>
+
+                {/* Pay mode quick-edit */}
+                {canEdit && (
+                  <div className="hidden md:block shrink-0">
+                    <PayModeBadge worker={w} onUpdated={loadWorkers} />
+                  </div>
+                )}
 
                 {/* Context actions */}
                 {canEdit && (

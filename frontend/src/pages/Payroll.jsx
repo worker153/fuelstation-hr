@@ -146,7 +146,8 @@ function EditCell({ value, onChange, highlight }) {
 // ─── Worker row ───────────────────────────────────────────────────────────────
 function WorkerRow({ entry, idx, onChange, readonly }) {
   const netPay = computeNetPay(entry);
-  const isProrated = entry.isProrated && entry.calculatedSalary != null && entry.calculatedSalary < entry.grossSalary;
+  const isPerLitre = entry.paymentMode === 'per_litre';
+  const isProrated = !isPerLitre && entry.isProrated && entry.calculatedSalary != null && entry.calculatedSalary < entry.grossSalary;
 
   const removeProration = () => {
     // Override proration — use full gross salary
@@ -161,6 +162,11 @@ function WorkerRow({ entry, idx, onChange, readonly }) {
         <div>
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-sm font-medium text-gray-900 leading-tight">{entry.fullName}</p>
+            {isPerLitre && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium leading-none whitespace-nowrap">
+                Per Litre
+              </span>
+            )}
             {isProrated && (
               readonly
                 ? <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium leading-none whitespace-nowrap">
@@ -193,7 +199,14 @@ function WorkerRow({ entry, idx, onChange, readonly }) {
       </td>
       {/* Gross / Earned salary */}
       <td className="py-3 px-2 text-right">
-        {readonly ? (
+        {isPerLitre ? (
+          <div>
+            <span className="text-sm font-medium tabular-nums text-blue-700">{fmt(entry.litreEarnings || 0)}</span>
+            <p className="text-xs text-blue-500 tabular-nums whitespace-nowrap">
+              {(entry.litresSold || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}L × ₦{(entry.litreRate || 0).toLocaleString()}
+            </p>
+          </div>
+        ) : readonly ? (
           <div>
             <span className="text-sm font-medium tabular-nums text-gray-700">{fmt(entry.grossSalary)}</span>
             {isProrated && (
@@ -211,7 +224,9 @@ function WorkerRow({ entry, idx, onChange, readonly }) {
       </td>
       {/* Absent days */}
       <td className="py-3 px-2 text-right hidden sm:table-cell">
-        {readonly ? (
+        {isPerLitre ? (
+          <span className="text-xs text-gray-300">—</span>
+        ) : readonly ? (
           <div>
             <span className={`text-sm font-medium tabular-nums ${entry.absentDays > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
               {entry.absentDays > 0 ? entry.absentDays : '0'}
@@ -558,11 +573,15 @@ export default function Payroll() {
           && e.calculatedSalary < (e.grossSalary || 0);
         if (isProrat) notes.push(`prorated ${e.daysWorked}/${e.daysInMonth}d`);
 
+        const grossLabel = e.paymentMode === 'per_litre'
+          ? `${N(e.litreEarnings || 0)}\n${(e.litresSold||0).toFixed(1)}L × ₦${(e.litreRate||0).toLocaleString()}`
+          : N(e.grossSalary);
+
         return [
           idx + 1,
           `${e.fullName}\n${e.role || ''}`,
           `${e.bankName || '—'}\n${e.accountNumber || ''}`,
-          N(e.grossSalary),
+          grossLabel,
           notes.length > 0 ? `${N(net)}\n${notes.join('  ·  ')}` : N(net),
         ];
       });
@@ -904,24 +923,33 @@ function PrintPayroll({ payroll, entries, totalGross, totalShortage, totalBonus,
             const dailyR    = (e.grossSalary || 0) / wdm;
             const absDeduct = (e.absentDays || 0) * dailyR;
             const earned    = e.calculatedSalary != null ? e.calculatedSalary : e.grossSalary;
-            const isProrat  = e.isProrated && earned < (e.grossSalary || 0);
+            const isProrat  = !e.paymentMode || e.paymentMode === 'fixed'
+              ? e.isProrated && earned < (e.grossSalary || 0)
+              : false;
+            const isPerL    = e.paymentMode === 'per_litre';
             return (
               <tr key={e._id} style={{ borderBottom: '1px solid #eee', background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
                 <td style={{ padding: '4px 5px', textAlign: 'right', color: '#888' }}>{idx + 1}</td>
                 <td style={{ padding: '4px 5px', fontWeight: 600 }}>
                   {e.fullName}
                   {isProrat && <span style={{ fontSize: '8px', color: '#b45309', marginLeft: '4px' }}>({e.daysWorked}/{e.daysInMonth}d)</span>}
+                  {isPerL && <span style={{ fontSize: '8px', color: '#1d4ed8', marginLeft: '4px' }}>(per litre)</span>}
                 </td>
                 <td style={{ padding: '4px 5px', color: '#555' }}>{e.role}</td>
                 <td style={{ padding: '4px 5px', color: '#555' }}>{e.bankName || '—'}</td>
                 <td style={{ padding: '4px 5px' }}>{e.accountName || '—'}</td>
                 <td style={{ padding: '4px 5px', fontFamily: 'monospace' }}>{e.accountNumber || '—'}</td>
-                <td style={{ padding: '4px 5px', textAlign: 'right' }}>{fmt(e.grossSalary)}</td>
+                <td style={{ padding: '4px 5px', textAlign: 'right' }}>
+                  {isPerL
+                    ? <span style={{ color: '#1d4ed8' }}>{fmt(e.litreEarnings || 0)}<br /><span style={{ fontSize: '8px' }}>{(e.litresSold||0).toFixed(1)}L × ₦{(e.litreRate||0).toLocaleString()}</span></span>
+                    : fmt(e.grossSalary)
+                  }
+                </td>
                 <td style={{ padding: '4px 5px', textAlign: 'right', color: isProrat ? '#b45309' : '#aaa' }}>
                   {isProrat ? fmt(earned) : '—'}
                 </td>
                 <td style={{ padding: '4px 5px', textAlign: 'right', color: e.absentDays > 0 ? '#c45700' : '#aaa' }}>
-                  {e.absentDays > 0 ? `${e.absentDays}d (−${fmt(absDeduct)})` : '—'}
+                  {isPerL ? '—' : e.absentDays > 0 ? `${e.absentDays}d (−${fmt(absDeduct)})` : '—'}
                 </td>
                 <td style={{ padding: '4px 5px', textAlign: 'right', color: e.shortage > 0 ? '#c00' : '#aaa' }}>
                   {e.shortage > 0 ? `−${fmt(e.shortage)}` : '—'}
