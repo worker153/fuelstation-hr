@@ -92,4 +92,61 @@ const fetchLocations = async (req, res) => {
   }
 };
 
-module.exports = { getIntegrations, createIntegration, updateIntegration, deleteIntegration, testConnection, getPumps, fetchLocations };
+// Test meter readings for a specific date — returns raw nozzle + reading data
+const testReadings = async (req, res) => {
+  const cid = req.user.company._id;
+  const integration = await StationIntegration.findOne({ _id: req.params.id, company: cid }).select('+apiKey').lean();
+  if (!integration) return res.status(404).json({ success: false, message: 'Integration not found' });
+
+  const date = req.query.date || new Date().toISOString().slice(0, 10);
+  const AdapterClass = ADAPTERS[integration.provider] || GenericRestAdapter;
+  const adapter = new AdapterClass(integration);
+
+  // Step 1: nozzle list
+  let nozzles = [];
+  try {
+    nozzles = typeof adapter.getDayReadings === 'function'
+      ? await adapter.getDayReadings(date)
+      : await adapter.getPumps();
+  } catch (e) {
+    return res.status(502).json({ success: false, message: `Failed to fetch nozzle list: ${e.message}` });
+  }
+
+  if (!nozzles.length) {
+    return res.json({ success: true, date, nozzles: [], readings: [], message: 'No nozzles found for this location/date.' });
+  }
+
+  // Step 2: fetch reading per nozzle individually
+  const readings = await Promise.all(
+    nozzles.map(async (n) => {
+      const nid = n.nozzle_id || n.id;
+      if (!nid) return { nozzle_id: null, name: n.name || '?', error: 'no nozzle_id' };
+      try {
+        const row = await adapter.getShiftReading(nid, date);
+        return {
+          nozzle_id:   nid,
+          name:        n.name || '',
+          opening:     row?.opening?.effective_value ?? null,
+          closing:     row?.closing?.effective_value ?? null,
+          litres_sold: row?.litres_sold ?? null,
+          is_final:    row?.is_final ?? null,
+          has_data:    row !== null,
+          _raw:        row,
+        };
+      } catch (e) {
+        return { nozzle_id: nid, name: n.name || '', error: e.message, has_data: false };
+      }
+    })
+  );
+
+  const withData = readings.filter(r => r.has_data).length;
+  res.json({
+    success: true, date,
+    nozzleCount: nozzles.length,
+    withData,
+    message: `${withData} of ${nozzles.length} nozzles have readings for ${date}.`,
+    readings,
+  });
+};
+
+module.exports = { getIntegrations, createIntegration, updateIntegration, deleteIntegration, testConnection, getPumps, fetchLocations, testReadings };

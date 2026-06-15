@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Plug2, Plus, Edit2, Trash2, X, Save, Loader, CheckCircle,
   XCircle, AlertCircle, Wifi, List, ChevronDown, ChevronUp, Eye, EyeOff,
+  FlaskConical,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -395,13 +396,149 @@ function PumpsModal({ integration, onClose }) {
   );
 }
 
+// ─── Readings Test Panel ──────────────────────────────────────────────────────
+function ReadingsTestPanel({ integration, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date,     setDate    ] = useState(today);
+  const [loading,  setLoading ] = useState(false);
+  const [result,   setResult  ] = useState(null);
+  const [error,    setError   ] = useState('');
+
+  const run = async () => {
+    setLoading(true); setResult(null); setError('');
+    try {
+      const { data } = await api.get(`/station-integrations/${integration._id}/test-readings?date=${date}`);
+      setResult(data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Request failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto md:pl-64">
+      <div className="min-h-full flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl my-6">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div>
+              <h3 className="font-bold text-gray-900">Test Meter Readings</h3>
+              <p className="text-xs text-gray-400 mt-0.5">{integration.name} — {integration.baseUrl}</p>
+            </div>
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Date picker + run */}
+          <div className="px-6 py-4 flex items-end gap-3 border-b border-gray-100">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date to query</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="input text-sm" />
+            </div>
+            <button onClick={run} disabled={loading}
+              className="btn-primary gap-1.5 text-sm shrink-0">
+              {loading ? <Loader size={14} className="animate-spin" /> : <FlaskConical size={14} />}
+              Fetch Readings
+            </button>
+          </div>
+
+          {/* Results */}
+          <div className="px-6 py-4 max-h-[60vh] overflow-y-auto space-y-4">
+            {error && (
+              <div className="flex items-start gap-2 bg-red-50 text-red-700 rounded-xl p-3 text-sm">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+
+            {result && (
+              <>
+                {/* Summary */}
+                <div className={`rounded-xl p-3 text-sm font-medium flex items-center gap-2 ${
+                  result.withData > 0 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                }`}>
+                  {result.withData > 0
+                    ? <CheckCircle size={15} className="shrink-0" />
+                    : <AlertCircle size={15} className="shrink-0" />}
+                  {result.message}
+                </div>
+
+                {/* Nozzle readings table */}
+                {result.readings?.length > 0 && (
+                  <div className="rounded-xl border border-gray-100 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-500 uppercase tracking-wide text-[10px]">
+                          <th className="px-3 py-2 text-left">Nozzle</th>
+                          <th className="px-3 py-2 text-right">Opening</th>
+                          <th className="px-3 py-2 text-right">Closing</th>
+                          <th className="px-3 py-2 text-right">Litres Sold</th>
+                          <th className="px-3 py-2 text-center">Final</th>
+                          <th className="px-3 py-2 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {result.readings.map((r, i) => (
+                          <tr key={i} className={r.has_data ? 'bg-white' : 'bg-gray-50/50'}>
+                            <td className="px-3 py-2 font-medium text-gray-800">
+                              {r.name || r.nozzle_id}
+                              <span className="ml-1 text-gray-400 font-mono text-[10px]">{r.nozzle_id}</span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-gray-700">
+                              {r.opening != null ? r.opening.toLocaleString() : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-gray-700">
+                              {r.closing != null ? r.closing.toLocaleString() : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-semibold text-brand-700">
+                              {r.litres_sold != null ? r.litres_sold.toLocaleString() + ' L' : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {r.is_final ? '✓' : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {r.error
+                                ? <span className="text-red-500 text-[10px]">error</span>
+                                : r.has_data
+                                  ? <span className="text-green-600 text-[10px] font-medium">ok</span>
+                                  : <span className="text-gray-400 text-[10px]">no data</span>
+                              }
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!result && !error && !loading && (
+              <p className="text-sm text-gray-400 text-center py-6">
+                Pick a date and click "Fetch Readings" to test the API connection and see raw meter data.
+              </p>
+            )}
+          </div>
+
+          <div className="px-6 pb-5">
+            <button onClick={onClose} className="btn-secondary w-full justify-center">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Integration Card ─────────────────────────────────────────────────────────
 function IntegrationCard({ integration, onEdit, onDelete, onRefresh }) {
   const notify   = useNotify();
-  const [testing,     setTesting    ] = useState(false);
-  const [testResult,  setTestResult ] = useState(null);
-  const [showPumps,   setShowPumps  ] = useState(false);
-  const [deleting,    setDeleting   ] = useState(false);
+  const [testing,      setTesting     ] = useState(false);
+  const [testResult,   setTestResult  ] = useState(null);
+  const [showPumps,    setShowPumps   ] = useState(false);
+  const [showReadings, setShowReadings] = useState(false);
+  const [deleting,     setDeleting    ] = useState(false);
 
   const statusInfo = STATUS_STYLES[integration.status] || STATUS_STYLES.inactive;
   const StatusIcon = statusInfo.icon;
@@ -495,6 +632,10 @@ function IntegrationCard({ integration, onEdit, onDelete, onRefresh }) {
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors font-medium">
             <List size={12} /> View Pumps
           </button>
+          <button onClick={() => setShowReadings(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors font-medium">
+            <FlaskConical size={12} /> Test Readings
+          </button>
           <button onClick={() => onEdit(integration)}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors font-medium">
             <Edit2 size={12} /> Edit
@@ -509,6 +650,9 @@ function IntegrationCard({ integration, onEdit, onDelete, onRefresh }) {
 
       {showPumps && (
         <PumpsModal integration={integration} onClose={() => setShowPumps(false)} />
+      )}
+      {showReadings && (
+        <ReadingsTestPanel integration={integration} onClose={() => setShowReadings(false)} />
       )}
     </>
   );
