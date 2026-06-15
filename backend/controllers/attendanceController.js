@@ -760,4 +760,35 @@ const debugSettings = async (req, res) => {
   });
 };
 
-module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings };
+// ── POST /api/attendance/reset-today  (admin only — clears today's records for re-testing) ───
+const resetTodayAttendance = async (req, res) => {
+  const cid = req.user.company._id;
+  const { branchId } = req.body;
+  if (!branchId) return res.status(400).json({ success: false, message: 'branchId is required' });
+
+  const now    = new Date();
+  const watNow = new Date(now.getTime() + 60 * 60 * 1000);
+  const date   = `${watNow.getUTCFullYear()}-${String(watNow.getUTCMonth()+1).padStart(2,'0')}-${String(watNow.getUTCDate()).padStart(2,'0')}`;
+
+  const PumpAssignment  = require('../models/PumpAssignment');
+  const PumpShiftRecord = require('../models/PumpShiftRecord');
+
+  const [att, asgn, shift] = await Promise.all([
+    Attendance.deleteMany({ company: cid, branch: branchId, date }),
+    PumpAssignment.deleteMany({ company: cid, branchId, date }),
+    PumpShiftRecord.deleteMany({ company: cid, branchId, date }),
+  ]);
+
+  res.json({
+    success: true,
+    date,
+    deleted: {
+      attendance:      att.deletedCount,
+      pumpAssignments: asgn.deletedCount,
+      shiftRecords:    shift.deletedCount,
+    },
+    message: `Today (${date}) cleared — workers can now clock in again.`,
+  });
+};
+
+module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings, resetTodayAttendance };

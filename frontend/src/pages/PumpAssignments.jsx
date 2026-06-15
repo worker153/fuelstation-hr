@@ -299,6 +299,19 @@ export default function PumpAssignments() {
     }
   };
 
+  const handleResetToday = async () => {
+    if (!branchId) return notify('Select a branch first', 'error');
+    if (!window.confirm('This will delete ALL clock-ins and pump assignments for today so workers can clock in again. Continue?')) return;
+    try {
+      const res = await api.post('/attendance/reset-today', { branchId });
+      notify(res.data.message || 'Today reset — workers can clock in again');
+      loadAssignments();
+      loadBoard();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Reset failed', 'error');
+    }
+  };
+
   const handleDelete = async (assignment) => {
     if (!window.confirm(`Delete pump assignment for ${assignment.workerName}? This cannot be undone.`)) return;
     try {
@@ -321,7 +334,16 @@ export default function PumpAssignments() {
           <h1 className="text-2xl font-bold text-gray-900">Pump Assignments</h1>
           <p className="text-sm text-gray-500 mt-0.5">Automatic rotation + meter tracking</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {canManage && isToday && branchId && (
+            <button
+              onClick={handleResetToday}
+              className="btn-secondary gap-1.5 text-sm text-red-600 border-red-200 hover:bg-red-50"
+              title="Clear today's clock-ins and assignments so workers can re-clock-in (testing only)"
+            >
+              Reset Today
+            </button>
+          )}
           <button
             onClick={handleSyncMeters}
             disabled={syncing}
