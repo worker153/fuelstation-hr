@@ -215,15 +215,23 @@ const syncMeters = async (req, res) => {
     }
   }
 
-  // Diagnostic info so we can see exactly why mismatches happen
+  // Diagnostic info
   const debug = {
-    stationDeskNozzles: readings.map(r => ({
-      nozzle_id: r.nozzle_id,
-      name: r.name || r.nozzle_name || r.pump_name || '',
-      allKeys: Object.keys(r),
+    dateUsed: date,
+    stationDeskReadings: readings.map(r => ({
+      nozzle_id:    r.nozzle_id,
+      name:         r.name || r.nozzle_name || '',
+      opening:      r.opening?.effective_value ?? null,
+      closing:      r.closing?.effective_value ?? null,
+      litres_sold:  r.litres_sold ?? null,
+      is_final:     r.is_final ?? null,
+      rawKeys:      Object.keys(r),
     })),
     localPumps: pumps.map(p => ({ _id: p._id, pumpName: p.pumpName, externalId: p.externalId || null })),
-    assignmentsToday: assignments.map(a => ({ _id: a._id, pump: a.pump || null, pumpName: a.pumpName, islandName: a.islandName || null, workerName: a.workerName })),
+    assignmentsToday: assignments.map(a => ({
+      _id: a._id, pump: a.pump || null, pumpName: a.pumpName,
+      productType: a.productType, islandName: a.islandName || null, workerName: a.workerName,
+    })),
   };
 
   res.json({ success: true, synced, total: readings.length, message: `Synced ${synced} of ${readings.length} nozzle readings.`, debug });
