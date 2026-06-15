@@ -126,6 +126,7 @@ const syncMeters = async (req, res) => {
     closing:     r.row?.closing?.effective_value ?? null,
     litres_sold: r.row?.litres_sold ?? null,
     is_final:    r.row?.is_final ?? null,
+    _rawRow:     r.row,   // full raw row so we can see the real field names
   }));
 
   // Load assignments for this date
