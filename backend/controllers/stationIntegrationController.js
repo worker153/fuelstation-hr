@@ -98,37 +98,66 @@ const testReadings = async (req, res) => {
   const integration = await StationIntegration.findOne({ _id: req.params.id, company: cid }).select('+apiKey').lean();
   if (!integration) return res.status(404).json({ success: false, message: 'Integration not found' });
 
-  const date = req.query.date || new Date().toISOString().slice(0, 10);
-  const AdapterClass = ADAPTERS[integration.provider] || GenericRestAdapter;
-  const adapter = new AdapterClass(integration);
+  const date    = req.query.date || new Date().toISOString().slice(0, 10);
+  const baseUrl = (integration.baseUrl || '').replace(/\/$/, '');
+  const apiKey  = integration.apiKey || '';
+  const locId   = integration.locationId || '';
 
-  // Step 1: nozzle list from /hr-nozzles
-  let nozzles = [];
+  // ── Direct HTTP debug call (bypasses adapter) ─────────────────────────────
+  // Step 1: raw call to /hr-nozzles
+  const nozzleUrl = `${baseUrl}/hr-nozzles?location_id=${encodeURIComponent(locId)}`;
+  let nozzlesRaw = [], nozzlesHttpStatus = null, nozzlesError = null;
   try {
-    nozzles = await adapter.getDayReadings(date); // calls /hr-nozzles
+    const r = await fetch(nozzleUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+    nozzlesHttpStatus = r.status;
+    const body = await r.json().catch(() => ({}));
+    nozzlesRaw = body.data || [];
+    if (!r.ok) nozzlesError = body.error || body.message || `HTTP ${r.status}`;
   } catch (e) {
-    return res.status(502).json({ success: false, message: `Failed to fetch nozzle list: ${e.message}` });
+    nozzlesError = e.message;
   }
 
-  if (!nozzles.length) {
-    return res.json({ success: true, date, readings: [], message: 'No nozzles found for this location.' });
+  if (nozzlesError || !nozzlesRaw.length) {
+    return res.json({
+      success: false,
+      debug: { nozzleUrl, nozzlesHttpStatus, nozzlesError, nozzleCount: nozzlesRaw.length },
+      message: nozzlesError || 'No nozzles returned from /hr-nozzles',
+    });
   }
 
-  // Step 2: fetch actual reading per nozzle via /hr-meter-readings?nozzle_id=X
+  // Step 2: raw call to /hr-meter-readings for first nozzle
+  const firstNozzle = nozzlesRaw[0];
+  const firstNid    = firstNozzle.nozzle_id;
+  const readingUrl  = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}&nozzle_id=${encodeURIComponent(firstNid)}`;
+  let readingRaw = null, readingHttpStatus = null, readingError = null;
+  try {
+    const r = await fetch(readingUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+    readingHttpStatus = r.status;
+    const body = await r.json().catch(() => ({}));
+    readingRaw = body;
+    if (!r.ok) readingError = body.error || body.message || `HTTP ${r.status}`;
+  } catch (e) {
+    readingError = e.message;
+  }
+
+  // Step 3: fetch all nozzle readings
   const readings = await Promise.all(
-    nozzles.map(async n => {
-      const nid  = n.nozzle_id || n.id;
+    nozzlesRaw.map(async n => {
+      const nid  = n.nozzle_id;
       const name = n.name || '';
-      if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, is_final: null, has_data: false, _raw: null };
+      if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, _raw: null };
       try {
-        const row = await adapter.getShiftReading(nid, date);
+        const url = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}&nozzle_id=${encodeURIComponent(nid)}`;
+        const r   = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+        const body = await r.json().catch(() => ({}));
+        const row  = (body.data || [])[0] || null;
         const opening     = row?.opening?.effective_value ?? null;
         const closing     = row?.closing?.effective_value ?? null;
         const litres_sold = row?.litres_sold ?? null;
         const has_data    = opening !== null || closing !== null || litres_sold !== null;
         return { nozzle_id: nid, name, product: n.item_name || '', opening, closing, litres_sold, is_final: row?.is_final ?? null, has_data, _raw: row };
       } catch (e) {
-        return { nozzle_id: nid, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, is_final: null, has_data: false, error: e.message, _raw: null };
+        return { nozzle_id: nid, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, error: e.message, _raw: null };
       }
     })
   );
@@ -136,10 +165,18 @@ const testReadings = async (req, res) => {
   const withData = readings.filter(r => r.has_data).length;
   res.json({
     success: true, date,
-    nozzleCount: nozzles.length,
+    nozzleCount: nozzlesRaw.length,
     withData,
-    message: `${withData} of ${nozzles.length} nozzles have readings for ${date}.`,
+    message: `${withData} of ${nozzlesRaw.length} nozzles have readings for ${date}.`,
     readings,
+    _debug: {
+      nozzleUrl,
+      nozzlesHttpStatus,
+      readingUrl,
+      readingHttpStatus,
+      readingError,
+      firstReadingRaw: readingRaw,
+    },
   });
 };
 

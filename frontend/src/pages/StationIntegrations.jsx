@@ -508,18 +508,28 @@ function ReadingsTestPanel({ integration, onClose }) {
                   </div>
                 )}
 
-                {/* Raw JSON toggle — shows exact API response for debugging */}
-                {result.readings?.length > 0 && (
+                {/* Debug info — exact URLs called + raw API response */}
+                {result._debug && (
                   <div>
                     <button onClick={() => setShowRaw(v => !v)}
                       className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
                       <ChevronDown size={12} className={showRaw ? 'rotate-180 transition-transform' : 'transition-transform'} />
-                      {showRaw ? 'Hide' : 'Show'} raw API response (first row)
+                      {showRaw ? 'Hide' : 'Show'} raw debug info
                     </button>
                     {showRaw && (
-                      <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-[10px] rounded-xl overflow-x-auto leading-relaxed max-h-64 overflow-y-auto">
-                        {JSON.stringify(result.readings[0]?._raw, null, 2)}
-                      </pre>
+                      <div className="mt-2 space-y-2">
+                        <div className="p-3 bg-gray-50 rounded-xl text-xs space-y-1">
+                          <p className="font-medium text-gray-600">URLs called:</p>
+                          <p className="font-mono text-gray-500 break-all">{result._debug.nozzleUrl}</p>
+                          <p className="font-mono text-gray-500 break-all">{result._debug.readingUrl}</p>
+                          <p className="text-gray-500">Nozzle list HTTP: <span className="font-bold">{result._debug.nozzlesHttpStatus}</span> · Reading HTTP: <span className="font-bold">{result._debug.readingHttpStatus}</span></p>
+                          {result._debug.readingError && <p className="text-red-600">Error: {result._debug.readingError}</p>}
+                        </div>
+                        <p className="text-xs font-medium text-gray-500">Raw reading response (first nozzle):</p>
+                        <pre className="p-3 bg-gray-900 text-green-400 text-[10px] rounded-xl overflow-x-auto leading-relaxed max-h-64 overflow-y-auto">
+                          {JSON.stringify(result._debug.firstReadingRaw, null, 2)}
+                        </pre>
+                      </div>
                     )}
                   </div>
                 )}
