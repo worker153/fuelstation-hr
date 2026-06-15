@@ -466,59 +466,32 @@ function ReadingsTestPanel({ integration, onClose }) {
                   {result.message}
                 </div>
 
-                {/* Date param probe — always visible */}
-                {result._debug?.dateProbeResults && (
+                {/* URL probe results */}
+                {result._probes && (
                   <div className="rounded-xl border border-gray-200 overflow-hidden text-xs">
-                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-gray-600 font-medium">
-                      Date parameter probe — testing which name the API accepts
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-gray-600 font-medium flex items-center justify-between">
+                      <span>API probe — {result._probes.length} URL combinations tested</span>
+                      <span className={result._debug?.workingCombo === 'none' ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
+                        {result._debug?.workingCombo === 'none' ? 'none worked' : `✓ ${result._debug?.workingCombo}`}
+                      </span>
                     </div>
                     <div className="divide-y divide-gray-50">
-                      {Object.entries(result._debug.dateProbeResults).map(([param, info]) => (
-                        <div key={param} className={`flex items-center gap-3 px-3 py-2 ${info.hasReadingFields ? 'bg-green-50' : ''}`}>
-                          <span className="font-mono font-semibold text-gray-700 w-32 shrink-0">{param}</span>
-                          {info.error
-                            ? <span className="text-red-600">{info.error}</span>
-                            : <>
-                                <span className={`px-1.5 py-0.5 rounded font-bold ${info.hasReadingFields ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                                  {info.hasReadingFields ? 'HAS READINGS ✓' : 'no reading fields'}
-                                </span>
-                                <span className="text-gray-400">as_of: {info.asOf || '—'}</span>
-                              </>
-                          }
+                      {result._probes.map((p, i) => (
+                        <div key={i} className={`px-3 py-2 ${p.hasReadingFields ? 'bg-green-50' : ''}`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-1.5 py-0.5 rounded font-bold text-[10px] ${p.hasReadingFields ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                              {p.hasReadingFields ? 'HAS READINGS ✓' : p.error ? 'ERROR' : 'no readings'}
+                            </span>
+                            <span className="text-gray-600 font-medium">{p.label}</span>
+                            {p.status && <span className="text-gray-400 ml-auto">HTTP {p.status} · {p.rowCount} rows</span>}
+                          </div>
+                          {p.firstRowKeys?.length > 0 && (
+                            <p className="text-gray-400 font-mono">fields: {p.firstRowKeys.join(', ')}</p>
+                          )}
+                          {p.error && <p className="text-red-600">{p.error}</p>}
                         </div>
                       ))}
                     </div>
-                    <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-gray-500">
-                      Working param: <b className={result._debug.workingDateParam?.startsWith('none') ? 'text-red-600' : 'text-green-700'}>{result._debug.workingDateParam}</b>
-                    </div>
-                  </div>
-                )}
-
-                {/* Debug info — raw URLs + response */}
-                {result._debug && (
-                  <div className="rounded-xl border border-gray-200 overflow-hidden text-xs">
-                    <button onClick={() => setShowRaw(v => !v)}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium">
-                      <span>Raw response (first nozzle)</span>
-                      <ChevronDown size={12} className={showRaw ? 'rotate-180 transition-transform' : 'transition-transform'} />
-                    </button>
-                    {showRaw && (
-                      <div className="p-3 space-y-2">
-                        <div className="space-y-1">
-                          <p className="text-gray-400 font-medium uppercase text-[10px]">Reading URL used</p>
-                          <p className="font-mono text-gray-600 break-all text-[10px]">{result._debug.readingUrl}</p>
-                          <p className="text-gray-500">HTTP: <b>{result._debug.readingHttpStatus}</b>
-                            {result._debug.readingError && <span className="text-red-600 ml-2">{result._debug.readingError}</span>}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-gray-400 font-medium uppercase text-[10px]">Raw JSON response</p>
-                          <pre className="p-2 bg-gray-900 text-green-400 text-[10px] rounded-lg overflow-x-auto max-h-48 overflow-y-auto leading-relaxed">
-                            {JSON.stringify(result._debug.firstReadingRaw, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 

@@ -125,81 +125,94 @@ const testReadings = async (req, res) => {
     });
   }
 
-  // Step 2: probe which date parameter name the API accepts
-  // Try 4 candidate names — whichever returns reading fields (opening/closing) is correct.
+  // Step 2: probe many URL combinations to find which one returns reading data
   const firstNozzle = nozzlesRaw[0];
   const firstNid    = firstNozzle.nozzle_id;
-  const DATE_PARAM_CANDIDATES = ['business_date', 'date', 'shift_date', 'reading_date'];
-  let workingDateParam = null;
-  const dateProbeResults = {};
 
-  for (const paramName of DATE_PARAM_CANDIDATES) {
-    const probeUrl = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&${paramName}=${date}&nozzle_id=${encodeURIComponent(firstNid)}`;
+  const probes = [
+    { label: 'no params (just location)',         url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}` },
+    { label: 'location + business_date',          url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}` },
+    { label: 'location + date',                   url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&date=${date}` },
+    { label: 'location + business_date + nozzle', url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}&nozzle_id=${encodeURIComponent(firstNid)}` },
+    { label: 'location + date + nozzle',          url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&date=${date}&nozzle_id=${encodeURIComponent(firstNid)}` },
+    { label: 'location + shift_date + nozzle',    url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&shift_date=${date}&nozzle_id=${encodeURIComponent(firstNid)}` },
+  ];
+
+  const probeResults = await Promise.all(probes.map(async p => {
     try {
-      const r    = await fetch(probeUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const r    = await fetch(p.url, { headers: { Authorization: `Bearer ${apiKey}` } });
       const body = await r.json().catch(() => ({}));
-      const row  = (body.data || [])[0] || null;
-      const hasReadingFields = row && ('opening' in row || 'closing' in row || 'litres_sold' in row);
-      dateProbeResults[paramName] = { status: r.status, hasReadingFields, asOf: body.as_of || null, dataLength: (body.data || []).length };
-      if (hasReadingFields && !workingDateParam) workingDateParam = paramName;
+      const rows = body.data || [];
+      const firstRow = rows[0] || null;
+      const allKeys  = firstRow ? Object.keys(firstRow) : [];
+      const hasReadingFields = allKeys.some(k => ['opening','closing','litres_sold','meter_opening','meter_closing','opening_reading','closing_reading'].includes(k));
+      return {
+        label: p.label,
+        url: p.url,
+        status: r.status,
+        rowCount: rows.length,
+        firstRowKeys: allKeys,
+        hasReadingFields,
+        asOf: body.as_of || null,
+        firstRow,
+      };
     } catch (e) {
-      dateProbeResults[paramName] = { error: e.message };
+      return { label: p.label, url: p.url, error: e.message };
     }
-  }
+  }));
 
-  // Use the working param name (or fall back to business_date)
-  const effectiveDateParam = workingDateParam || 'business_date';
+  const working = probeResults.find(p => p.hasReadingFields);
 
-  const readingUrl = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&${effectiveDateParam}=${date}&nozzle_id=${encodeURIComponent(firstNid)}`;
-  let readingRaw = null, readingHttpStatus = null, readingError = null;
-  try {
-    const r = await fetch(readingUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
-    readingHttpStatus = r.status;
-    const body = await r.json().catch(() => ({}));
-    readingRaw = body;
-    if (!r.ok) readingError = body.error || body.message || `HTTP ${r.status}`;
-  } catch (e) {
-    readingError = e.message;
-  }
+  // Step 3: if we found a working combination, use it; otherwise return probe results
+  let readings = [];
+  let withData = 0;
+  if (working) {
+    // Determine params from the working URL
+    const workingUrl = new URL(working.url);
+    const dateParam  = workingUrl.searchParams.has('business_date') ? 'business_date'
+                     : workingUrl.searchParams.has('date')          ? 'date'
+                     : workingUrl.searchParams.has('shift_date')    ? 'shift_date'
+                     : null;
+    const useNozzle  = workingUrl.searchParams.has('nozzle_id');
 
-  // Step 3: fetch all nozzle readings using the working date param
-  const readings = await Promise.all(
-    nozzlesRaw.map(async n => {
+    readings = await Promise.all(nozzlesRaw.map(async n => {
       const nid  = n.nozzle_id;
       const name = n.name || '';
-      if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, _raw: null };
+      if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false };
       try {
-        const url = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&${effectiveDateParam}=${date}&nozzle_id=${encodeURIComponent(nid)}`;
-        const r   = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+        let url = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}`;
+        if (dateParam) url += `&${dateParam}=${date}`;
+        if (useNozzle) url += `&nozzle_id=${encodeURIComponent(nid)}`;
+        const r    = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
         const body = await r.json().catch(() => ({}));
-        const row  = (body.data || [])[0] || null;
-        const opening     = row?.opening?.effective_value ?? null;
-        const closing     = row?.closing?.effective_value ?? null;
+        const rows = body.data || [];
+        // When not filtering by nozzle, find this nozzle's row
+        const row = useNozzle ? rows[0] || null : rows.find(x => x.nozzle_id === nid) || null;
+        const opening     = row?.opening?.effective_value ?? row?.opening ?? null;
+        const closing     = row?.closing?.effective_value ?? row?.closing ?? null;
         const litres_sold = row?.litres_sold ?? null;
         const has_data    = opening !== null || closing !== null || litres_sold !== null;
         return { nozzle_id: nid, name, product: n.item_name || '', opening, closing, litres_sold, is_final: row?.is_final ?? null, has_data, _raw: row };
       } catch (e) {
-        return { nozzle_id: nid, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, error: e.message, _raw: null };
+        return { nozzle_id: nid, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, error: e.message };
       }
-    })
-  );
+    }));
+    withData = readings.filter(r => r.has_data).length;
+  }
 
-  const withData = readings.filter(r => r.has_data).length;
   res.json({
     success: true, date,
     nozzleCount: nozzlesRaw.length,
     withData,
-    message: `${withData} of ${nozzlesRaw.length} nozzles have readings for ${date}.`,
+    message: working
+      ? `${withData} of ${nozzlesRaw.length} nozzles have readings for ${date}.`
+      : `No readings found — none of the ${probes.length} URL combinations returned reading data. See _probes for details.`,
     readings,
+    _probes: probeResults,
     _debug: {
-      workingDateParam: workingDateParam || 'none found — all returned nozzle-only data',
-      dateProbeResults,
       nozzleUrl,
       nozzlesHttpStatus,
-      readingUrl,
-      readingHttpStatus,
-      readingError,
-      firstReadingRaw: readingRaw,
+      workingCombo: working ? working.label : 'none',
     },
   });
 };
