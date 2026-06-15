@@ -466,32 +466,21 @@ function ReadingsTestPanel({ integration, onClose }) {
                   {result.message}
                 </div>
 
-                {/* URL probe results */}
-                {result._probes && (
-                  <div className="rounded-xl border border-gray-200 overflow-hidden text-xs">
-                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-gray-600 font-medium flex items-center justify-between">
-                      <span>API probe — {result._probes.length} URL combinations tested</span>
-                      <span className={result._debug?.workingCombo === 'none' ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
-                        {result._debug?.workingCombo === 'none' ? 'none worked' : `✓ ${result._debug?.workingCombo}`}
-                      </span>
+                {/* Raw debug — always show when no reading data */}
+                {result._debug && result.withData === 0 && (
+                  <div className="rounded-xl border border-orange-200 overflow-hidden text-xs">
+                    <div className="px-3 py-2 bg-orange-50 border-b border-orange-100 text-orange-700 font-medium">
+                      Raw API response — URL: <span className="font-mono break-all">{result._debug.readingUrl}</span>
+                      <span className="ml-2 text-orange-500">HTTP {result._debug.httpStatus} · {result._debug.rowCount} rows</span>
                     </div>
-                    <div className="divide-y divide-gray-50">
-                      {result._probes.map((p, i) => (
-                        <div key={i} className={`px-3 py-2 ${p.hasReadingFields ? 'bg-green-50' : ''}`}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`px-1.5 py-0.5 rounded font-bold text-[10px] ${p.hasReadingFields ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                              {p.hasReadingFields ? 'HAS READINGS ✓' : p.error ? 'ERROR' : 'no readings'}
-                            </span>
-                            <span className="text-gray-600 font-medium">{p.label}</span>
-                            {p.status && <span className="text-gray-400 ml-auto">HTTP {p.status} · {p.rowCount} rows</span>}
-                          </div>
-                          {p.firstRowKeys?.length > 0 && (
-                            <p className="text-gray-400 font-mono">fields: {p.firstRowKeys.join(', ')}</p>
-                          )}
-                          {p.error && <p className="text-red-600">{p.error}</p>}
-                        </div>
-                      ))}
-                    </div>
+                    {result._debug.firstRowKeys?.length > 0 && (
+                      <div className="px-3 py-2 bg-orange-50/50 text-orange-600">
+                        Fields in first row: <span className="font-mono">{result._debug.firstRowKeys.join(', ')}</span>
+                      </div>
+                    )}
+                    <pre className="p-3 bg-gray-900 text-green-400 text-[10px] overflow-x-auto max-h-64 overflow-y-auto leading-relaxed">
+                      {JSON.stringify(result._debug.rawBody, null, 2)}
+                    </pre>
                   </div>
                 )}
 
