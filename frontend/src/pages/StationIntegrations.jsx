@@ -466,6 +466,39 @@ function ReadingsTestPanel({ integration, onClose }) {
                   {result.message}
                 </div>
 
+                {/* Debug info — always visible at top */}
+                {result._debug && (
+                  <div className="rounded-xl border border-gray-200 overflow-hidden text-xs">
+                    <button onClick={() => setShowRaw(v => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium">
+                      <span>Debug info (URLs + raw response)</span>
+                      <ChevronDown size={12} className={showRaw ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                    </button>
+                    {showRaw && (
+                      <div className="p-3 space-y-2">
+                        <div className="space-y-1">
+                          <p className="text-gray-400 font-medium uppercase text-[10px]">Nozzle list URL</p>
+                          <p className="font-mono text-gray-600 break-all text-[10px]">{result._debug.nozzleUrl}</p>
+                          <p className="text-gray-500">HTTP: <b>{result._debug.nozzlesHttpStatus}</b></p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-gray-400 font-medium uppercase text-[10px]">Reading URL (first nozzle)</p>
+                          <p className="font-mono text-gray-600 break-all text-[10px]">{result._debug.readingUrl}</p>
+                          <p className="text-gray-500">HTTP: <b>{result._debug.readingHttpStatus}</b>
+                            {result._debug.readingError && <span className="text-red-600 ml-2">{result._debug.readingError}</span>}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-gray-400 font-medium uppercase text-[10px]">Raw reading response</p>
+                          <pre className="p-2 bg-gray-900 text-green-400 text-[10px] rounded-lg overflow-x-auto max-h-48 overflow-y-auto leading-relaxed">
+                            {JSON.stringify(result._debug.firstReadingRaw, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Nozzle readings table */}
                 {result.readings?.length > 0 && (
                   <div className="rounded-xl border border-gray-100 overflow-hidden">
@@ -508,31 +541,6 @@ function ReadingsTestPanel({ integration, onClose }) {
                   </div>
                 )}
 
-                {/* Debug info — exact URLs called + raw API response */}
-                {result._debug && (
-                  <div>
-                    <button onClick={() => setShowRaw(v => !v)}
-                      className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
-                      <ChevronDown size={12} className={showRaw ? 'rotate-180 transition-transform' : 'transition-transform'} />
-                      {showRaw ? 'Hide' : 'Show'} raw debug info
-                    </button>
-                    {showRaw && (
-                      <div className="mt-2 space-y-2">
-                        <div className="p-3 bg-gray-50 rounded-xl text-xs space-y-1">
-                          <p className="font-medium text-gray-600">URLs called:</p>
-                          <p className="font-mono text-gray-500 break-all">{result._debug.nozzleUrl}</p>
-                          <p className="font-mono text-gray-500 break-all">{result._debug.readingUrl}</p>
-                          <p className="text-gray-500">Nozzle list HTTP: <span className="font-bold">{result._debug.nozzlesHttpStatus}</span> · Reading HTTP: <span className="font-bold">{result._debug.readingHttpStatus}</span></p>
-                          {result._debug.readingError && <p className="text-red-600">Error: {result._debug.readingError}</p>}
-                        </div>
-                        <p className="text-xs font-medium text-gray-500">Raw reading response (first nozzle):</p>
-                        <pre className="p-3 bg-gray-900 text-green-400 text-[10px] rounded-xl overflow-x-auto leading-relaxed max-h-64 overflow-y-auto">
-                          {JSON.stringify(result._debug.firstReadingRaw, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                )}
               </>
             )}
 
