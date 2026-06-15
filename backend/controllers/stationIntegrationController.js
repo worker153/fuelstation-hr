@@ -125,10 +125,32 @@ const testReadings = async (req, res) => {
     });
   }
 
-  // Step 2: raw call to /hr-meter-readings for first nozzle
+  // Step 2: probe which date parameter name the API accepts
+  // Try 4 candidate names — whichever returns reading fields (opening/closing) is correct.
   const firstNozzle = nozzlesRaw[0];
   const firstNid    = firstNozzle.nozzle_id;
-  const readingUrl  = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}&nozzle_id=${encodeURIComponent(firstNid)}`;
+  const DATE_PARAM_CANDIDATES = ['business_date', 'date', 'shift_date', 'reading_date'];
+  let workingDateParam = null;
+  const dateProbeResults = {};
+
+  for (const paramName of DATE_PARAM_CANDIDATES) {
+    const probeUrl = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&${paramName}=${date}&nozzle_id=${encodeURIComponent(firstNid)}`;
+    try {
+      const r    = await fetch(probeUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const body = await r.json().catch(() => ({}));
+      const row  = (body.data || [])[0] || null;
+      const hasReadingFields = row && ('opening' in row || 'closing' in row || 'litres_sold' in row);
+      dateProbeResults[paramName] = { status: r.status, hasReadingFields, asOf: body.as_of || null, dataLength: (body.data || []).length };
+      if (hasReadingFields && !workingDateParam) workingDateParam = paramName;
+    } catch (e) {
+      dateProbeResults[paramName] = { error: e.message };
+    }
+  }
+
+  // Use the working param name (or fall back to business_date)
+  const effectiveDateParam = workingDateParam || 'business_date';
+
+  const readingUrl = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&${effectiveDateParam}=${date}&nozzle_id=${encodeURIComponent(firstNid)}`;
   let readingRaw = null, readingHttpStatus = null, readingError = null;
   try {
     const r = await fetch(readingUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
@@ -140,14 +162,14 @@ const testReadings = async (req, res) => {
     readingError = e.message;
   }
 
-  // Step 3: fetch all nozzle readings
+  // Step 3: fetch all nozzle readings using the working date param
   const readings = await Promise.all(
     nozzlesRaw.map(async n => {
       const nid  = n.nozzle_id;
       const name = n.name || '';
       if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, _raw: null };
       try {
-        const url = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}&nozzle_id=${encodeURIComponent(nid)}`;
+        const url = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&${effectiveDateParam}=${date}&nozzle_id=${encodeURIComponent(nid)}`;
         const r   = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
         const body = await r.json().catch(() => ({}));
         const row  = (body.data || [])[0] || null;
@@ -170,6 +192,8 @@ const testReadings = async (req, res) => {
     message: `${withData} of ${nozzlesRaw.length} nozzles have readings for ${date}.`,
     readings,
     _debug: {
+      workingDateParam: workingDateParam || 'none found — all returned nozzle-only data',
+      dateProbeResults,
       nozzleUrl,
       nozzlesHttpStatus,
       readingUrl,
