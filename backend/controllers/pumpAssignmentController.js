@@ -127,25 +127,77 @@ const syncMeters = async (req, res) => {
     }
   });
 
+  // Build product-type buckets for last-resort matching
+  // "AGO 1" → "ago", "PMS 2" → "pms", "LPG 1" → "lpg"
+  const guessProductType = (name = '') => {
+    const n = name.toUpperCase();
+    if (n.includes('AGO') || n.includes('DIESEL')) return 'AGO';
+    if (n.includes('LPG') || n.includes('GAS'))   return 'LPG';
+    if (n.includes('DPK') || n.includes('KERO'))  return 'DPK';
+    if (n.includes('PMS') || n.includes('PETROL') || n.includes('PREMIUM')) return 'PMS';
+    return null;
+  };
+
+  // Sort readings within each product type by name so "PMS 1" < "PMS 2"
+  const readingsByProduct = {};
+  readings.forEach(r => {
+    const pt = guessProductType(r.name || r.nozzle_name || '');
+    if (!pt) return;
+    if (!readingsByProduct[pt]) readingsByProduct[pt] = [];
+    readingsByProduct[pt].push(r);
+  });
+  Object.values(readingsByProduct).forEach(arr =>
+    arr.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  );
+
+  // Sort assignments within each product type by assignedAt (first to clock in = nozzle 1)
+  const assignmentsByProduct = {};
+  assignments.forEach(a => {
+    const pt = (a.productType || '').toUpperCase();
+    if (!pt) return;
+    if (!assignmentsByProduct[pt]) assignmentsByProduct[pt] = [];
+    assignmentsByProduct[pt].push(a);
+  });
+  Object.values(assignmentsByProduct).forEach(arr =>
+    arr.sort((a, b) => new Date(a.assignedAt) - new Date(b.assignedAt))
+  );
+
+  // Track which assignment ids have already been claimed this sync round
+  const claimed = new Set();
+
   let synced = 0;
   for (const reading of readings) {
-    // Resolve the reading's name key (StationDesk may use different field names)
     const readingNameKey = (reading.name || reading.nozzle_name || reading.pump_name || '').trim().toLowerCase();
 
     // Match 1: externalId → pump → assignment.pump ObjectId
     const pump = pumpByNozzle[reading.nozzle_id];
-    let matched = pump ? (assignmentsByPumpId[String(pump._id)] || []) : [];
+    let matched = pump ? (assignmentsByPumpId[String(pump._id)] || []).filter(a => !claimed.has(String(a._id))) : [];
 
-    // Match 2: if no pump-id match, try pumpName directly on the assignment
+    // Match 2: pumpName on the assignment matches the reading name
     if (!matched.length && readingNameKey) {
-      matched = assignmentsByPumpName[readingNameKey] || [];
+      matched = (assignmentsByPumpName[readingNameKey] || []).filter(a => !claimed.has(String(a._id)));
     }
 
-    // Match 3: pump found by externalId but assignment was created with old pump ref —
-    // try matching assignment by the pump's own name
+    // Match 3: pump found by externalId but assignment has old pump ref
     if (!matched.length && pump?.pumpName) {
-      const pumpNameKey = pump.pumpName.trim().toLowerCase();
-      matched = assignmentsByPumpName[pumpNameKey] || [];
+      matched = (assignmentsByPumpName[pump.pumpName.trim().toLowerCase()] || []).filter(a => !claimed.has(String(a._id)));
+    }
+
+    // Match 4 (last resort): match by product type + position within that type
+    // "AGO 1" → 1st AGO assignment, "AGO 2" → 2nd AGO assignment, etc.
+    if (!matched.length) {
+      const pt = guessProductType(reading.name || reading.nozzle_name || '');
+      if (pt) {
+        const bucket   = readingsByProduct[pt] || [];
+        const asgBucket = (assignmentsByProduct[pt] || []).filter(a => !claimed.has(String(a._id)));
+        const pos = bucket.indexOf(reading);   // position of this nozzle in its product group
+        if (pos >= 0 && asgBucket[pos]) {
+          matched = [asgBucket[pos]];
+        } else if (asgBucket.length) {
+          // fallback: take the first unclaimed assignment of this product type
+          matched = [asgBucket[0]];
+        }
+      }
     }
 
     if (!matched.length) continue;
@@ -158,6 +210,7 @@ const syncMeters = async (req, res) => {
 
     if (Object.keys(update).length) {
       await Promise.all(matched.map(a => PumpAssignment.findByIdAndUpdate(a._id, update)));
+      matched.forEach(a => claimed.add(String(a._id)));
       synced += matched.length;
     }
   }
