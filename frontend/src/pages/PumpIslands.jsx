@@ -227,11 +227,17 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
 }
 
 // ─── Island Card ──────────────────────────────────────────────────────────────
-function IslandCard({ island, canManage, onEdit, onDelete }) {
+function IslandCard({ island, canManage, onEdit, onDelete, selected, onToggle }) {
   return (
     <div className={`card p-4 space-y-3 ${island.status === 'inactive' ? 'opacity-60' : ''}`}>
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="flex items-start gap-2 min-w-0">
+          {canManage && onToggle && (
+            <button onClick={onToggle} className="mt-0.5 shrink-0 text-gray-400 hover:text-brand-600 transition-colors">
+              {selected ? <CheckSquare size={16} className="text-brand-600" /> : <Square size={16} />}
+            </button>
+          )}
+          <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-gray-900">{island.name}</h3>
             {island.status === 'inactive' && (
@@ -244,6 +250,7 @@ function IslandCard({ island, canManage, onEdit, onDelete }) {
             )}
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{island.branchName || '—'} · Rotation #{island.rotationOrder}</p>
+          </div>
         </div>
         {canManage && (
           <div className="flex gap-1.5 shrink-0">
@@ -459,19 +466,11 @@ export default function PumpIslands() {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {islands.map(i => (
-            <div key={i._id} className="relative">
-              {canManage && (
-                <button onClick={() => toggleSelect(i._id)}
-                  className="absolute top-3 left-3 z-10 text-gray-400 hover:text-brand-600 transition-colors">
-                  {selected.has(i._id)
-                    ? <CheckSquare size={18} className="text-brand-600" />
-                    : <Square size={18} />}
-                </button>
-              )}
-              <div className={`transition-all ${selected.has(i._id) ? 'ring-2 ring-brand-400 rounded-xl' : ''}`}>
-                <IslandCard island={i} canManage={canManage}
-                  onEdit={openEdit} onDelete={handleDelete} />
-              </div>
+            <div key={i._id} className={`transition-all ${selected.has(i._id) ? 'ring-2 ring-brand-400 rounded-xl' : ''}`}>
+              <IslandCard island={i} canManage={canManage}
+                onEdit={openEdit} onDelete={handleDelete}
+                selected={selected.has(i._id)}
+                onToggle={() => toggleSelect(i._id)} />
             </div>
           ))}
         </div>
