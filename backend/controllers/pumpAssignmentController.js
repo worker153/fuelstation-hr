@@ -60,22 +60,8 @@ const syncMeters = async (req, res) => {
   if (!result) return res.status(404).json({ success: false, message: 'No active station integration found. Go to API Connections and activate one.' });
 
   const { adapter } = result;
-  if (typeof adapter.getDayReadings !== 'function') {
-    return res.status(400).json({ success: false, message: 'This integration does not support meter sync. Use Sage API provider.' });
-  }
 
-  let readings;
-  try {
-    readings = await adapter.getDayReadings(date);
-  } catch (e) {
-    return res.status(502).json({ success: false, message: `StationDesk API error: ${e.message}` });
-  }
-
-  if (!readings.length) {
-    return res.json({ success: true, synced: 0, message: 'No readings available for this date yet.' });
-  }
-
-  // Map nozzle_id → Pump (primary: externalId; fallback: normalised name)
+  // Load all pumps — build lookups
   const pumps = await Pump.find({ company: cid }).lean();
   const pumpByNozzle = {};
   const pumpByName   = {};
@@ -84,24 +70,63 @@ const syncMeters = async (req, res) => {
     if (p.pumpName)   pumpByName[p.pumpName.trim().toLowerCase()] = p;
   });
 
-  // Also backfill externalId on any pump that has no externalId but matches by name
-  // (auto-heal so future syncs use the fast path)
+  // Step 1: get nozzle list so we know all nozzle_ids (getDayReadings returns list, not readings)
+  let nozzleList = [];
+  try {
+    if (typeof adapter.getDayReadings === 'function') {
+      nozzleList = await adapter.getDayReadings(date);
+    } else if (typeof adapter.getPumps === 'function') {
+      nozzleList = await adapter.getPumps();
+    }
+  } catch (e) {
+    return res.status(502).json({ success: false, message: `StationDesk API error: ${e.message}` });
+  }
+
+  if (!nozzleList.length) {
+    return res.json({ success: true, synced: 0, message: 'No nozzles found for this location.' });
+  }
+
+  // Backfill externalId by name where missing
   const backfillUpdates = [];
-  for (const reading of readings) {
-    if (pumpByNozzle[reading.nozzle_id]) continue; // already matched
-    const nameKey = (reading.name || reading.nozzle_name || '').trim().toLowerCase();
+  for (const n of nozzleList) {
+    const nid = n.nozzle_id || n.id;
+    if (!nid) continue;
+    if (pumpByNozzle[nid]) continue;
+    const nameKey = (n.name || '').trim().toLowerCase();
     const matched = nameKey ? pumpByName[nameKey] : null;
-    if (matched && !matched.externalId) {
-      backfillUpdates.push(
-        Pump.findByIdAndUpdate(matched._id, { externalId: reading.nozzle_id })
-      );
-      // update in-memory map so the assignment step below can use it
-      pumpByNozzle[reading.nozzle_id] = matched;
-    } else if (matched) {
-      pumpByNozzle[reading.nozzle_id] = matched;
+    if (matched) {
+      if (!matched.externalId) backfillUpdates.push(Pump.findByIdAndUpdate(matched._id, { externalId: nid }));
+      pumpByNozzle[nid] = matched;
     }
   }
   if (backfillUpdates.length) await Promise.all(backfillUpdates);
+
+  // Step 2: fetch actual reading for each nozzle individually (getShiftReading returns real data)
+  const nozzleIds = nozzleList.map(n => n.nozzle_id || n.id).filter(Boolean);
+  if (!nozzleIds.length) {
+    return res.json({ success: true, synced: 0, message: 'No nozzle IDs found.' });
+  }
+
+  const readingResults = await Promise.all(
+    nozzleIds.map(async nid => {
+      try {
+        const row = await adapter.getShiftReading(nid, date);
+        return { nozzle_id: nid, name: (nozzleList.find(n => (n.nozzle_id || n.id) === nid) || {}).name || '', row };
+      } catch {
+        return { nozzle_id: nid, name: '', row: null };
+      }
+    })
+  );
+
+  // Build readings array with actual values
+  const readings = readingResults.map(r => ({
+    nozzle_id:   r.nozzle_id,
+    name:        r.name,
+    opening:     r.row?.opening?.effective_value ?? null,
+    closing:     r.row?.closing?.effective_value ?? null,
+    litres_sold: r.row?.litres_sold ?? null,
+    is_final:    r.row?.is_final ?? null,
+  }));
 
   // Load assignments for this date
   const filter = { company: cid, date };
@@ -203,9 +228,9 @@ const syncMeters = async (req, res) => {
     if (!matched.length) continue;
 
     const update = {};
-    if (reading.opening?.effective_value != null)  update.openingMeter = reading.opening.effective_value;
-    if (reading.closing?.effective_value != null)   update.closingMeter = reading.closing.effective_value;
-    if (reading.litres_sold != null)                update.volume       = reading.litres_sold;
+    if (reading.opening    != null) update.openingMeter = reading.opening;
+    if (reading.closing    != null) update.closingMeter = reading.closing;
+    if (reading.litres_sold != null) update.volume      = reading.litres_sold;
     if (reading.is_final && update.closingMeter != null) update.status  = 'completed';
 
     if (Object.keys(update).length) {
@@ -218,15 +243,7 @@ const syncMeters = async (req, res) => {
   // Diagnostic info
   const debug = {
     dateUsed: date,
-    stationDeskReadings: readings.map(r => ({
-      nozzle_id:    r.nozzle_id,
-      name:         r.name || r.nozzle_name || '',
-      opening:      r.opening?.effective_value ?? null,
-      closing:      r.closing?.effective_value ?? null,
-      litres_sold:  r.litres_sold ?? null,
-      is_final:     r.is_final ?? null,
-      rawKeys:      Object.keys(r),
-    })),
+    stationDeskReadings: readings,
     localPumps: pumps.map(p => ({ _id: p._id, pumpName: p.pumpName, externalId: p.externalId || null })),
     assignmentsToday: assignments.map(a => ({
       _id: a._id, pump: a.pump || null, pumpName: a.pumpName,
