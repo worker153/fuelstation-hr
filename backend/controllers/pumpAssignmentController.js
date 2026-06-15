@@ -145,11 +145,21 @@ const syncMeters = async (req, res) => {
     }
   });
 
+  // Normalise product type: StationDesk returns full names ("Diesel", "Petrol", "Cooking Gas")
+  // Map them to the abbreviations used in PumpAssignment.productType
+  const PRODUCT_MAP = {
+    'DIESEL': 'AGO', 'AGO': 'AGO',
+    'PETROL': 'PMS', 'PMS': 'PMS', 'PREMIUM MOTOR SPIRIT': 'PMS',
+    'COOKING GAS': 'LPG', 'LPG': 'LPG', 'GAS': 'LPG',
+    'DPK': 'DPK', 'KEROSENE': 'DPK',
+  };
+  const normaliseProduct = (raw = '') => PRODUCT_MAP[raw.trim().toUpperCase()] || raw.trim().toUpperCase() || null;
+  readings.forEach(r => { r.productType = normaliseProduct(r.productType); });
+
   // Build product-type buckets for position-based fallback matching
-  // item_name from API is already "PMS", "AGO", "LPG" — no guessing needed
   const readingsByProduct = {};
   readings.forEach(r => {
-    const pt = r.productType; // comes directly from item_name
+    const pt = r.productType;
     if (!pt) return;
     if (!readingsByProduct[pt]) readingsByProduct[pt] = [];
     readingsByProduct[pt].push(r);
