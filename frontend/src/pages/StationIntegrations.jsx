@@ -472,6 +472,7 @@ function ReadingsTestPanel({ integration, onClose }) {
                       <thead>
                         <tr className="bg-gray-50 text-gray-500 uppercase tracking-wide text-[10px]">
                           <th className="px-3 py-2 text-left">Nozzle</th>
+                          <th className="px-3 py-2 text-left">Product</th>
                           <th className="px-3 py-2 text-right">Opening</th>
                           <th className="px-3 py-2 text-right">Closing</th>
                           <th className="px-3 py-2 text-right">Litres Sold</th>
@@ -485,6 +486,9 @@ function ReadingsTestPanel({ integration, onClose }) {
                             <td className="px-3 py-2 font-medium text-gray-800">
                               {r.name || r.nozzle_id}
                               <span className="ml-1 text-gray-400 font-mono text-[10px]">{r.nozzle_id}</span>
+                            </td>
+                            <td className="px-3 py-2 text-left">
+                              {r.product && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium">{r.product}</span>}
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-gray-700">
                               {r.opening != null ? r.opening.toLocaleString() : <span className="text-gray-300">—</span>}

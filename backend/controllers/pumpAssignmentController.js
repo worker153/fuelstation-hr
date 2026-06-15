@@ -70,64 +70,46 @@ const syncMeters = async (req, res) => {
     if (p.pumpName)   pumpByName[p.pumpName.trim().toLowerCase()] = p;
   });
 
-  // Step 1: get nozzle list so we know all nozzle_ids (getDayReadings returns list, not readings)
-  let nozzleList = [];
+  // Step 1: one call returns ALL nozzle readings for the date
+  // Response fields: nozzle_id, nozzle_name, item_name, opening, closing, litres_sold, is_final
+  let rawReadings = [];
   try {
     if (typeof adapter.getDayReadings === 'function') {
-      nozzleList = await adapter.getDayReadings(date);
-    } else if (typeof adapter.getPumps === 'function') {
-      nozzleList = await adapter.getPumps();
+      rawReadings = await adapter.getDayReadings(date);
     }
   } catch (e) {
     return res.status(502).json({ success: false, message: `StationDesk API error: ${e.message}` });
   }
 
-  if (!nozzleList.length) {
-    return res.json({ success: true, synced: 0, message: 'No nozzles found for this location.' });
+  if (!rawReadings.length) {
+    return res.json({ success: true, synced: 0, message: 'No readings returned from StationDesk for this date. Readings may not have been submitted yet.' });
   }
 
-  // Backfill externalId by name where missing
+  // Normalise: handle both /hr-meter-readings (nozzle_name) and /hr-nozzles (name) field names
+  const readings = rawReadings.map(r => ({
+    nozzle_id:   r.nozzle_id || r.id,
+    name:        r.nozzle_name || r.name || '',
+    productType: (r.item_name || '').toUpperCase(),   // "PMS", "AGO", "LPG" — direct from API
+    opening:     r.opening?.effective_value ?? null,
+    closing:     r.closing?.effective_value ?? null,
+    litres_sold: r.litres_sold ?? null,
+    is_final:    r.is_final ?? null,
+    _raw:        r,
+  }));
+
+  // Backfill externalId on pump records by nozzle name
   const backfillUpdates = [];
-  for (const n of nozzleList) {
-    const nid = n.nozzle_id || n.id;
-    if (!nid) continue;
-    if (pumpByNozzle[nid]) continue;
-    const nameKey = (n.name || '').trim().toLowerCase();
+  for (const r of readings) {
+    if (!r.nozzle_id) continue;
+    if (pumpByNozzle[r.nozzle_id]) continue;
+    const nameKey = r.name.trim().toLowerCase();
     const matched = nameKey ? pumpByName[nameKey] : null;
     if (matched) {
-      if (!matched.externalId) backfillUpdates.push(Pump.findByIdAndUpdate(matched._id, { externalId: nid }));
-      pumpByNozzle[nid] = matched;
+      if (!matched.externalId) backfillUpdates.push(Pump.findByIdAndUpdate(matched._id, { externalId: r.nozzle_id }));
+      pumpByNozzle[r.nozzle_id] = matched;
     }
   }
   if (backfillUpdates.length) await Promise.all(backfillUpdates);
-
-  // Step 2: fetch actual reading for each nozzle individually (getShiftReading returns real data)
-  const nozzleIds = nozzleList.map(n => n.nozzle_id || n.id).filter(Boolean);
-  if (!nozzleIds.length) {
-    return res.json({ success: true, synced: 0, message: 'No nozzle IDs found.' });
-  }
-
-  const readingResults = await Promise.all(
-    nozzleIds.map(async nid => {
-      try {
-        const row = await adapter.getShiftReading(nid, date);
-        return { nozzle_id: nid, name: (nozzleList.find(n => (n.nozzle_id || n.id) === nid) || {}).name || '', row };
-      } catch {
-        return { nozzle_id: nid, name: '', row: null };
-      }
-    })
-  );
-
-  // Build readings array with actual values
-  const readings = readingResults.map(r => ({
-    nozzle_id:   r.nozzle_id,
-    name:        r.name,
-    opening:     r.row?.opening?.effective_value ?? null,
-    closing:     r.row?.closing?.effective_value ?? null,
-    litres_sold: r.row?.litres_sold ?? null,
-    is_final:    r.row?.is_final ?? null,
-    _rawRow:     r.row,   // full raw row so we can see the real field names
-  }));
 
   // Load assignments for this date
   const filter = { company: cid, date };
@@ -153,21 +135,11 @@ const syncMeters = async (req, res) => {
     }
   });
 
-  // Build product-type buckets for last-resort matching
-  // "AGO 1" → "ago", "PMS 2" → "pms", "LPG 1" → "lpg"
-  const guessProductType = (name = '') => {
-    const n = name.toUpperCase();
-    if (n.includes('AGO') || n.includes('DIESEL')) return 'AGO';
-    if (n.includes('LPG') || n.includes('GAS'))   return 'LPG';
-    if (n.includes('DPK') || n.includes('KERO'))  return 'DPK';
-    if (n.includes('PMS') || n.includes('PETROL') || n.includes('PREMIUM')) return 'PMS';
-    return null;
-  };
-
-  // Sort readings within each product type by name so "PMS 1" < "PMS 2"
+  // Build product-type buckets for position-based fallback matching
+  // item_name from API is already "PMS", "AGO", "LPG" — no guessing needed
   const readingsByProduct = {};
   readings.forEach(r => {
-    const pt = guessProductType(r.name || r.nozzle_name || '');
+    const pt = r.productType; // comes directly from item_name
     if (!pt) return;
     if (!readingsByProduct[pt]) readingsByProduct[pt] = [];
     readingsByProduct[pt].push(r);
@@ -193,7 +165,7 @@ const syncMeters = async (req, res) => {
 
   let synced = 0;
   for (const reading of readings) {
-    const readingNameKey = (reading.name || reading.nozzle_name || reading.pump_name || '').trim().toLowerCase();
+    const readingNameKey = (reading.name || '').trim().toLowerCase();
 
     // Match 1: externalId → pump → assignment.pump ObjectId
     const pump = pumpByNozzle[reading.nozzle_id];
@@ -210,9 +182,8 @@ const syncMeters = async (req, res) => {
     }
 
     // Match 4 (last resort): match by product type + position within that type
-    // "AGO 1" → 1st AGO assignment, "AGO 2" → 2nd AGO assignment, etc.
     if (!matched.length) {
-      const pt = guessProductType(reading.name || reading.nozzle_name || '');
+      const pt = reading.productType; // "PMS", "AGO", "LPG" — from API item_name
       if (pt) {
         const bucket   = readingsByProduct[pt] || [];
         const asgBucket = (assignmentsByProduct[pt] || []).filter(a => !claimed.has(String(a._id)));

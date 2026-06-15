@@ -116,28 +116,24 @@ const testReadings = async (req, res) => {
     return res.json({ success: true, date, nozzles: [], readings: [], message: 'No nozzles found for this location/date.' });
   }
 
-  // Step 2: fetch reading per nozzle individually
-  const readings = await Promise.all(
-    nozzles.map(async (n) => {
-      const nid = n.nozzle_id || n.id;
-      if (!nid) return { nozzle_id: null, name: n.name || '?', error: 'no nozzle_id' };
-      try {
-        const row = await adapter.getShiftReading(nid, date);
-        return {
-          nozzle_id:   nid,
-          name:        n.name || '',
-          opening:     row?.opening?.effective_value ?? null,
-          closing:     row?.closing?.effective_value ?? null,
-          litres_sold: row?.litres_sold ?? null,
-          is_final:    row?.is_final ?? null,
-          has_data:    row !== null,
-          _raw:        row,
-        };
-      } catch (e) {
-        return { nozzle_id: nid, name: n.name || '', error: e.message, has_data: false };
-      }
-    })
-  );
+  // Map raw rows to normalised shape
+  // /hr-meter-readings returns nozzle_name + full reading data in one call
+  const readings = nozzles.map(r => {
+    const nid  = r.nozzle_id || r.id;
+    const name = r.nozzle_name || r.name || '';
+    const opening     = r.opening?.effective_value ?? null;
+    const closing     = r.closing?.effective_value ?? null;
+    const litres_sold = r.litres_sold ?? null;
+    const has_data    = opening !== null || closing !== null || litres_sold !== null;
+    return {
+      nozzle_id: nid, name,
+      product:   r.item_name || '',
+      opening, closing, litres_sold,
+      is_final:  r.is_final ?? null,
+      has_data,
+      _raw: r,
+    };
+  });
 
   const withData = readings.filter(r => r.has_data).length;
   res.json({
