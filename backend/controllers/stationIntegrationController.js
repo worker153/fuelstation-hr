@@ -52,8 +52,7 @@ const testConnection = async (req, res) => {
 
   const AdapterClass = ADAPTERS[integration.provider] || GenericRestAdapter;
   const adapter = new AdapterClass(integration);
-
-  const result = await adapter.testConnection();
+  const result  = await adapter.testConnection();
 
   await StationIntegration.findByIdAndUpdate(integration._id, {
     status:      result.ok ? 'active' : 'error',
@@ -79,7 +78,6 @@ const getPumps = async (req, res) => {
   }
 };
 
-// Fetch locations using credentials entered in the form (before saving)
 const fetchLocations = async (req, res) => {
   const { baseUrl, apiKey } = req.body;
   if (!baseUrl || !apiKey) return res.status(400).json({ success: false, message: 'baseUrl and apiKey are required' });
@@ -92,7 +90,9 @@ const fetchLocations = async (req, res) => {
   }
 };
 
-// Test meter readings for a specific date — returns raw nozzle + reading data
+// Test meter readings — single call per StationDesk docs:
+// GET /hr-meter-readings?location_id=X&business_date=YYYY-MM-DD
+// Returns all nozzle readings for that date at once.
 const testReadings = async (req, res) => {
   const cid = req.user.company._id;
   const integration = await StationIntegration.findOne({ _id: req.params.id, company: cid }).select('+apiKey').lean();
@@ -103,117 +103,74 @@ const testReadings = async (req, res) => {
   const apiKey  = integration.apiKey || '';
   const locId   = integration.locationId || '';
 
-  // ── Direct HTTP debug call (bypasses adapter) ─────────────────────────────
-  // Step 1: raw call to /hr-nozzles
-  const nozzleUrl = `${baseUrl}/hr-nozzles?location_id=${encodeURIComponent(locId)}`;
-  let nozzlesRaw = [], nozzlesHttpStatus = null, nozzlesError = null;
-  try {
-    const r = await fetch(nozzleUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
-    nozzlesHttpStatus = r.status;
-    const body = await r.json().catch(() => ({}));
-    nozzlesRaw = body.data || [];
-    if (!r.ok) nozzlesError = body.error || body.message || `HTTP ${r.status}`;
-  } catch (e) {
-    nozzlesError = e.message;
+  if (!locId) {
+    return res.status(400).json({ success: false, message: 'No Location ID set on this integration. Edit the integration and add your Location ID.' });
   }
 
-  if (nozzlesError || !nozzlesRaw.length) {
+  const readingUrl = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}`;
+  let httpStatus = null, rawBody = null, fetchError = null;
+  try {
+    const r   = await fetch(readingUrl, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20000) });
+    httpStatus = r.status;
+    rawBody    = await r.json().catch(() => null);
+    if (!r.ok) fetchError = rawBody?.error || rawBody?.message || `HTTP ${r.status}`;
+  } catch (e) {
+    fetchError = e.message;
+  }
+
+  if (fetchError) {
     return res.json({
       success: false,
-      debug: { nozzleUrl, nozzlesHttpStatus, nozzlesError, nozzleCount: nozzlesRaw.length },
-      message: nozzlesError || 'No nozzles returned from /hr-nozzles',
+      message: `API error: ${fetchError}`,
+      _debug: { readingUrl, httpStatus, rawBody },
     });
   }
 
-  // Step 2: probe many URL combinations to find which one returns reading data
-  const firstNozzle = nozzlesRaw[0];
-  const firstNid    = firstNozzle.nozzle_id;
+  const rows = rawBody?.data || [];
 
-  const probes = [
-    { label: 'no params (just location)',         url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}` },
-    { label: 'location + business_date',          url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}` },
-    { label: 'location + date',                   url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&date=${date}` },
-    { label: 'location + business_date + nozzle', url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&business_date=${date}&nozzle_id=${encodeURIComponent(firstNid)}` },
-    { label: 'location + date + nozzle',          url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&date=${date}&nozzle_id=${encodeURIComponent(firstNid)}` },
-    { label: 'location + shift_date + nozzle',    url: `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}&shift_date=${date}&nozzle_id=${encodeURIComponent(firstNid)}` },
-  ];
+  // Reading rows have: nozzle_name, business_date, shift_no, opening{}, closing{}, litres_sold
+  // Nozzle-directory rows (returned when no readings exist) have: name, item_id, is_active
+  const isReadingData = rows.length > 0 &&
+    ('opening' in rows[0] || 'closing' in rows[0] || 'shift_no' in rows[0] || 'litres_sold' in rows[0]);
 
-  const probeResults = await Promise.all(probes.map(async p => {
-    try {
-      const r    = await fetch(p.url, { headers: { Authorization: `Bearer ${apiKey}` } });
-      const body = await r.json().catch(() => ({}));
-      const rows = body.data || [];
-      const firstRow = rows[0] || null;
-      const allKeys  = firstRow ? Object.keys(firstRow) : [];
-      const hasReadingFields = allKeys.some(k => ['opening','closing','litres_sold','meter_opening','meter_closing','opening_reading','closing_reading'].includes(k));
-      return {
-        label: p.label,
-        url: p.url,
-        status: r.status,
-        rowCount: rows.length,
-        firstRowKeys: allKeys,
-        hasReadingFields,
-        asOf: body.as_of || null,
-        firstRow,
-      };
-    } catch (e) {
-      return { label: p.label, url: p.url, error: e.message };
-    }
-  }));
-
-  const working = probeResults.find(p => p.hasReadingFields);
-
-  // Step 3: if we found a working combination, use it; otherwise return probe results
-  let readings = [];
-  let withData = 0;
-  if (working) {
-    // Determine params from the working URL
-    const workingUrl = new URL(working.url);
-    const dateParam  = workingUrl.searchParams.has('business_date') ? 'business_date'
-                     : workingUrl.searchParams.has('date')          ? 'date'
-                     : workingUrl.searchParams.has('shift_date')    ? 'shift_date'
-                     : null;
-    const useNozzle  = workingUrl.searchParams.has('nozzle_id');
-
-    readings = await Promise.all(nozzlesRaw.map(async n => {
-      const nid  = n.nozzle_id;
-      const name = n.name || '';
-      if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false };
-      try {
-        let url = `${baseUrl}/hr-meter-readings?location_id=${encodeURIComponent(locId)}`;
-        if (dateParam) url += `&${dateParam}=${date}`;
-        if (useNozzle) url += `&nozzle_id=${encodeURIComponent(nid)}`;
-        const r    = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
-        const body = await r.json().catch(() => ({}));
-        const rows = body.data || [];
-        // When not filtering by nozzle, find this nozzle's row
-        const row = useNozzle ? rows[0] || null : rows.find(x => x.nozzle_id === nid) || null;
-        const opening     = row?.opening?.effective_value ?? row?.opening ?? null;
-        const closing     = row?.closing?.effective_value ?? row?.closing ?? null;
-        const litres_sold = row?.litres_sold ?? null;
-        const has_data    = opening !== null || closing !== null || litres_sold !== null;
-        return { nozzle_id: nid, name, product: n.item_name || '', opening, closing, litres_sold, is_final: row?.is_final ?? null, has_data, _raw: row };
-      } catch (e) {
-        return { nozzle_id: nid, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, has_data: false, error: e.message };
-      }
-    }));
-    withData = readings.filter(r => r.has_data).length;
+  if (!isReadingData) {
+    const reason = rows.length === 0
+      ? `Empty data array — no readings submitted in StationDesk for ${date}.`
+      : `StationDesk returned nozzle-directory data instead of readings for ${date}. The manager has not yet submitted meter readings through the StationDesk manager app for this date.`;
+    return res.json({
+      success: true,
+      withData: 0,
+      nozzleCount: rows.length,
+      message: reason,
+      readings: [],
+      _debug: { readingUrl, httpStatus, rowCount: rows.length, firstRowKeys: rows[0] ? Object.keys(rows[0]) : [], rawBody },
+    });
   }
 
+  const readings = rows.map(row => ({
+    nozzle_id:     row.nozzle_id,
+    name:          row.nozzle_name || '',
+    product:       row.item_name   || '',
+    business_date: row.business_date,
+    shift_no:      row.shift_no,
+    opening:       row.opening?.effective_value  ?? null,
+    closing:       row.closing?.effective_value  ?? null,
+    litres_sold:   row.litres_sold               ?? null,
+    is_final:      row.is_final                  ?? false,
+    source:        row.opening?.source           || null,
+    has_data:      row.opening?.effective_value != null || row.closing?.effective_value != null,
+    _raw:          row,
+  }));
+
+  const withData = readings.filter(r => r.has_data).length;
   res.json({
-    success: true, date,
-    nozzleCount: nozzlesRaw.length,
+    success: true,
+    date,
+    nozzleCount: readings.length,
     withData,
-    message: working
-      ? `${withData} of ${nozzlesRaw.length} nozzles have readings for ${date}.`
-      : `No readings found — none of the ${probes.length} URL combinations returned reading data. See _probes for details.`,
+    message: `${withData} of ${readings.length} nozzle readings found for ${date}.`,
     readings,
-    _probes: probeResults,
-    _debug: {
-      nozzleUrl,
-      nozzlesHttpStatus,
-      workingCombo: working ? working.label : 'none',
-    },
+    _debug: { readingUrl, httpStatus, rowCount: rows.length },
   });
 };
 

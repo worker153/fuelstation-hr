@@ -70,41 +70,45 @@ const syncMeters = async (req, res) => {
     if (p.pumpName)   pumpByName[p.pumpName.trim().toLowerCase()] = p;
   });
 
-  // Step 1: get nozzle list via /hr-nozzles (returns name, nozzle_id, item_name)
-  let nozzleList = [];
+  // Single call per StationDesk docs: GET /hr-meter-readings?location_id=X&business_date=Y
+  // Returns ALL nozzle readings for the date at once.
+  let rawRows = [];
   try {
-    nozzleList = await adapter.getDayReadings(date);
+    rawRows = await adapter.getAllReadings(date);
   } catch (e) {
     return res.status(502).json({ success: false, message: `StationDesk API error: ${e.message}` });
   }
 
-  if (!nozzleList.length) {
-    return res.json({ success: true, synced: 0, message: 'No nozzles found for this location.' });
+  // Detect if the API returned nozzle-directory data instead of readings
+  // (happens when no readings have been submitted for this date)
+  const isReadingData = rawRows.length > 0 &&
+    ('opening' in rawRows[0] || 'closing' in rawRows[0] || 'shift_no' in rawRows[0]);
+
+  if (!rawRows.length || !isReadingData) {
+    return res.json({
+      success: true, synced: 0, total: 0,
+      message: rawRows.length === 0
+        ? 'No readings found for this date. The manager may not have submitted meter readings in StationDesk yet.'
+        : 'StationDesk returned nozzle info but no meter readings for this date. The manager needs to submit readings through the StationDesk manager app.',
+    });
   }
 
-  // Step 2: fetch actual reading per nozzle via /hr-meter-readings?nozzle_id=X
-  const readingResults = await Promise.all(
-    nozzleList.map(async n => {
-      const nid = n.nozzle_id || n.id;
-      if (!nid) return { nozzle_id: null, name: n.name || '', productType: '', row: null };
-      try {
-        const row = await adapter.getShiftReading(nid, date);
-        return { nozzle_id: nid, name: n.name || '', productType: (n.item_name || '').toUpperCase(), row };
-      } catch {
-        return { nozzle_id: nid, name: n.name || '', productType: (n.item_name || '').toUpperCase(), row: null };
-      }
-    })
-  );
+  const PRODUCT_MAP = {
+    'DIESEL': 'AGO', 'AGO': 'AGO',
+    'PETROL': 'PMS', 'PMS': 'PMS', 'PREMIUM MOTOR SPIRIT': 'PMS',
+    'COOKING GAS': 'LPG', 'LPG': 'LPG', 'GAS': 'LPG',
+    'DPK': 'DPK', 'KEROSENE': 'DPK',
+  };
+  const normaliseProduct = (raw = '') => PRODUCT_MAP[raw.trim().toUpperCase()] || raw.trim().toUpperCase() || null;
 
-  const readings = readingResults.map(r => ({
-    nozzle_id:   r.nozzle_id,
-    name:        r.name,
-    productType: r.productType,
-    opening:     r.row?.opening?.effective_value ?? null,
-    closing:     r.row?.closing?.effective_value ?? null,
-    litres_sold: r.row?.litres_sold ?? null,
-    is_final:    r.row?.is_final ?? null,
-    _raw:        r.row,
+  const readings = rawRows.map(row => ({
+    nozzle_id:   row.nozzle_id,
+    name:        row.nozzle_name || '',
+    productType: normaliseProduct(row.item_name || ''),
+    opening:     row.opening?.effective_value  ?? null,
+    closing:     row.closing?.effective_value  ?? null,
+    litres_sold: row.litres_sold               ?? null,
+    is_final:    row.is_final                  ?? false,
   }));
 
   // Backfill externalId on pump records by nozzle name
@@ -145,16 +149,6 @@ const syncMeters = async (req, res) => {
     }
   });
 
-  // Normalise product type: StationDesk returns full names ("Diesel", "Petrol", "Cooking Gas")
-  // Map them to the abbreviations used in PumpAssignment.productType
-  const PRODUCT_MAP = {
-    'DIESEL': 'AGO', 'AGO': 'AGO',
-    'PETROL': 'PMS', 'PMS': 'PMS', 'PREMIUM MOTOR SPIRIT': 'PMS',
-    'COOKING GAS': 'LPG', 'LPG': 'LPG', 'GAS': 'LPG',
-    'DPK': 'DPK', 'KEROSENE': 'DPK',
-  };
-  const normaliseProduct = (raw = '') => PRODUCT_MAP[raw.trim().toUpperCase()] || raw.trim().toUpperCase() || null;
-  readings.forEach(r => { r.productType = normaliseProduct(r.productType); });
 
   // Build product-type buckets for position-based fallback matching
   const readingsByProduct = {};
