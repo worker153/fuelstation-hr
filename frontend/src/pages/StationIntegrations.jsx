@@ -403,6 +403,7 @@ function ReadingsTestPanel({ integration, onClose }) {
   const [loading,  setLoading ] = useState(false);
   const [result,   setResult  ] = useState(null);
   const [error,    setError   ] = useState('');
+  const [showRaw,  setShowRaw ] = useState(false);
 
   const run = async () => {
     setLoading(true); setResult(null); setError('');
@@ -477,7 +478,6 @@ function ReadingsTestPanel({ integration, onClose }) {
                           <th className="px-3 py-2 text-right">Closing</th>
                           <th className="px-3 py-2 text-right">Litres Sold</th>
                           <th className="px-3 py-2 text-center">Final</th>
-                          <th className="px-3 py-2 text-center">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
@@ -485,35 +485,42 @@ function ReadingsTestPanel({ integration, onClose }) {
                           <tr key={i} className={r.has_data ? 'bg-white' : 'bg-gray-50/50'}>
                             <td className="px-3 py-2 font-medium text-gray-800">
                               {r.name || r.nozzle_id}
-                              <span className="ml-1 text-gray-400 font-mono text-[10px]">{r.nozzle_id}</span>
                             </td>
                             <td className="px-3 py-2 text-left">
                               {r.product && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium">{r.product}</span>}
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-gray-700">
-                              {r.opening != null ? r.opening.toLocaleString() : <span className="text-gray-300">—</span>}
+                              {r.opening != null ? Number(r.opening).toLocaleString() : <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-gray-700">
-                              {r.closing != null ? r.closing.toLocaleString() : <span className="text-gray-300">—</span>}
+                              {r.closing != null ? Number(r.closing).toLocaleString() : <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-3 py-2 text-right font-mono font-semibold text-brand-700">
-                              {r.litres_sold != null ? r.litres_sold.toLocaleString() + ' L' : <span className="text-gray-300">—</span>}
+                              {r.litres_sold != null ? Number(r.litres_sold).toLocaleString() + ' L' : <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              {r.is_final ? '✓' : <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              {r.error
-                                ? <span className="text-red-500 text-[10px]">error</span>
-                                : r.has_data
-                                  ? <span className="text-green-600 text-[10px] font-medium">ok</span>
-                                  : <span className="text-gray-400 text-[10px]">no data</span>
-                              }
+                              {r.is_final === true ? <span className="text-green-600 font-bold">✓</span> : <span className="text-gray-300">—</span>}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {/* Raw JSON toggle — shows exact API response for debugging */}
+                {result.readings?.length > 0 && (
+                  <div>
+                    <button onClick={() => setShowRaw(v => !v)}
+                      className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                      <ChevronDown size={12} className={showRaw ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                      {showRaw ? 'Hide' : 'Show'} raw API response (first row)
+                    </button>
+                    {showRaw && (
+                      <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-[10px] rounded-xl overflow-x-auto leading-relaxed max-h-64 overflow-y-auto">
+                        {JSON.stringify(result.readings[0]?._raw, null, 2)}
+                      </pre>
+                    )}
                   </div>
                 )}
               </>
