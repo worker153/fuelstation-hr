@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Layers, Plus, Edit2, Trash2, X, Save, Loader,
-  ChevronDown, Flame, Fuel, AlertCircle,
+  ChevronDown, Flame, Fuel, AlertCircle, CheckSquare, Square,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -342,15 +342,41 @@ export default function PumpIslands() {
     setShowModal(false);
   };
 
+  const [selected,    setSelected   ] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelect = (id) =>
+    setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const allSelected = islands.length > 0 && islands.every(i => selected.has(i._id));
+  const toggleAll   = () => setSelected(allSelected ? new Set() : new Set(islands.map(i => i._id)));
+
   const handleDelete = async (island) => {
     if (!window.confirm(`Delete "${island.name}"? This won't affect past assignments.`)) return;
     try {
       await api.delete(`/pump-islands/${island._id}`);
       setIslands(prev => prev.filter(i => i._id !== island._id));
+      setSelected(prev => { const s = new Set(prev); s.delete(island._id); return s; });
       notify('Island deleted');
     } catch {
       notify('Delete failed', 'error');
     }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Delete ${selected.size} island(s)? This won't affect past assignments.`)) return;
+    setBulkDeleting(true);
+    let failed = 0;
+    for (const id of selected) {
+      try { await api.delete(`/pump-islands/${id}`); }
+      catch { failed++; }
+    }
+    await load();
+    setSelected(new Set());
+    setBulkDeleting(false);
+    if (failed) notify(`${failed} deletion(s) failed`, 'error');
+    else notify(`${selected.size} island(s) deleted`);
   };
 
   return (
@@ -380,14 +406,35 @@ export default function PumpIslands() {
         </div>
       </div>
 
-      {/* Branch filter */}
-      <div className="flex items-center gap-3">
+      {/* Branch filter + bulk actions */}
+      <div className="flex items-center gap-3 flex-wrap">
         <select className="input py-2 text-sm w-52"
           value={branchId} onChange={e => setBranchId(e.target.value)}>
           <option value="">All branches</option>
           {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
         </select>
         <span className="text-sm text-gray-400">{islands.length} island{islands.length !== 1 ? 's' : ''}</span>
+
+        {canManage && islands.length > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={toggleAll}
+              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-brand-600 transition-colors">
+              {allSelected
+                ? <CheckSquare size={16} className="text-brand-600" />
+                : <Square size={16} />}
+              {allSelected ? 'Deselect all' : 'Select all'}
+            </button>
+            {selected.size > 0 && (
+              <button onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
+                {bulkDeleting
+                  ? <Loader size={13} className="animate-spin" />
+                  : <Trash2 size={13} />}
+                Delete {selected.size} selected
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Islands grid */}
@@ -412,8 +459,20 @@ export default function PumpIslands() {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {islands.map(i => (
-            <IslandCard key={i._id} island={i} canManage={canManage}
-              onEdit={openEdit} onDelete={handleDelete} />
+            <div key={i._id} className="relative">
+              {canManage && (
+                <button onClick={() => toggleSelect(i._id)}
+                  className="absolute top-3 left-3 z-10 text-gray-400 hover:text-brand-600 transition-colors">
+                  {selected.has(i._id)
+                    ? <CheckSquare size={18} className="text-brand-600" />
+                    : <Square size={18} />}
+                </button>
+              )}
+              <div className={`transition-all ${selected.has(i._id) ? 'ring-2 ring-brand-400 rounded-xl' : ''}`}>
+                <IslandCard island={i} canManage={canManage}
+                  onEdit={openEdit} onDelete={handleDelete} />
+              </div>
+            </div>
           ))}
         </div>
       )}
