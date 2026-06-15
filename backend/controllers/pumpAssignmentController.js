@@ -108,21 +108,46 @@ const syncMeters = async (req, res) => {
   if (branchId) filter.branchId = branchId;
   const assignments = await PumpAssignment.find(filter).lean();
 
-  // Build lookup: pump._id → assignments (a pump can have 1-2 workers via island)
-  const assignmentsByPump = {};
+  // Build three-level lookup for assignments:
+  // 1. by pump ObjectId  (best — pump has externalId)
+  // 2. by pumpName string (fallback — assignment stores the name)
+  const assignmentsByPumpId   = {};
+  const assignmentsByPumpName = {};
   assignments.forEach(a => {
-    if (!a.pump) return;
-    const k = String(a.pump);
-    if (!assignmentsByPump[k]) assignmentsByPump[k] = [];
-    assignmentsByPump[k].push(a);
+    if (a.pump) {
+      const k = String(a.pump);
+      if (!assignmentsByPumpId[k]) assignmentsByPumpId[k] = [];
+      assignmentsByPumpId[k].push(a);
+    }
+    // always index by normalised name (covers island assignments where pump is null)
+    const nameKey = (a.pumpName || '').trim().toLowerCase();
+    if (nameKey) {
+      if (!assignmentsByPumpName[nameKey]) assignmentsByPumpName[nameKey] = [];
+      assignmentsByPumpName[nameKey].push(a);
+    }
   });
 
   let synced = 0;
   for (const reading of readings) {
-    const pump = pumpByNozzle[reading.nozzle_id];
-    if (!pump) continue;
+    // Resolve the reading's name key (StationDesk may use different field names)
+    const readingNameKey = (reading.name || reading.nozzle_name || reading.pump_name || '').trim().toLowerCase();
 
-    const matched = assignmentsByPump[String(pump._id)] || [];
+    // Match 1: externalId → pump → assignment.pump ObjectId
+    const pump = pumpByNozzle[reading.nozzle_id];
+    let matched = pump ? (assignmentsByPumpId[String(pump._id)] || []) : [];
+
+    // Match 2: if no pump-id match, try pumpName directly on the assignment
+    if (!matched.length && readingNameKey) {
+      matched = assignmentsByPumpName[readingNameKey] || [];
+    }
+
+    // Match 3: pump found by externalId but assignment was created with old pump ref —
+    // try matching assignment by the pump's own name
+    if (!matched.length && pump?.pumpName) {
+      const pumpNameKey = pump.pumpName.trim().toLowerCase();
+      matched = assignmentsByPumpName[pumpNameKey] || [];
+    }
+
     if (!matched.length) continue;
 
     const update = {};
@@ -132,7 +157,6 @@ const syncMeters = async (req, res) => {
     if (reading.is_final && update.closingMeter != null) update.status  = 'completed';
 
     if (Object.keys(update).length) {
-      // Update all workers assigned to this pump (covers 2-worker islands)
       await Promise.all(matched.map(a => PumpAssignment.findByIdAndUpdate(a._id, update)));
       synced += matched.length;
     }
@@ -140,9 +164,13 @@ const syncMeters = async (req, res) => {
 
   // Diagnostic info so we can see exactly why mismatches happen
   const debug = {
-    stationDeskNozzles: readings.map(r => ({ nozzle_id: r.nozzle_id, name: r.name || r.nozzle_name || '' })),
+    stationDeskNozzles: readings.map(r => ({
+      nozzle_id: r.nozzle_id,
+      name: r.name || r.nozzle_name || r.pump_name || '',
+      allKeys: Object.keys(r),
+    })),
     localPumps: pumps.map(p => ({ _id: p._id, pumpName: p.pumpName, externalId: p.externalId || null })),
-    assignmentsToday: assignments.map(a => ({ _id: a._id, pump: a.pump || null, pumpName: a.pumpName, workerName: a.workerName })),
+    assignmentsToday: assignments.map(a => ({ _id: a._id, pump: a.pump || null, pumpName: a.pumpName, islandName: a.islandName || null, workerName: a.workerName })),
   };
 
   res.json({ success: true, synced, total: readings.length, message: `Synced ${synced} of ${readings.length} nozzle readings.`, debug });
