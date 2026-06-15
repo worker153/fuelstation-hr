@@ -102,38 +102,36 @@ const testReadings = async (req, res) => {
   const AdapterClass = ADAPTERS[integration.provider] || GenericRestAdapter;
   const adapter = new AdapterClass(integration);
 
-  // Step 1: nozzle list
+  // Step 1: nozzle list from /hr-nozzles
   let nozzles = [];
   try {
-    nozzles = typeof adapter.getDayReadings === 'function'
-      ? await adapter.getDayReadings(date)
-      : await adapter.getPumps();
+    nozzles = await adapter.getDayReadings(date); // calls /hr-nozzles
   } catch (e) {
     return res.status(502).json({ success: false, message: `Failed to fetch nozzle list: ${e.message}` });
   }
 
   if (!nozzles.length) {
-    return res.json({ success: true, date, nozzles: [], readings: [], message: 'No nozzles found for this location/date.' });
+    return res.json({ success: true, date, readings: [], message: 'No nozzles found for this location.' });
   }
 
-  // Map raw rows to normalised shape
-  // /hr-meter-readings returns nozzle_name + full reading data in one call
-  const readings = nozzles.map(r => {
-    const nid  = r.nozzle_id || r.id;
-    const name = r.nozzle_name || r.name || '';
-    const opening     = r.opening?.effective_value ?? null;
-    const closing     = r.closing?.effective_value ?? null;
-    const litres_sold = r.litres_sold ?? null;
-    const has_data    = opening !== null || closing !== null || litres_sold !== null;
-    return {
-      nozzle_id: nid, name,
-      product:   r.item_name || '',
-      opening, closing, litres_sold,
-      is_final:  r.is_final ?? null,
-      has_data,
-      _raw: r,
-    };
-  });
+  // Step 2: fetch actual reading per nozzle via /hr-meter-readings?nozzle_id=X
+  const readings = await Promise.all(
+    nozzles.map(async n => {
+      const nid  = n.nozzle_id || n.id;
+      const name = n.name || '';
+      if (!nid) return { nozzle_id: null, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, is_final: null, has_data: false, _raw: null };
+      try {
+        const row = await adapter.getShiftReading(nid, date);
+        const opening     = row?.opening?.effective_value ?? null;
+        const closing     = row?.closing?.effective_value ?? null;
+        const litres_sold = row?.litres_sold ?? null;
+        const has_data    = opening !== null || closing !== null || litres_sold !== null;
+        return { nozzle_id: nid, name, product: n.item_name || '', opening, closing, litres_sold, is_final: row?.is_final ?? null, has_data, _raw: row };
+      } catch (e) {
+        return { nozzle_id: nid, name, product: n.item_name || '', opening: null, closing: null, litres_sold: null, is_final: null, has_data: false, error: e.message, _raw: null };
+      }
+    })
+  );
 
   const withData = readings.filter(r => r.has_data).length;
   res.json({

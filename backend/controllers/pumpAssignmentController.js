@@ -70,31 +70,41 @@ const syncMeters = async (req, res) => {
     if (p.pumpName)   pumpByName[p.pumpName.trim().toLowerCase()] = p;
   });
 
-  // Step 1: one call returns ALL nozzle readings for the date
-  // Response fields: nozzle_id, nozzle_name, item_name, opening, closing, litres_sold, is_final
-  let rawReadings = [];
+  // Step 1: get nozzle list via /hr-nozzles (returns name, nozzle_id, item_name)
+  let nozzleList = [];
   try {
-    if (typeof adapter.getDayReadings === 'function') {
-      rawReadings = await adapter.getDayReadings(date);
-    }
+    nozzleList = await adapter.getDayReadings(date);
   } catch (e) {
     return res.status(502).json({ success: false, message: `StationDesk API error: ${e.message}` });
   }
 
-  if (!rawReadings.length) {
-    return res.json({ success: true, synced: 0, message: 'No readings returned from StationDesk for this date. Readings may not have been submitted yet.' });
+  if (!nozzleList.length) {
+    return res.json({ success: true, synced: 0, message: 'No nozzles found for this location.' });
   }
 
-  // Normalise: handle both /hr-meter-readings (nozzle_name) and /hr-nozzles (name) field names
-  const readings = rawReadings.map(r => ({
-    nozzle_id:   r.nozzle_id || r.id,
-    name:        r.nozzle_name || r.name || '',
-    productType: (r.item_name || '').toUpperCase(),   // "PMS", "AGO", "LPG" — direct from API
-    opening:     r.opening?.effective_value ?? null,
-    closing:     r.closing?.effective_value ?? null,
-    litres_sold: r.litres_sold ?? null,
-    is_final:    r.is_final ?? null,
-    _raw:        r,
+  // Step 2: fetch actual reading per nozzle via /hr-meter-readings?nozzle_id=X
+  const readingResults = await Promise.all(
+    nozzleList.map(async n => {
+      const nid = n.nozzle_id || n.id;
+      if (!nid) return { nozzle_id: null, name: n.name || '', productType: '', row: null };
+      try {
+        const row = await adapter.getShiftReading(nid, date);
+        return { nozzle_id: nid, name: n.name || '', productType: (n.item_name || '').toUpperCase(), row };
+      } catch {
+        return { nozzle_id: nid, name: n.name || '', productType: (n.item_name || '').toUpperCase(), row: null };
+      }
+    })
+  );
+
+  const readings = readingResults.map(r => ({
+    nozzle_id:   r.nozzle_id,
+    name:        r.name,
+    productType: r.productType,
+    opening:     r.row?.opening?.effective_value ?? null,
+    closing:     r.row?.closing?.effective_value ?? null,
+    litres_sold: r.row?.litres_sold ?? null,
+    is_final:    r.row?.is_final ?? null,
+    _raw:        r.row,
   }));
 
   // Backfill externalId on pump records by nozzle name

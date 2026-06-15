@@ -65,8 +65,9 @@ class SageAdapter {
     }));
   }
 
-  // ── Get shift row(s) for a specific nozzle on a given date ──────────────
-  // Used for opening meter capture on clock-in (getMeterReading).
+  // ── Get actual meter reading for one nozzle on one date ─────────────────
+  // /hr-meter-readings REQUIRES nozzle_id to return reading data.
+  // Without nozzle_id it returns the nozzle directory (same as /hr-nozzles).
   async getShiftReading(nozzleId, date) {
     if (!this.locationId) return null;
     const d = date || new Date().toISOString().slice(0, 10);
@@ -87,20 +88,37 @@ class SageAdapter {
     return row?.opening?.effective_value ?? null;
   }
 
-  // ── Pull ALL nozzle readings for a date (or date range) in one call ───────
-  // Returns rows with: nozzle_id, nozzle_name, item_name, opening, closing,
-  //                    litres_sold, is_final, business_date, shift_no
-  async getDayReadings(date, opts = {}) {
+  // ── Get nozzle list (IDs + names) via the dedicated nozzle endpoint ───────
+  // Returns: [{nozzle_id, name, item_name, is_active, ...}]
+  async getDayReadings(date) {
     if (!this.locationId) throw new Error('Location ID not set.');
-    const params = { location_id: this.locationId };
-    if (opts.from_date && opts.to_date) {
-      params.from_date = opts.from_date;
-      params.to_date   = opts.to_date;
-    } else {
-      params.business_date = date || new Date().toISOString().slice(0, 10);
-    }
-    const data = await this._get('/hr-meter-readings', params);
-    return data.data || [];
+    // /hr-nozzles is the correct endpoint for getting the nozzle list
+    const data = await this._get('/hr-nozzles', { location_id: this.locationId });
+    return (data.data || []).filter(n => n.is_active !== false);
+  }
+
+  // ── Pull readings for all nozzles for a date range (for payroll) ──────────
+  // Fetches nozzle list first, then reads each nozzle individually.
+  async getRangeReadings(fromDate, toDate) {
+    if (!this.locationId) throw new Error('Location ID not set.');
+    const nozzles = await this.getDayReadings();
+    const results = await Promise.all(
+      nozzles.map(async n => {
+        const nid = n.nozzle_id;
+        try {
+          const data = await this._get('/hr-meter-readings', {
+            location_id: this.locationId,
+            from_date:   fromDate,
+            to_date:     toDate,
+            nozzle_id:   nid,
+          });
+          return { nozzle_id: nid, name: n.name, item_name: n.item_name, rows: data.data || [] };
+        } catch {
+          return { nozzle_id: nid, name: n.name, item_name: n.item_name, rows: [] };
+        }
+      })
+    );
+    return results;
   }
 }
 
