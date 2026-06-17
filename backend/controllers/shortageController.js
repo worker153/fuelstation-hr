@@ -183,16 +183,22 @@ const submitShortage = async (req, res) => {
 // Supervisor: see only their own submissions
 const getShortages = async (req, res) => {
   const cid = req.user.company._id;
-  const { status, branchId, month, year } = req.query;
+  const { status, branchId, month, year, date } = req.query;
 
   const isAdmin = ['super_admin', 'admin'].includes(req.user.role) || req.user.can('manageBranches');
 
   const filter = { company: cid };
-  if (!isAdmin) filter.submittedBy = req.user._id;   // supervisor sees own only
+  if (!isAdmin) filter.submittedBy = req.user._id;
   if (status)   filter.status   = status;
   if (branchId) filter.branchId = branchId;
-  if (month)    filter.month    = Number(month);
-  if (year)     filter.year     = Number(year);
+  if (date) {
+    const start = new Date(date + 'T00:00:00.000Z');
+    const end   = new Date(date + 'T23:59:59.999Z');
+    filter.date = { $gte: start, $lte: end };
+  } else {
+    if (month) filter.month = Number(month);
+    if (year)  filter.year  = Number(year);
+  }
 
   const shortages = await Shortage.find(filter)
     .populate('submittedBy', 'name')

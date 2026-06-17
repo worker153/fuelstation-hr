@@ -444,19 +444,24 @@ export default function Shortages() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterMonth,  setFilterMonth ] = useState('');
   const [filterYear,   setFilterYear  ] = useState(now.getFullYear());
+  const [filterDate,   setFilterDate  ] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filterStatus && filterStatus !== 'all') params.set('status', filterStatus);
-      if (filterMonth)  params.set('month', filterMonth);
-      if (filterYear)   params.set('year',  filterYear);
+      if (filterDate) {
+        params.set('date', filterDate);
+      } else {
+        if (filterMonth) params.set('month', filterMonth);
+        if (filterYear)  params.set('year',  filterYear);
+      }
       const { data } = await api.get(`/shortages?${params}`);
       setShortages(data.data);
     } catch { notify('Failed to load shortages', 'error'); }
     finally { setLoading(false); }
-  }, [filterStatus, filterMonth, filterYear]);
+  }, [filterStatus, filterMonth, filterYear, filterDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -523,15 +528,31 @@ export default function Shortages() {
             <option value="rejected">Rejected</option>
           </select>
         )}
-        <select className="input max-w-[130px]" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
-          <option value="">All months</option>
-          {MONTHS.map((m, i) => <option key={m} value={i+1}>{m}</option>)}
-        </select>
-        <select className="input max-w-[110px]" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
-          {Array.from({ length: 3 }, (_, i) => now.getFullYear() - i).map(y =>
-            <option key={y} value={y}>{y}</option>
-          )}
-        </select>
+        <input
+          type="date"
+          value={filterDate}
+          onChange={e => { setFilterDate(e.target.value); setFilterMonth(''); }}
+          className="input max-w-[150px]"
+          title="Filter by exact date"
+        />
+        {filterDate && (
+          <button onClick={() => setFilterDate('')} className="text-xs text-gray-400 hover:text-gray-600 underline">
+            Clear date
+          </button>
+        )}
+        {!filterDate && (
+          <>
+            <select className="input max-w-[130px]" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+              <option value="">All months</option>
+              {MONTHS.map((m, i) => <option key={m} value={i+1}>{m}</option>)}
+            </select>
+            <select className="input max-w-[110px]" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+              {Array.from({ length: 3 }, (_, i) => now.getFullYear() - i).map(y =>
+                <option key={y} value={y}>{y}</option>
+              )}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Full list */}
