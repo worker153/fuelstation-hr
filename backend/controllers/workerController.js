@@ -982,6 +982,15 @@ const updateAlwaysPresent = async (req, res) => {
   res.json({ success: true, data: { alwaysPresent: worker.alwaysPresent } });
 };
 
+// ─── PUT /api/workers/:id/auto-clock-in ──────────────────────────────────────
+const updateAutoClockIn = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  worker.autoClockIn = !!req.body.autoClockIn;
+  await worker.save();
+  res.json({ success: true, data: { autoClockIn: worker.autoClockIn } });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   getWorkerPins, bulkGeneratePins, selfResetPin, searchByName,
@@ -995,5 +1004,5 @@ module.exports = {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent,
+  updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent, updateAutoClockIn,
 };

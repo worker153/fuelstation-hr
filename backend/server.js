@@ -89,4 +89,8 @@ app.listen(PORT, () => {
   // Start break cron — runs every 5 min; detects overstays + missed break windows
   const { startBreakCron } = require('./jobs/breakCron');
   startBreakCron();
+
+  // Start auto clock-in cron — runs daily at 06:00 UTC (07:00 WAT)
+  const { start: startAutoClockIn } = require('./jobs/autoClockInCron');
+  startAutoClockIn();
 });

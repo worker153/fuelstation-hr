@@ -183,6 +183,10 @@ const workerSchema = new mongoose.Schema({
   // They appear as Present in all attendance views without ever needing to clock in
   alwaysPresent: { type: Boolean, default: false },
 
+  // Auto clock-in: cron creates a real clock-in record daily so worker appears
+  // as present in attendance and gets pump assignment without touching the terminal
+  autoClockIn: { type: Boolean, default: false },
+
   // Pump assignment — links worker to a specific pump on the forecourt controller
   pumpId:    { type: String },   // default pump this worker operates
   pumpLabel: { type: String },

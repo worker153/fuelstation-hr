@@ -488,6 +488,8 @@ function EmploymentTab({ worker, branches, onRefresh }) {
   const [savingCIR,     setSavingCIR    ] = useState(false);
   const [alwaysPresent, setAlwaysPresent] = useState(!!worker.alwaysPresent);
   const [savingAP,      setSavingAP     ] = useState(false);
+  const [autoClockIn,   setAutoClockIn  ] = useState(!!worker.autoClockIn);
+  const [savingACI,     setSavingACI    ] = useState(false);
 
   const done = () => { setModal(null); onRefresh(); };
 
@@ -540,6 +542,17 @@ function EmploymentTab({ worker, branches, onRefresh }) {
       onRefresh();
     } catch { notify('Failed to save', 'error'); }
     finally { setSavingAP(false); }
+  };
+
+  const saveAutoClockIn = async (val) => {
+    setSavingACI(true);
+    try {
+      await api.put(`/workers/${worker._id}/auto-clock-in`, { autoClockIn: val });
+      setAutoClockIn(val);
+      notify(val ? 'Auto clock-in enabled — worker will be clocked in daily at 7am ✓' : 'Auto clock-in disabled ✓');
+      onRefresh();
+    } catch { notify('Failed to save', 'error'); }
+    finally { setSavingACI(false); }
   };
 
   return (
@@ -795,6 +808,35 @@ function EmploymentTab({ worker, branches, onRefresh }) {
                   : 'bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700'}`}
             >
               {savingAP ? '…' : alwaysPresent ? 'Remove' : 'Enable'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Auto Clock-in */}
+      <div className="rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Auto Clock-in</p>
+            <p className="text-sm text-gray-800 font-medium">
+              {autoClockIn ? '⏰ Clocked in automatically every day' : '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {autoClockIn
+                ? 'System creates a clock-in record for this worker at 7:00 AM WAT daily — no terminal needed.'
+                : 'Enable for workers who are always present and should not need to use the clock-in terminal.'}
+            </p>
+          </div>
+          {canEdit && (
+            <button
+              onClick={() => saveAutoClockIn(!autoClockIn)}
+              disabled={savingACI}
+              className={`ml-4 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0
+                ${autoClockIn
+                  ? 'bg-blue-50 text-blue-700 hover:bg-red-50 hover:text-red-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-700'}`}
+            >
+              {savingACI ? '…' : autoClockIn ? 'Disable' : 'Enable'}
             </button>
           )}
         </div>

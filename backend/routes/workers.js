@@ -15,7 +15,7 @@ const {
   getActiveWorkers,
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
-  updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent,
+  updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent, updateAutoClockIn,
   getWorkerPins, bulkGeneratePins,
   selfResetPin, searchByName,
 } = require('../controllers/workerController');
@@ -80,5 +80,6 @@ router.put('/:id/bank',               requirePermission('editWorkers'), updateBa
 router.put('/:id/rotation-schedule',   adminOnly, updateRotationSchedule);
 router.put('/:id/clock-in-required',   requirePermission('editWorkers'), updateClockInRequired);
 router.put('/:id/always-present',      requirePermission('editWorkers'), updateAlwaysPresent);
+router.put('/:id/auto-clock-in',       requirePermission('editWorkers'), updateAutoClockIn);
 
 module.exports = router;
