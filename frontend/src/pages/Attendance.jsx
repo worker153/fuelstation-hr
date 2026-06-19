@@ -236,7 +236,7 @@ export default function Attendance() {
       const [attRes, workerRes] = await Promise.allSettled([
         api.get(`/attendance?${params}`),
         filterBranch
-          ? api.get(`/workers?branchId=${filterBranch}&status=active&limit=500`)
+          ? api.get(`/workers/active-workers?branchId=${filterBranch}&status=active&limit=500`)
           : Promise.resolve({ data: { data: [] } }),
       ]);
 
