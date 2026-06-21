@@ -259,12 +259,57 @@ async function redistributeIslands({ company, branchId, date }) {
       .map(p => ({ pumpId: p._id, pumpNumber: p.pumpNumber, pumpName: p.pumpName, productType: p.productType }));
   });
 
-  // Distribute uncovered islands round-robin
-  uncovered.forEach((island, idx) => {
-    const target = sortedAssignments[idx % sortedAssignments.length];
-    if (!target) return;
+  // For each uncovered island, find who last covered it (primary OR secondary)
+  // so we can start the rotation from the NEXT worker — not repeat the same person
+  const lastCoverages = uncovered.length
+    ? await Promise.all(
+        uncovered.map(island =>
+          PumpAssignment.findOne({
+            company, branchId,
+            date: { $lt: date },
+            status: { $ne: 'cancelled' },
+            $or: [
+              { island: island._id },
+              { 'additionalIslands.island': island._id },
+            ],
+          }).sort({ date: -1, createdAt: -1 }).select('worker').lean()
+        )
+      )
+    : [];
+
+  // Distribute each uncovered island independently using its own last-covered history
+  const workerCount    = sortedAssignments.length;
+  const secondaryCounts = {};
+  sortedAssignments.forEach(a => { secondaryCounts[String(a._id)] = 0; });
+
+  for (let i = 0; i < uncovered.length; i++) {
+    const island      = uncovered[i];
+    const lastWorker  = lastCoverages[i] ? String(lastCoverages[i].worker) : null;
+
+    // Start assigning from the worker AFTER whoever last covered this island
+    let startIdx = 0;
+    if (lastWorker) {
+      const idx = sortedAssignments.findIndex(a => String(a.worker) === lastWorker);
+      if (idx >= 0) startIdx = (idx + 1) % workerCount;
+    }
+
+    // Pick the worker with fewest secondary islands starting from startIdx
+    let selected = null;
+    let minCount  = Infinity;
+    for (let j = 0; j < workerCount; j++) {
+      const candidate = sortedAssignments[(startIdx + j) % workerCount];
+      const cnt = secondaryCounts[String(candidate._id)];
+      if (cnt < minCount) {
+        selected = candidate;
+        minCount = cnt;
+        if (cnt === 0) break; // no one has fewer — ideal choice
+      }
+    }
+    if (!selected) continue;
+
+    secondaryCounts[String(selected._id)]++;
     const pumpDocs = (island.pumps || []).map(id => pumpMap[String(id)]).filter(Boolean);
-    updateMap[String(target._id)].additionalIslands.push({
+    updateMap[String(selected._id)].additionalIslands.push({
       island:       island._id,
       islandName:   island.name,
       includesGas:  island.includesGas,
@@ -273,7 +318,7 @@ async function redistributeIslands({ company, branchId, date }) {
         pumpId: p._id, pumpNumber: p.pumpNumber, pumpName: p.pumpName, productType: p.productType,
       })),
     });
-  });
+  }
 
   // Apply all updates in parallel
   await Promise.all(
