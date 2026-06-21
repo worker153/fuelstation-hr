@@ -672,10 +672,11 @@ export default function AdminDashboard() {
   }, [rePin]);
 
   const doReAuth = async (pin) => {
-    if (!user?._id) { setReError('Session lost. Open your admin link again.'); return; }
+    const uid = user?.id || user?._id;
+    if (!uid) { setReError('Session lost. Open your admin link again.'); return; }
     setReLoading(true); setReError('');
     try {
-      const { data } = await axios.post(`${API}/auth/pin-login`, { userId: user._id, pin });
+      const { data } = await axios.post(`${API}/auth/pin-login`, { userId: uid, pin });
       localStorage.setItem('adminToken', data.token);
       localStorage.setItem('adminUser',  JSON.stringify(data.user));
       setAuthScreen(false);
@@ -763,7 +764,7 @@ export default function AdminDashboard() {
       super_admin: 'Super Admin', admin: 'Admin', supervisor: 'Supervisor',
       record_supervisor: 'Record Supervisor', hr_staff: 'HR Staff',
     }[r] || r || 'Staff');
-    const noUserId = !user?._id;
+    const noUserId = !(user?.id || user?._id);
 
     return (
       <div className="h-[100dvh] bg-gradient-to-b from-green-800 to-green-950 flex flex-col items-center justify-center px-4 py-10 select-none overflow-hidden">
