@@ -27,6 +27,7 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
     includesGas:   island?.includesGas   || false,
     rotationOrder: island?.rotationOrder ?? 0,
     maxWorkers:    island?.maxWorkers    ?? 1,
+    isPriority:    island?.isPriority    || false,
     status:        island?.status        || 'active',
     notes:         island?.notes         || '',
     pumps:         (island?.pumps || []).map(p => String(p._id || p)),
@@ -175,6 +176,21 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
             </div>
           </label>
 
+          {/* Priority island */}
+          <label className="flex items-start gap-3 p-3 rounded-xl border border-gray-200 bg-red-50 cursor-pointer hover:border-red-400 transition-colors">
+            <input type="checkbox" checked={form.isPriority}
+              onChange={e => set('isPriority', e.target.checked)}
+              className="mt-0.5 accent-red-600" />
+            <div>
+              <p className="text-sm font-semibold text-red-800 flex items-center gap-1.5">
+                ⭐ Priority Island
+              </p>
+              <p className="text-xs text-red-700 mt-0.5">
+                When all islands are fully staffed, extra workers are assigned here first — use for your highest-sales pumps.
+              </p>
+            </div>
+          </label>
+
           {/* Max workers + Rotation */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -242,6 +258,9 @@ function IslandCard({ island, canManage, onEdit, onDelete, selected, onToggle })
             <h3 className="font-bold text-gray-900">{island.name}</h3>
             {island.status === 'inactive' && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold uppercase">Inactive</span>
+            )}
+            {island.isPriority && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">⭐ Priority</span>
             )}
             {island.includesGas && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold flex items-center gap-1">

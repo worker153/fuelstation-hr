@@ -276,6 +276,185 @@ function BookModal({ onClose, onSaved, branches }) {
   );
 }
 
+// ── Detail Modal ──────────────────────────────────────────────────────────────
+function DetailModal({ offence, onClose, onResolve, onDelete, isAdmin }) {
+  const notify = useNotify();
+  const sev = sevCfg(offence.severity);
+  const sts = STATUS_CFG[offence.status] || STATUS_CFG.active;
+  const [showShortage, setShowShortage] = useState(false);
+  const [shortageAmt,  setShortageAmt ] = useState('');
+  const [shortageNote, setShortageNote] = useState('');
+  const [submitting,   setSubmitting  ] = useState(false);
+
+  const submitShortage = async () => {
+    if (!shortageAmt || Number(shortageAmt) <= 0) {
+      notify('Enter a valid amount', 'error'); return;
+    }
+    setSubmitting(true);
+    try {
+      const now = new Date();
+      await api.post('/shortages', {
+        workerId: offence.worker,
+        branchId: offence.branchId,
+        month:    now.getMonth() + 1,
+        year:     now.getFullYear(),
+        amount:   Number(shortageAmt),
+        reason:   'other',
+        about:    `Offence: ${typLabel(offence.offenceType)}`,
+        notes:    shortageNote || offence.description || '',
+      });
+      notify('Shortage added successfully');
+      setShowShortage(false);
+      setShortageAmt('');
+      setShortageNote('');
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to add shortage', 'error');
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4 md:pl-64">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={16} className="text-red-500" />
+            <p className="font-bold text-gray-900">Offence Detail</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X size={16} className="text-gray-400" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 max-h-[80vh] overflow-y-auto">
+          {/* Worker */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-sm font-bold text-brand-700 shrink-0">
+              {offence.workerName?.[0]?.toUpperCase()}
+            </div>
+            <div>
+              <p className="font-semibold text-gray-900">{offence.workerName}</p>
+              <p className="text-xs text-gray-400">{offence.workerRole} · {offence.branch}</p>
+            </div>
+            <span className={`ml-auto inline-flex text-xs font-semibold px-2.5 py-1 rounded-full ${sts.cls}`}>
+              {sts.label}
+            </span>
+          </div>
+
+          {/* Offence info */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-400 mb-0.5">Offence</p>
+              <p className="text-sm font-semibold text-gray-800">{typLabel(offence.offenceType)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-400 mb-0.5">Severity</p>
+              <span className={`inline-flex text-xs font-semibold px-2 py-0.5 rounded-full ${sev.cls}`}>{sev.label}</span>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-400 mb-0.5">Action Taken</p>
+              <p className="text-sm font-semibold text-gray-800">{actLabel(offence.action)}</p>
+              {offence.action === 'deduction' && offence.deductionAmount > 0 && (
+                <p className="text-xs text-red-600 font-semibold mt-0.5">{fmt(offence.deductionAmount)}</p>
+              )}
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-400 mb-0.5">Date</p>
+              <p className="text-sm font-semibold text-gray-800">{fmtDate(offence.date)}</p>
+              {offence.recordedByName && (
+                <p className="text-xs text-gray-400 mt-0.5">By {offence.recordedByName}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Description */}
+          {offence.description && (
+            <div className="bg-red-50 rounded-xl p-3 border border-red-100">
+              <p className="text-xs font-semibold text-red-600 mb-1 flex items-center gap-1">
+                <FileText size={11} /> What Happened
+              </p>
+              <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{offence.description}</p>
+            </div>
+          )}
+
+          {/* Witness */}
+          {offence.witness && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <User size={13} className="text-gray-400 shrink-0" />
+              <span><span className="text-gray-400">Witness:</span> {offence.witness}</span>
+            </div>
+          )}
+
+          {/* Resolution */}
+          {offence.resolution && (
+            <div className="bg-green-50 rounded-xl p-3 border border-green-100">
+              <p className="text-xs font-semibold text-green-700 mb-1">Resolution</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{offence.resolution}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Shortage form */}
+        {isAdmin && showShortage && (
+          <div className="px-5 py-4 border-t border-gray-100 bg-red-50 space-y-3">
+            <p className="text-sm font-semibold text-red-700">Add Shortage Deduction</p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
+                <input
+                  type="number" min="1" placeholder="Amount"
+                  value={shortageAmt} onChange={e => setShortageAmt(e.target.value)}
+                  className="input pl-7 w-full"
+                />
+              </div>
+            </div>
+            <textarea
+              rows={2} placeholder="Notes (optional — defaults to offence description)"
+              value={shortageNote} onChange={e => setShortageNote(e.target.value)}
+              className="input resize-none text-sm w-full"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setShowShortage(false)}
+                className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-white">
+                Cancel
+              </button>
+              <button onClick={submitShortage} disabled={submitting}
+                className="flex-1 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {submitting ? <Loader size={13} className="animate-spin" /> : null}
+                Submit
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Footer actions */}
+        {isAdmin && (
+          <div className="px-5 py-3 border-t border-gray-100 flex gap-2">
+            {!showShortage && (
+              <button onClick={() => setShowShortage(true)}
+                className="flex-1 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 flex items-center justify-center gap-1.5">
+                <AlertOctagon size={13} /> Add Shortage
+              </button>
+            )}
+            {offence.status === 'active' && !showShortage && (
+              <button onClick={onResolve}
+                className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 flex items-center justify-center gap-1.5">
+                <CheckCircle size={13} /> Resolve
+              </button>
+            )}
+            {!showShortage && (
+              <button onClick={onDelete}
+                className="py-2 px-4 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 flex items-center gap-1.5">
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Resolve Modal ─────────────────────────────────────────────────────────────
 function ResolveModal({ offence, onClose, onSaved }) {
   const notify = useNotify();
@@ -344,6 +523,7 @@ export default function Offences() {
   const [loading,     setLoading    ] = useState(false);
   const [showBook,    setShowBook   ] = useState(false);
   const [resolving,   setResolving  ] = useState(null);   // offence being resolved
+  const [viewing,     setViewing    ] = useState(null);   // offence detail view
 
   // Filters
   const [search,      setSearch     ] = useState('');
@@ -527,7 +707,8 @@ export default function Offences() {
                 const sts = STATUS_CFG[o.status] || STATUS_CFG.active;
                 return (
                   <div key={o._id}
-                    className="grid grid-cols-1 sm:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_1fr_auto] gap-2 sm:gap-3 px-5 py-4 hover:bg-gray-50/50 transition-colors">
+                    onClick={() => setViewing(o)}
+                    className="grid grid-cols-1 sm:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_1fr_auto] gap-2 sm:gap-3 px-5 py-4 hover:bg-gray-50/50 transition-colors cursor-pointer">
 
                     {/* Worker */}
                     <div className="flex items-center gap-2.5">
@@ -593,7 +774,7 @@ export default function Offences() {
 
                     {/* Actions */}
                     {isAdmin && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                         {o.status === 'active' && (
                           <button onClick={() => setResolving(o)} title="Resolve / Dismiss"
                             className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors">
@@ -622,6 +803,15 @@ export default function Offences() {
       {/* Modals */}
       {showBook   && <BookModal branches={branches} onClose={() => setShowBook(false)} onSaved={load} />}
       {resolving  && <ResolveModal offence={resolving} onClose={() => setResolving(null)} onSaved={load} />}
+      {viewing    && (
+        <DetailModal
+          offence={viewing}
+          isAdmin={isAdmin}
+          onClose={() => setViewing(null)}
+          onResolve={() => { setResolving(viewing); setViewing(null); }}
+          onDelete={() => { handleDelete(viewing._id); setViewing(null); }}
+        />
+      )}
     </div>
   );
 }

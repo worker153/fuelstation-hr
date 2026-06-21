@@ -142,12 +142,14 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     return oa - ob;
   });
 
-  // Pick first island under capacity; overflow: least loaded
+  // Pick first island under capacity (respects maxWorkers)
   let selected = sorted.find(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
+
+  // All islands at maxWorkers capacity — overflow to priority islands first, then any island
   if (!selected) {
-    selected = sorted.reduce((min, i) => {
-      return (islandCount[String(i._id)] || 0) < (islandCount[String(min._id)] || 0) ? i : min;
-    });
+    selected =
+      sorted.find(i => i.isPriority) ||   // priority island gets overflow first
+      sorted[0];                           // fall back to first island in rotation
   }
 
   // Assign a specific pump from the island to this worker.
@@ -179,7 +181,109 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     assignedAt:   new Date(),
   });
 
-  return assignment;
+  // Redistribute secondaries across all workers now that one more has clocked in
+  await redistributeIslands({ company, branchId, date });
+
+  // Return the updated record (with assignedPumps + additionalIslands populated)
+  return PumpAssignment.findById(assignment._id).lean();
 }
 
-module.exports = { autoAssignPump, autoAssignIsland, overrideAssignment };
+/**
+ * After every clock-in, redistribute secondary islands so all islands have a worker.
+ * Workers with no uncovered island get additionalIslands=[].
+ * A worker alone on their primary island gets all pumps in assignedPumps.
+ * A worker sharing (maxWorkers=2, 2 people) gets only their indexed pump.
+ */
+async function redistributeIslands({ company, branchId, date }) {
+  const islands = await PumpIsland.find({ company, branchId, status: 'active' })
+    .sort({ rotationOrder: 1 }).lean();
+  if (!islands.length) return;
+
+  const assignments = await PumpAssignment.find({
+    company, branchId, date, status: { $ne: 'cancelled' },
+    island: { $exists: true, $ne: null },
+  }).lean();
+  if (!assignments.length) return;
+
+  // Batch-load all pumps referenced by any island
+  const allPumpIds = [...new Set(islands.flatMap(i => (i.pumps || []).map(String)))];
+  const allPumps   = allPumpIds.length
+    ? await Pump.find({ _id: { $in: allPumpIds } }).lean()
+    : [];
+  const pumpMap = Object.fromEntries(allPumps.map(p => [String(p._id), p]));
+
+  // Map islandId → worker assignments on that island
+  const islandWorkers = {};
+  islands.forEach(i => { islandWorkers[String(i._id)] = []; });
+  assignments.forEach(a => {
+    const k = String(a.island);
+    if (islandWorkers[k]) islandWorkers[k].push(a);
+  });
+
+  // Sort assignments by their primary island's rotationOrder (for round-robin)
+  const sortedAssignments = [...assignments].sort((x, y) => {
+    const ix = islands.find(i => String(i._id) === String(x.island));
+    const iy = islands.find(i => String(i._id) === String(y.island));
+    return (ix?.rotationOrder ?? 0) - (iy?.rotationOrder ?? 0);
+  });
+
+  // Uncovered islands (no primary worker)
+  const uncovered = islands.filter(i => islandWorkers[String(i._id)].length === 0);
+
+  // Build the update payload for each assignment
+  const updateMap = {}; // assignmentId → { assignedPumps, additionalIslands }
+  sortedAssignments.forEach(a => {
+    updateMap[String(a._id)] = { assignedPumps: [], additionalIslands: [] };
+  });
+
+  // Set assignedPumps for primary island
+  sortedAssignments.forEach(a => {
+    const island = islands.find(i => String(i._id) === String(a.island));
+    if (!island) return;
+    const workers     = islandWorkers[String(island._id)];
+    const myIndex     = workers.findIndex(w => String(w._id) === String(a._id));
+    const isAlone     = workers.length === 1;
+    const pumpIds     = island.pumps || [];
+
+    let pumpsToAssign;
+    if (isAlone) {
+      pumpsToAssign = pumpIds; // cover all pumps
+    } else {
+      const idx = myIndex >= 0 ? myIndex : 0;
+      pumpsToAssign = pumpIds[idx] ? [pumpIds[idx]] : pumpIds.slice(0, 1);
+    }
+
+    updateMap[String(a._id)].assignedPumps = pumpsToAssign
+      .map(id => pumpMap[String(id)])
+      .filter(Boolean)
+      .map(p => ({ pumpId: p._id, pumpNumber: p.pumpNumber, pumpName: p.pumpName, productType: p.productType }));
+  });
+
+  // Distribute uncovered islands round-robin
+  uncovered.forEach((island, idx) => {
+    const target = sortedAssignments[idx % sortedAssignments.length];
+    if (!target) return;
+    const pumpDocs = (island.pumps || []).map(id => pumpMap[String(id)]).filter(Boolean);
+    updateMap[String(target._id)].additionalIslands.push({
+      island:       island._id,
+      islandName:   island.name,
+      includesGas:  island.includesGas,
+      productTypes: island.productTypes || [],
+      assignedPumps: pumpDocs.map(p => ({
+        pumpId: p._id, pumpNumber: p.pumpNumber, pumpName: p.pumpName, productType: p.productType,
+      })),
+    });
+  });
+
+  // Apply all updates in parallel
+  await Promise.all(
+    Object.entries(updateMap).map(([id, upd]) =>
+      PumpAssignment.updateOne({ _id: id }, { $set: {
+        assignedPumps:     upd.assignedPumps,
+        additionalIslands: upd.additionalIslands,
+      }})
+    )
+  );
+}
+
+module.exports = { autoAssignPump, autoAssignIsland, overrideAssignment, redistributeIslands };

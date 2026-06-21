@@ -266,7 +266,11 @@ export default function Pumps() {
   const [branchId,   setBranchId  ] = useState('');
   const [modal,      setModal     ] = useState(null); // null | 'new' | pump-object
   const [deleting,   setDeleting  ] = useState(null);
-  const [importing,  setImporting ] = useState(false);
+  const [importing,       setImporting      ] = useState(false);
+  const [locationPicker,  setLocationPicker ] = useState(false);
+  const [stationLocations,setStationLocations] = useState([]);
+  const [locLoading,      setLocLoading     ] = useState(false);
+  const [selectedLocId,   setSelectedLocId  ] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -297,10 +301,27 @@ export default function Pumps() {
 
   const handleImport = async () => {
     if (!branchId) return notify('Select a branch first, then click Import', 'error');
-    if (!window.confirm(`Import pumps from StationDesk for this branch? Existing pumps will be updated, new ones created.`)) return;
+    // Fetch available StationDesk locations first so user can pick the right one
+    setLocLoading(true);
+    try {
+      const res = await api.get('/pumps/station-locations');
+      const locs = res.data.data || [];
+      setStationLocations(locs);
+      setSelectedLocId(locs[0]?.location_id || '');
+      setLocationPicker(true);
+    } catch {
+      // No integration or fetch failed — fall through to direct import with no locationId override
+      runImport(null);
+    } finally {
+      setLocLoading(false);
+    }
+  };
+
+  const runImport = async (locationId) => {
+    setLocationPicker(false);
     setImporting(true);
     try {
-      const res = await api.post('/pumps/import-from-api', { branchId });
+      const res = await api.post('/pumps/import-from-api', { branchId, locationId: locationId || undefined });
       notify(res.data.message);
       load();
     } catch (err) {
@@ -353,10 +374,10 @@ export default function Pumps() {
           </select>
           {canManage && (
             <>
-              <button onClick={handleImport} disabled={importing}
+              <button onClick={handleImport} disabled={importing || locLoading}
                 className="btn-secondary gap-1.5 text-sm"
                 title="Import pumps from StationDesk API">
-                {importing
+                {(importing || locLoading)
                   ? <Loader size={14} className="animate-spin" />
                   : <Download size={14} />}
                 Import from API
@@ -445,7 +466,7 @@ export default function Pumps() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Pump form modal */}
       {modal && (
         <PumpModal
           pump={modal === 'new' ? null : modal}
@@ -453,6 +474,52 @@ export default function Pumps() {
           onClose={() => setModal(null)}
           onSaved={handleSaved}
         />
+      )}
+
+      {/* StationDesk location picker modal */}
+      {locationPicker && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-64">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Download size={16} className="text-brand-600" />
+                <h3 className="font-bold text-gray-900 text-sm">Select StationDesk Location</h3>
+              </div>
+              <button onClick={() => setLocationPicker(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-sm text-gray-500">
+                Which StationDesk location matches this branch? Only pumps from that location will be imported.
+              </p>
+              <div>
+                <label className="label">StationDesk Location</label>
+                <select
+                  className="input"
+                  value={selectedLocId}
+                  onChange={e => setSelectedLocId(e.target.value)}
+                >
+                  {stationLocations.map(l => (
+                    <option key={l.location_id} value={l.location_id}>
+                      {l.name || l.location_name} ({l.location_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => runImport(selectedLocId)}
+                  className="btn-primary flex-1 justify-center"
+                  disabled={!selectedLocId}
+                >
+                  <Download size={13} /> Import Pumps
+                </button>
+                <button onClick={() => setLocationPicker(false)} className="btn-secondary">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

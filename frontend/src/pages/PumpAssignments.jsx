@@ -114,10 +114,31 @@ function OverrideModal({ assignment, pumps, onClose, onSaved }) {
   );
 }
 
+// ─── Pump row inside board card ───────────────────────────────────────────────
+function PumpRow({ pump }) {
+  const pc = PRODUCT_COLORS[pump.productType] || PRODUCT_COLORS.other;
+  return (
+    <div className="flex items-center justify-between text-xs py-1">
+      <div className="flex items-center gap-1.5">
+        <Fuel size={11} className={pc.text} />
+        <span className="font-semibold text-gray-700">{pump.pumpName}</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${pc.bg} ${pc.text}`}>{pump.productType}</span>
+      </div>
+      <div className="flex gap-3 text-gray-500">
+        <span>O: {pump.openingMeter != null ? Number(pump.openingMeter).toLocaleString() : '—'}</span>
+        <span>C: {pump.closingMeter  != null ? Number(pump.closingMeter).toLocaleString()  : '—'}</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Today Board Card ─────────────────────────────────────────────────────────
 function BoardCard({ assignment, pumps, canManage, onOverride, onDelete }) {
   const pc  = PRODUCT_COLORS[assignment.productType] || PRODUCT_COLORS.other;
   const sta = STATUS_MAP[assignment.status] || STATUS_MAP.active;
+
+  const hasPrimaryPumps    = assignment.assignedPumps?.length > 0;
+  const hasSecondaryIslands = assignment.additionalIslands?.length > 0;
 
   return (
     <div className="card p-4 space-y-3 hover:shadow-md transition-shadow">
@@ -127,24 +148,33 @@ function BoardCard({ assignment, pumps, canManage, onOverride, onDelete }) {
         <p className="text-xs text-gray-400 mt-0.5">{assignment.workerRole || '—'}</p>
       </div>
 
-      {/* Island or Pump badge */}
+      {/* Primary island or pump */}
       {assignment.islandName ? (
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-100">
-            <Layers size={14} className="text-brand-700" />
-            <span className="font-bold text-sm text-brand-700">{assignment.islandName}</span>
-          </div>
-          {assignment.includesGas && (
-            <span className="ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
-              <Flame size={11} />AGO + Gas
-            </span>
-          )}
-          {assignment.productTypes?.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {assignment.productTypes.map(pt => (
-                <span key={pt} className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${PRODUCT_COLORS[pt]?.bg} ${PRODUCT_COLORS[pt]?.text}`}>{pt}</span>
-              ))}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-100">
+              <Layers size={14} className="text-brand-700" />
+              <span className="font-bold text-sm text-brand-700">{assignment.islandName}</span>
             </div>
+            {assignment.includesGas && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                <Flame size={11} />AGO + Gas
+              </span>
+            )}
+          </div>
+          {/* Per-pump rows for primary island */}
+          {hasPrimaryPumps ? (
+            <div className="mt-2 divide-y divide-gray-50">
+              {assignment.assignedPumps.map((p, i) => <PumpRow key={i} pump={p} />)}
+            </div>
+          ) : (
+            assignment.productTypes?.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {assignment.productTypes.map(pt => (
+                  <span key={pt} className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${PRODUCT_COLORS[pt]?.bg} ${PRODUCT_COLORS[pt]?.text}`}>{pt}</span>
+                ))}
+              </div>
+            )
           )}
         </div>
       ) : (
@@ -155,17 +185,38 @@ function BoardCard({ assignment, pumps, canManage, onOverride, onDelete }) {
         </div>
       )}
 
-      {/* Meter info */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <p className="text-gray-400 mb-0.5">Opening</p>
-          <p className="font-medium text-gray-700">{fmtMeter(assignment.openingMeter)}</p>
+      {/* Secondary islands */}
+      {hasSecondaryIslands && (
+        <div className="border-t border-dashed border-amber-200 pt-2 space-y-2">
+          {assignment.additionalIslands.map((ai, idx) => (
+            <div key={idx}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Layers size={11} className="text-amber-600" />
+                <span className="text-xs font-bold text-amber-700">{ai.islandName}</span>
+                {ai.includesGas && <Flame size={10} className="text-amber-500" />}
+                <span className="text-[10px] text-amber-500 font-medium">+extra</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {ai.assignedPumps?.map((p, i) => <PumpRow key={i} pump={p} />)}
+              </div>
+            </div>
+          ))}
         </div>
-        <div>
-          <p className="text-gray-400 mb-0.5">Volume Sold</p>
-          <p>{fmtVolume(assignment.volume)}</p>
+      )}
+
+      {/* Overall meter summary (primary only, for quick view) */}
+      {!hasPrimaryPumps && (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <p className="text-gray-400 mb-0.5">Opening</p>
+            <p className="font-medium text-gray-700">{fmtMeter(assignment.openingMeter)}</p>
+          </div>
+          <div>
+            <p className="text-gray-400 mb-0.5">Volume Sold</p>
+            <p>{fmtVolume(assignment.volume)}</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Status + override */}
       <div className="flex items-center justify-between pt-1 border-t border-gray-100">
@@ -494,13 +545,25 @@ export default function PumpAssignments() {
                             <p className="font-medium text-gray-900">{a.workerName}</p>
                             <p className="text-xs text-gray-400">{a.workerRole}</p>
                           </td>
-                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                          <td className="px-4 py-3 font-medium text-gray-800">
                             {a.islandName ? (
-                              <span className="flex items-center gap-1.5">
-                                <Layers size={13} className="text-brand-600" />
-                                {a.islandName}
-                                {a.includesGas && <Flame size={12} className="text-amber-600" title="AGO + Gas" />}
-                              </span>
+                              <div>
+                                <span className="flex items-center gap-1.5">
+                                  <Layers size={13} className="text-brand-600" />
+                                  {a.islandName}
+                                  {a.includesGas && <Flame size={12} className="text-amber-600" title="AGO + Gas" />}
+                                </span>
+                                {a.assignedPumps?.length > 0 && (
+                                  <p className="text-[10px] text-gray-400 mt-0.5">
+                                    {a.assignedPumps.map(p => p.pumpName).join(' · ')}
+                                  </p>
+                                )}
+                                {a.additionalIslands?.map((ai, i) => (
+                                  <p key={i} className="text-[10px] text-amber-600 mt-0.5">
+                                    +{ai.islandName}: {ai.assignedPumps?.map(p => p.pumpName).join(' · ') || '—'}
+                                  </p>
+                                ))}
+                              </div>
                             ) : (a.pumpName || '—')}
                           </td>
                           <td className="px-4 py-3">

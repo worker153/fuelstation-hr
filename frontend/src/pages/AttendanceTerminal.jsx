@@ -77,6 +77,40 @@ function Shell({ deviceInfo, children }) {
   );
 }
 
+// ── Pump meter block (used on clock-in success screen) ───────────────────────
+function PumpMeterBlock({ pump, dim }) {
+  const productColor =
+    pump.productType === 'PMS' ? 'text-green-300' :
+    pump.productType === 'AGO' ? 'text-amber-300' :
+    pump.productType === 'LPG' ? 'text-blue-300'  : 'text-white/70';
+  return (
+    <div className={`rounded-xl px-3 py-2 text-left ${dim ? 'bg-white/5 border border-white/10' : 'bg-white/10'}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-white font-bold text-sm">{pump.pumpName}</span>
+        <span className={`text-xs font-semibold ${productColor}`}>{pump.productType}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-white/40 text-[10px]">Opening</p>
+          <p className="text-white text-sm font-bold">
+            {pump.openingMeter != null
+              ? Number(pump.openingMeter).toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : <span className="text-white/30 text-xs">Pending</span>}
+          </p>
+        </div>
+        <div>
+          <p className="text-white/40 text-[10px]">Closing</p>
+          <p className="text-white text-sm font-bold">
+            {pump.closingMeter != null
+              ? Number(pump.closingMeter).toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : <span className="text-white/30 text-xs">Pending</span>}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Device Setup ──────────────────────────────────────────────────────────────
 function SetupScreen({ onSetup }) {
   const [code,    setCode   ] = useState('');
@@ -1319,29 +1353,62 @@ export default function AttendanceTerminal() {
           {result.data?.pumpAssignment && <>
             <div className="border-t border-white/10 my-2" />
             <div className="text-center">
-              <p className="text-white/40 text-xs mb-1">Today's Pump Assignment</p>
+              <p className="text-white/40 text-xs mb-2">Today's Pump Assignment</p>
+
+              {/* Primary island */}
               {result.data.pumpAssignment.islandName && (
-                <p className="text-white/60 text-sm mb-0.5">{result.data.pumpAssignment.islandName}</p>
+                <p className="text-white/70 text-xs font-semibold uppercase tracking-wider mb-1">
+                  {result.data.pumpAssignment.islandName}
+                  {result.data.pumpAssignment.includesGas && ' · AGO + Gas'}
+                </p>
               )}
-              <p className="text-white text-2xl font-black">
-                {result.data.pumpAssignment.pumpName || result.data.pumpAssignment.islandName}
-              </p>
-              <p className={`text-sm font-semibold mt-0.5 ${
-                result.data.pumpAssignment.productType === 'PMS' ? 'text-green-300' :
-                result.data.pumpAssignment.productType === 'AGO' ? 'text-amber-300' : 'text-blue-300'
-              }`}>{result.data.pumpAssignment.productType}</p>
-              {result.data.pumpAssignment.openingMeter != null ? (
-                <div className="mt-3 bg-white/10 rounded-xl px-4 py-2">
-                  <p className="text-white/50 text-xs">Opening Meter</p>
-                  <p className="text-white text-2xl font-black tracking-tight">
-                    {Number(result.data.pumpAssignment.openingMeter).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                  <p className="text-white/40 text-xs">litres</p>
+
+              {/* Multiple pumps on primary island */}
+              {result.data.pumpAssignment.assignedPumps?.length > 0 ? (
+                <div className="space-y-2">
+                  {result.data.pumpAssignment.assignedPumps.map((p, i) => (
+                    <PumpMeterBlock key={i} pump={p} />
+                  ))}
                 </div>
               ) : (
-                <p className="text-white/30 text-xs mt-2">Opening meter not yet recorded in StationDesk</p>
+                /* Fallback: single pump (legacy / non-island assignment) */
+                <>
+                  <p className="text-white text-2xl font-black">
+                    {result.data.pumpAssignment.pumpName || result.data.pumpAssignment.islandName}
+                  </p>
+                  <p className={`text-sm font-semibold mt-0.5 ${
+                    result.data.pumpAssignment.productType === 'PMS' ? 'text-green-300' :
+                    result.data.pumpAssignment.productType === 'AGO' ? 'text-amber-300' : 'text-blue-300'
+                  }`}>{result.data.pumpAssignment.productType}</p>
+                  {result.data.pumpAssignment.openingMeter != null ? (
+                    <div className="mt-2 bg-white/10 rounded-xl px-4 py-2">
+                      <p className="text-white/50 text-xs">Opening Meter</p>
+                      <p className="text-white text-2xl font-black tracking-tight">
+                        {Number(result.data.pumpAssignment.openingMeter).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-white/30 text-xs mt-2">Opening meter not yet recorded</p>
+                  )}
+                </>
               )}
-              {result.data.pumpAssignment.isOverride && <p className="text-white/40 text-xs mt-1">⚡ Override assignment</p>}
+
+              {/* Secondary islands */}
+              {result.data.pumpAssignment.additionalIslands?.map((ai, idx) => (
+                <div key={idx} className="mt-3 border-t border-white/10 pt-3">
+                  <p className="text-amber-300 text-xs font-bold uppercase tracking-wider mb-1">
+                    Also covering: {ai.islandName}
+                    {ai.includesGas && ' · AGO + Gas'}
+                  </p>
+                  <div className="space-y-2">
+                    {ai.assignedPumps?.map((p, i) => (
+                      <PumpMeterBlock key={i} pump={p} dim />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {result.data.pumpAssignment.isOverride && <p className="text-white/40 text-xs mt-2">⚡ Override assignment</p>}
             </div>
           </>}
 

@@ -1,5 +1,18 @@
 const Pump = require('../models/Pump');
 
+// List available StationDesk locations so the frontend can show a picker
+const listStationLocations = async (req, res) => {
+  const { getAdapter } = require('../services/stationApi');
+  const result = await getAdapter(req.user.company._id);
+  if (!result) return res.status(404).json({ success: false, message: 'No active station integration found.' });
+  try {
+    const locations = await result.adapter.getLocations();
+    res.json({ success: true, data: locations });
+  } catch (e) {
+    res.status(502).json({ success: false, message: `API error: ${e.message}` });
+  }
+};
+
 const getPumps = async (req, res) => {
   const cid = req.user.company._id;
   const { branchId, status } = req.query;
@@ -42,15 +55,27 @@ const deletePump = async (req, res) => {
   res.json({ success: true });
 };
 
+function detectProductType(itemName) {
+  const n = (itemName || '').toUpperCase();
+  if (n.includes('PMS') || n.includes('PETROL') || n.includes('PREMIUM')) return 'PMS';
+  if (n.includes('AGO') || n.includes('DIESEL') || n.includes('GAS OIL')) return 'AGO';
+  if (n.includes('LPG') || n.includes('LIQUEFIED') || n.includes('COOKING GAS')) return 'LPG';
+  if (n.includes('DPK') || n.includes('KEROSENE') || n.includes('KERO')) return 'DPK';
+  return 'other';
+}
+
 // Import nozzles from StationDesk and upsert as pumps
 const importFromApi = async (req, res) => {
   const cid      = req.user.company._id;
-  const { branchId } = req.body;
+  const { branchId, locationId } = req.body;  // locationId overrides the integration's locationId
   if (!branchId) return res.status(400).json({ success: false, message: 'branchId is required' });
 
   const { getAdapter } = require('../services/stationApi');
   const result = await getAdapter(cid);
   if (!result) return res.status(404).json({ success: false, message: 'No active station integration found.' });
+
+  // Allow per-import locationId override (so different branches can pull from different StationDesk locations)
+  if (locationId) result.adapter.locationId = locationId;
 
   let nozzles;
   try {
@@ -64,13 +89,10 @@ const importFromApi = async (req, res) => {
   const branch = await Branch.findOne({ _id: branchId, company: cid }).lean();
   if (!branch) return res.status(404).json({ success: false, message: 'Branch not found.' });
 
-  const VALID_PRODUCTS = ['PMS', 'AGO', 'LPG', 'DPK'];
-
   let created = 0, updated = 0;
   for (let i = 0; i < nozzles.length; i++) {
     const n = nozzles[i];
-    const productType = VALID_PRODUCTS.includes(n.productType?.toUpperCase())
-      ? n.productType.toUpperCase() : 'other';
+    const productType = detectProductType(n.productType);
 
     // Match by externalId first, then by name
     let pump = await Pump.findOne({ company: cid, branchId, externalId: n.id });
@@ -103,4 +125,4 @@ const importFromApi = async (req, res) => {
     message: `${created} pump(s) created, ${updated} updated from StationDesk.` });
 };
 
-module.exports = { getPumps, createPump, updatePump, deletePump, importFromApi };
+module.exports = { getPumps, createPump, updatePump, deletePump, importFromApi, listStationLocations };

@@ -32,14 +32,18 @@ function isWorkerOnDuty(worker, date) {
 
   // ── 2. Rotation-cycle check ──────────────────────────────────────────────
   const sched = worker.rotationSchedule;
-  if (!sched || !sched.pattern || sched.pattern === 'none' || !sched.startDate) return true;
+  if (!sched || !sched.pattern || sched.pattern === 'none') return true;
+
+  // Use same fallback anchor as dashboard: startDate → resumptionDate → activatedAt
+  const anchorRaw = sched.startDate || worker.resumptionDate || worker.activatedAt;
+  if (!anchorRaw) return true;
 
   const [onStr, offStr] = sched.pattern.split('_');
   const onDays   = parseInt(onStr)  || 1;
   const offDays  = parseInt(offStr) || 1;
   const cycleLen = onDays + offDays;
 
-  const start    = new Date(sched.startDate);
+  const start    = new Date(anchorRaw);
   const startUTC = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
   const checkUTC = Date.UTC(checkDate.getUTCFullYear(), checkDate.getUTCMonth(), checkDate.getUTCDate());
 

@@ -348,6 +348,10 @@ const getBreakStatus = async (req, res) => {
   const workerId = ctx.workerId;
 
   const dateStr = todayUtcStr();
+  // Yesterday in WAT (UTC+1)
+  const watNow  = new Date(Date.now() + 60 * 60 * 1000);
+  const watYest = new Date(watNow.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayStr = `${watYest.getUTCFullYear()}-${String(watYest.getUTCMonth()+1).padStart(2,'0')}-${String(watYest.getUTCDate()).padStart(2,'0')}`;
 
   const [clockIn, clockOut, todayBreaks, branch] = await Promise.all([
     Attendance.findOne({ company, worker: workerId, date: dateStr, type: 'clock_in'  }).lean(),
@@ -359,9 +363,22 @@ const getBreakStatus = async (req, res) => {
   const config    = getBreakConfig(branch);
   const nowMins   = nowLocalMins();
   const now       = new Date();
-  const clockedIn  = !!clockIn && !clockOut;
-  const clockedOut = !!clockOut;
+  let clockedIn  = !!clockIn && !clockOut;
+  let clockedOut = !!clockOut;
   const activeBreak = todayBreaks.find(b => b.status === 'active');
+
+  // Overnight shift: worker clocked in yesterday but hasn't clocked out yet
+  let overnightClockIn = null;
+  if (!clockIn && !clockOut) {
+    const [prevClockIn, prevClockOut] = await Promise.all([
+      Attendance.findOne({ company, worker: workerId, date: yesterdayStr, type: 'clock_in'  }).lean(),
+      Attendance.findOne({ company, worker: workerId, date: yesterdayStr, type: 'clock_out' }).lean(),
+    ]);
+    if (prevClockIn && !prevClockOut) {
+      overnightClockIn = prevClockIn;
+      clockedIn = true;
+    }
+  }
 
   let elapsedMinutes = 0;
   let isOverdue = false;
@@ -410,7 +427,7 @@ const getBreakStatus = async (req, res) => {
       attendanceStatus,
       clockedIn,
       clockedOut,
-      clockInTime: clockIn?.timestamp || null,
+      clockInTime: clockIn?.timestamp || overnightClockIn?.timestamp || null,
       serverTimeWAT,
       restroomConfig: {
         allowedMinutes:  branch?.restroomSettings?.allowedMinutes  ?? 2,

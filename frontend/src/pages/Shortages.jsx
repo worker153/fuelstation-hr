@@ -445,12 +445,14 @@ export default function Shortages() {
   const [filterMonth,  setFilterMonth ] = useState('');
   const [filterYear,   setFilterYear  ] = useState(now.getFullYear());
   const [filterDate,   setFilterDate  ] = useState('');
+  const [filterBranch, setFilterBranch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filterStatus && filterStatus !== 'all') params.set('status', filterStatus);
+      if (filterBranch) params.set('branchId', filterBranch);
       if (filterDate) {
         params.set('date', filterDate);
       } else {
@@ -461,7 +463,7 @@ export default function Shortages() {
       setShortages(data.data);
     } catch { notify('Failed to load shortages', 'error'); }
     finally { setLoading(false); }
-  }, [filterStatus, filterMonth, filterYear, filterDate]);
+  }, [filterStatus, filterMonth, filterYear, filterDate, filterBranch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -476,13 +478,12 @@ export default function Shortages() {
       .catch(() => {});
   }, [canSubmit, isAdmin, user?.branchId, user?.shiftId]);
 
-  // Load branches for penalty preset lookup
+  // Load branches for filter + penalty preset lookup
   useEffect(() => {
-    if (!canSubmit) return;
     api.get('/branches?limit=200')
       .then(r => setBranches(r.data.data || []))
       .catch(() => {});
-  }, [canSubmit]);
+  }, []);
 
   const handleApprove = async (id) => {
     try {
@@ -526,6 +527,12 @@ export default function Shortages() {
             <option value="all">All</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
+          </select>
+        )}
+        {isAdmin && branches.length > 0 && (
+          <select className="input max-w-[160px]" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+            <option value="">All stations</option>
+            {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
           </select>
         )}
         <input

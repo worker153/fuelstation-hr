@@ -1,6 +1,16 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const assignedPumpSchema = new Schema({
+  pumpId:      { type: Schema.Types.ObjectId, ref: 'Pump' },
+  pumpNumber:  { type: Number },
+  pumpName:    { type: String },
+  productType: { type: String },
+  openingMeter: { type: Number },
+  closingMeter: { type: Number },
+  volume:       { type: Number },
+}, { _id: false });
+
 const pumpAssignmentSchema = new Schema({
   company:         { type: Schema.Types.ObjectId, ref: 'Company', required: true },
   branchId:        { type: Schema.Types.ObjectId, ref: 'Branch',  required: true },
@@ -13,6 +23,16 @@ const pumpAssignmentSchema = new Schema({
   pumpNumber:      { type: Number },
   pumpName:        { type: String },
   productType:     { type: String },
+  // All pumps this worker covers on the primary island
+  assignedPumps:   [assignedPumpSchema],
+  // Secondary islands distributed when islands > workers
+  additionalIslands: [{
+    island:       { type: Schema.Types.ObjectId, ref: 'PumpIsland' },
+    islandName:   { type: String },
+    includesGas:  { type: Boolean, default: false },
+    productTypes: [{ type: String }],
+    assignedPumps: [assignedPumpSchema],
+  }],
   worker:          { type: Schema.Types.ObjectId, ref: 'Worker',  required: true },
   workerName:      { type: String },
   workerRole:      { type: String },
