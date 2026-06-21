@@ -102,9 +102,9 @@ function ShiftModal({ shift, branches, onClose, onSaved }) {
   const selectedPreset = ROTATION_PRESETS.find(p => p.value === form.rotationPattern);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl my-4">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
               <Clock size={15} className="text-brand-600" />
@@ -117,7 +117,7 @@ function ShiftModal({ shift, branches, onClose, onSaved }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
 
-        <form onSubmit={submit} className="px-5 py-5 space-y-4">
+        <form onSubmit={submit} className="px-5 py-5 space-y-4 overflow-y-auto flex-1">
           {/* Shift Type */}
           <div>
             <label className="label">Shift Type *</label>
