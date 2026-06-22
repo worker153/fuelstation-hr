@@ -49,8 +49,9 @@ async function runAutoClockIn(dateStr) {
         shiftId: worker.shiftId ? shiftMap[String(worker.shiftId)] || null : null,
       };
 
-      // Skip if today is this worker's scheduled off day
-      if (!isWorkerOnDuty(populatedWorker, clockTime)) {
+      // autoClockIn workers clock in every day regardless of rotation/shift schedule
+      // Only skip the duty check for workers without the flag (future use)
+      if (!worker.autoClockIn && !isWorkerOnDuty(populatedWorker, clockTime)) {
         console.log(`[AUTO-CLOCKIN] ${worker.fullName} — off day, skipping`);
         skipped++;
         continue;
