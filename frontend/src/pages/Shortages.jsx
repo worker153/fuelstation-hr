@@ -446,6 +446,7 @@ export default function Shortages() {
   const [filterYear,   setFilterYear  ] = useState(now.getFullYear());
   const [filterDate,   setFilterDate  ] = useState('');
   const [filterBranch, setFilterBranch] = useState('');
+  const [filterWorker, setFilterWorker] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -560,35 +561,104 @@ export default function Shortages() {
             </select>
           </>
         )}
-      </div>
-
-      {/* Full list */}
-      <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <p className="font-semibold text-gray-800 text-sm">
-            {filterStatus === 'pending' ? 'Pending' : filterStatus === 'approved' ? 'Approved' : filterStatus === 'rejected' ? 'Rejected' : 'All'} Shortages
-          </p>
-          <span className="text-xs text-gray-400">{shortages.length} record{shortages.length !== 1 ? 's' : ''}</span>
-        </div>
-
-        {loading ? (
-          <div className="py-10 flex justify-center"><Loader size={20} className="animate-spin text-brand-500" /></div>
-        ) : shortages.length === 0 ? (
-          <div className="py-10 text-center text-gray-400">
-            <AlertTriangle size={28} className="mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">No shortage records found</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {shortages.map(s => (
-              <ShortageRow key={s._id} shortage={s} isAdmin={isAdmin}
-                onDelete={() => handleDelete(s._id)}
-                onJoin={canSubmit ? () => setJoinItem(s) : null}
-              />
-            ))}
-          </div>
+        <input
+          type="text"
+          value={filterWorker}
+          onChange={e => setFilterWorker(e.target.value)}
+          placeholder="Search worker name…"
+          className="input max-w-[180px]"
+        />
+        {filterWorker && (
+          <button onClick={() => setFilterWorker('')} className="text-xs text-gray-400 hover:text-gray-600 underline">
+            Clear
+          </button>
         )}
       </div>
+
+      {/* Worker summary card — shows when name search is active */}
+      {filterWorker.trim() && (() => {
+        const name = filterWorker.trim().toLowerCase();
+        const activeMonth = filterDate
+          ? new Date(filterDate).getMonth() + 1
+          : filterMonth ? Number(filterMonth) : now.getMonth() + 1;
+        const activeYear = filterDate
+          ? new Date(filterDate).getFullYear()
+          : Number(filterYear) || now.getFullYear();
+        const matched = shortages.filter(s =>
+          (s.workerName || '').toLowerCase().includes(name)
+        );
+        const thisMonth = matched.filter(s => s.month === activeMonth && s.year === activeYear);
+        const approvedTotal = thisMonth.filter(s => s.status === 'approved')
+          .reduce((sum, s) => sum + (s.amount || 0), 0);
+        const pendingTotal = thisMonth.filter(s => s.status === 'pending')
+          .reduce((sum, s) => sum + (s.amount || 0), 0);
+        if (!matched.length) return null;
+        const workerLabel = matched[0]?.workerName || filterWorker;
+        return (
+          <div className="card p-4 bg-red-50 border border-red-100">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-semibold text-red-800">{workerLabel}</span>
+              <span className="text-xs text-red-500">· {MONTHS[activeMonth - 1]} {activeYear}</span>
+            </div>
+            <div className="flex gap-6 flex-wrap">
+              <div>
+                <p className="text-xs text-gray-500">Approved Deductions</p>
+                <p className="text-xl font-bold text-red-700">{fmt(approvedTotal)}</p>
+                <p className="text-xs text-gray-400">{thisMonth.filter(s => s.status === 'approved').length} record{thisMonth.filter(s => s.status === 'approved').length !== 1 ? 's' : ''}</p>
+              </div>
+              {pendingTotal > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500">Pending</p>
+                  <p className="text-xl font-bold text-amber-600">{fmt(pendingTotal)}</p>
+                  <p className="text-xs text-gray-400">{thisMonth.filter(s => s.status === 'pending').length} pending</p>
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-gray-500">All Time Records</p>
+                <p className="text-xl font-bold text-gray-700">{matched.length}</p>
+                <p className="text-xs text-gray-400">across all months</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Full list */}
+      {(() => {
+        const name = filterWorker.trim().toLowerCase();
+        const displayed = name
+          ? shortages.filter(s => (s.workerName || '').toLowerCase().includes(name))
+          : shortages;
+        return (
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+              <p className="font-semibold text-gray-800 text-sm">
+                {filterWorker.trim() ? `Shortages — ${shortages.filter(s => (s.workerName || '').toLowerCase().includes(name))[0]?.workerName || filterWorker}` :
+                  filterStatus === 'pending' ? 'Pending' : filterStatus === 'approved' ? 'Approved' : filterStatus === 'rejected' ? 'Rejected' : 'All'} Shortages
+              </p>
+              <span className="text-xs text-gray-400">{displayed.length} record{displayed.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            {loading ? (
+              <div className="py-10 flex justify-center"><Loader size={20} className="animate-spin text-brand-500" /></div>
+            ) : displayed.length === 0 ? (
+              <div className="py-10 text-center text-gray-400">
+                <AlertTriangle size={28} className="mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">{filterWorker.trim() ? `No shortage records found for "${filterWorker}"` : 'No shortage records found'}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {displayed.map(s => (
+                  <ShortageRow key={s._id} shortage={s} isAdmin={isAdmin}
+                    onDelete={() => handleDelete(s._id)}
+                    onJoin={canSubmit ? () => setJoinItem(s) : null}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Modals */}
       {showSubmit && (
