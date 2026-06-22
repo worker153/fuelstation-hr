@@ -369,6 +369,19 @@ export default function Attendance() {
     } finally { setProcessing(false); }
   };
 
+  const [runningACI, setRunningACI] = useState(false);
+  const handleRunAutoClockIn = async () => {
+    if (!window.confirm('Run auto clock-in now?\n\nThis will clock in all workers with "Auto Clock-In" enabled who have not yet clocked in today.')) return;
+    setRunningACI(true);
+    try {
+      const { data } = await api.post('/attendance/run-auto-clockin');
+      notify(data.message || 'Auto clock-in complete');
+      load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to run auto clock-in', 'error');
+    } finally { setRunningACI(false); }
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
       {/* Header */}
@@ -557,6 +570,15 @@ export default function Attendance() {
           </div>
         </div>
 
+        {isAdmin && (
+          <button
+            onClick={handleRunAutoClockIn}
+            disabled={runningACI}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {runningACI ? <Loader size={14} className="animate-spin" /> : <Clock size={14} />}
+            Run Auto Clock-In
+          </button>
+        )}
         {isAdmin && filterBranch && (
           <button
             onClick={handleProcessAbsences}

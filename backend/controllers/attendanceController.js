@@ -791,4 +791,16 @@ const resetTodayAttendance = async (req, res) => {
   });
 };
 
-module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings, resetTodayAttendance };
+// ── POST /api/attendance/run-auto-clockin  (admin — manually trigger auto clock-in for today) ──
+const runAutoClockInNow = async (req, res) => {
+  try {
+    const { runAutoClockIn } = require('../jobs/autoClockInCron');
+    const created = await runAutoClockIn();
+    res.json({ success: true, created, message: `Auto clock-in complete — ${created} worker(s) clocked in.` });
+  } catch (err) {
+    console.error('[RUN-AUTO-CLOCKIN]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings, resetTodayAttendance, runAutoClockInNow };
