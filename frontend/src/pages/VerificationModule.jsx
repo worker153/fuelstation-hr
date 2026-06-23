@@ -159,6 +159,23 @@ function AddressStep({ worker, onUpdate, onNext, onPrev }) {
   const [housePhoto,  setHousePhoto]  = useState(null);
   const [saving,      setSaving]      = useState(false);
 
+  // Manual coordinate entry
+  const [manualLat, setManualLat] = useState(location?.coordinates?.lat ?? '');
+  const [manualLng, setManualLng] = useState(location?.coordinates?.lng ?? '');
+
+  const applyManualCoords = () => {
+    const lat = parseFloat(manualLat);
+    const lng = parseFloat(manualLng);
+    if (isNaN(lat) || isNaN(lng)) return notify('Enter valid numbers for both latitude and longitude', 'warning');
+    if (lat < -90 || lat > 90)   return notify('Latitude must be between -90 and 90', 'warning');
+    if (lng < -180 || lng > 180) return notify('Longitude must be between -180 and 180', 'warning');
+    setLocation(prev => ({
+      ...(prev || { formatted: location?.formatted || worker.address || '', plusCode: '', workerAddress: '', landmark: '' }),
+      coordinates: { lat, lng },
+    }));
+    notify('Coordinates applied — save to confirm', 'success');
+  };
+
   const save = async () => {
     if (!location?.formatted) return notify('Please search or pin the address', 'warning');
     setSaving(true);
@@ -209,15 +226,61 @@ function AddressStep({ worker, onUpdate, onNext, onPrev }) {
         <AddressPicker
           label="Worker's Home Address"
           value={location}
-          onChange={setLocation}
+          onChange={loc => {
+            setLocation(loc);
+            if (loc?.coordinates) {
+              setManualLat(loc.coordinates.lat);
+              setManualLng(loc.coordinates.lng);
+            }
+          }}
           placeholder="Search street, area, city in Nigeria…"
           required
         />
-        {worker.addressLocation?.coordinates && (
+        {location?.coordinates && (
           <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
-            <Check size={12} /> Pinned: {worker.addressLocation.formatted}
+            <Check size={12} /> Pinned: {location.coordinates.lat.toFixed(6)}, {location.coordinates.lng.toFixed(6)}
           </p>
         )}
+
+        {/* Manual coordinate entry */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+            <MapPin size={12} /> Enter Coordinates Manually
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <div className="flex-1 min-w-[130px]">
+              <label className="text-xs text-gray-400 mb-0.5 block">Latitude</label>
+              <input
+                type="number"
+                step="any"
+                placeholder="e.g. 5.527620"
+                value={manualLat}
+                onChange={e => setManualLat(e.target.value)}
+                className="input text-sm"
+              />
+            </div>
+            <div className="flex-1 min-w-[130px]">
+              <label className="text-xs text-gray-400 mb-0.5 block">Longitude</label>
+              <input
+                type="number"
+                step="any"
+                placeholder="e.g. 5.765950"
+                value={manualLng}
+                onChange={e => setManualLng(e.target.value)}
+                className="input text-sm"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={applyManualCoords}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors whitespace-nowrap">
+                <MapPin size={12} /> Apply
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">Paste from Google Maps — right-click any location and copy the coordinates</p>
+        </div>
       </SectionCard>
 
       {/* Street photo */}
