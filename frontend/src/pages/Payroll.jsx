@@ -581,12 +581,12 @@ export default function Payroll() {
         if (e.shortage > 0)   shortageLines.push(`-${N(e.shortage)} shortage`);
         if (e.absentDays > 0) shortageLines.push(`-${N(absDeduct)} absent`);
         if (e.bonus > 0)      shortageLines.push(`+${N(e.bonus)} bonus`);
-        const shortageCell = shortageLines.length > 0 ? shortageLines.join('\n') : '—';
+        const shortageCell = shortageLines.length > 0 ? shortageLines.join('\n') : '-';
 
         return [
           idx + 1,
           `${e.fullName}\n${e.role || ''}`,
-          `${e.bankName || '—'}\n${e.accountNumber || ''}`,
+          `${e.bankName || '-'}\n${e.accountNumber || ''}`,
           grossLabel,
           shortageCell,
           N(net),
@@ -600,7 +600,7 @@ export default function Payroll() {
         foot: [[
           '', `TOTAL — ${entries.length} workers`, '',
           N(totalGross),
-          totalShortage > 0 ? `-${N(totalShortage)}` : '—',
+          totalShortage > 0 ? `-${N(totalShortage)}` : '-',
           N(totalNet),
         ]],
         rowPageBreak:       'avoid',
@@ -610,23 +610,11 @@ export default function Payroll() {
         alternateRowStyles: { fillColor: [248, 253, 248] },
         columnStyles: {
           0: { cellWidth: 8,  halign: 'right', fontSize: 8, textColor: [160, 160, 160] },
-          1: { cellWidth: 52 },
-          2: { cellWidth: 46 },
-          3: { cellWidth: 28, halign: 'right' },
-          4: { cellWidth: 24, halign: 'right', textColor: [180, 0, 0], fontSize: 8 },
+          1: { cellWidth: 50, fontSize: 8 },
+          2: { cellWidth: 44, fontSize: 8 },
+          3: { cellWidth: 28, halign: 'right', fontSize: 8 },
+          4: { cellWidth: 28, halign: 'right', fontSize: 8, textColor: [180, 0, 0] },
           5: { cellWidth: 24, halign: 'right', fontStyle: 'bold', textColor: [20, 83, 45] },
-        },
-        didParseCell: (data) => {
-          if (data.section === 'body' && (data.column.index === 1 || data.column.index === 2)) {
-            data.cell.styles.fontSize = 8;
-          }
-          if (data.section === 'body' && data.column.index === 3) {
-            data.cell.styles.fontSize = 8;
-          }
-          // Deductions column — red for shortages, green for bonus
-          if (data.section === 'body' && data.column.index === 4 && data.cell.raw !== '—') {
-            data.cell.styles.textColor = [160, 0, 0];
-          }
         },
       });
 
@@ -661,7 +649,7 @@ export default function Payroll() {
       }
     } catch (err) {
       if (err.name !== 'AbortError')
-        notify('Failed to generate PDF — try the Print button instead', 'error');
+        notify(`PDF failed: ${err.message || 'Unknown error'}`, 'error');
     } finally {
       setSharingPDF(false);
     }
