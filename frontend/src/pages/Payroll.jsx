@@ -564,35 +564,44 @@ export default function Payroll() {
       // Portrait columns: # | Worker+Role | Bank+Account | Gross | Net Pay
       // Total usable width = 210 - 28 = 182 mm
       const rows = entries.map((e, idx) => {
-        const net   = computeNetPay(e);
-        const notes = [];
-        if (e.shortage > 0)  notes.push(`-${N(e.shortage)} shortage`);
-        if (e.absentDays > 0) notes.push(`${e.absentDays}d absent`);
-        if (e.bonus > 0)     notes.push(`+${N(e.bonus)} bonus`);
+        const net    = computeNetPay(e);
         const isProrat = e.isProrated && e.calculatedSalary != null
           && e.calculatedSalary < (e.grossSalary || 0);
-        if (isProrat) notes.push(`prorated ${e.daysWorked}/${e.daysInMonth}d`);
 
         const grossLabel = e.paymentMode === 'per_litre'
           ? `${N(e.litreEarnings || 0)}\n${(e.litresSold||0).toFixed(1)}L × ₦${(e.litreRate||0).toLocaleString()}`
-          : N(e.grossSalary);
+          : isProrat
+            ? `${N(e.grossSalary)}\n${N(e.calculatedSalary)} earned`
+            : N(e.grossSalary);
+
+        // Shortage column: shortage + absent deduction (if any), each on own line
+        const wdm       = e.workingDaysInMonth || 26;
+        const absDeduct = (e.absentDays || 0) * ((e.grossSalary || 0) / wdm);
+        const shortageLines = [];
+        if (e.shortage > 0)   shortageLines.push(`-${N(e.shortage)} shortage`);
+        if (e.absentDays > 0) shortageLines.push(`-${N(absDeduct)} absent`);
+        if (e.bonus > 0)      shortageLines.push(`+${N(e.bonus)} bonus`);
+        const shortageCell = shortageLines.length > 0 ? shortageLines.join('\n') : '—';
 
         return [
           idx + 1,
           `${e.fullName}\n${e.role || ''}`,
           `${e.bankName || '—'}\n${e.accountNumber || ''}`,
           grossLabel,
-          notes.length > 0 ? `${N(net)}\n${notes.join('  ·  ')}` : N(net),
+          shortageCell,
+          N(net),
         ];
       });
 
       autoTable(doc, {
         startY: SY + 23,
-        head: [['#', 'Worker', 'Bank Details', 'Gross', 'Net Pay']],
+        head: [['#', 'Worker', 'Bank Details', 'Gross', 'Deductions', 'Net Pay']],
         body: rows,
         foot: [[
           '', `TOTAL — ${entries.length} workers`, '',
-          N(totalGross), N(totalNet),
+          N(totalGross),
+          totalShortage > 0 ? `-${N(totalShortage)}` : '—',
+          N(totalNet),
         ]],
         rowPageBreak:       'avoid',
         styles:             { fontSize: 8.5, cellPadding: 3.5, lineColor: [220, 230, 220], lineWidth: 0.1 },
@@ -601,20 +610,22 @@ export default function Payroll() {
         alternateRowStyles: { fillColor: [248, 253, 248] },
         columnStyles: {
           0: { cellWidth: 8,  halign: 'right', fontSize: 8, textColor: [160, 160, 160] },
-          1: { cellWidth: 58 },
-          2: { cellWidth: 52 },
-          3: { cellWidth: 32, halign: 'right' },
-          4: { cellWidth: 32, halign: 'right', fontStyle: 'bold', textColor: [20, 83, 45] },
+          1: { cellWidth: 52 },
+          2: { cellWidth: 46 },
+          3: { cellWidth: 28, halign: 'right' },
+          4: { cellWidth: 24, halign: 'right', textColor: [180, 0, 0], fontSize: 8 },
+          5: { cellWidth: 24, halign: 'right', fontStyle: 'bold', textColor: [20, 83, 45] },
         },
         didParseCell: (data) => {
-          // Make role text and account number smaller + gray
           if (data.section === 'body' && (data.column.index === 1 || data.column.index === 2)) {
-            // secondary line (after \n) shown smaller — we just reduce overall font slightly
             data.cell.styles.fontSize = 8;
           }
-          // Make deduction notes in net pay column smaller
-          if (data.section === 'body' && data.column.index === 4) {
+          if (data.section === 'body' && data.column.index === 3) {
             data.cell.styles.fontSize = 8;
+          }
+          // Deductions column — red for shortages, green for bonus
+          if (data.section === 'body' && data.column.index === 4 && data.cell.raw !== '—') {
+            data.cell.styles.textColor = [160, 0, 0];
           }
         },
       });
