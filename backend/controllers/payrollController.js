@@ -167,13 +167,15 @@ const generatePayroll = async (req, res) => {
     };
   });
 
-  // ── Pull approved shortages for this branch/period and apply to entries ──────
+  // ── Pull approved shortages for this period and apply to entries ─────────────
+  // Query by worker IDs (not branchId) so shortages follow the worker if transferred
+  const workerIds = entries.map(e => e.worker);
   const approvedShortages = await Shortage.find({
-    company:  cid,
-    branchId: branchId,
-    month:    Number(month),
-    year:     Number(year),
-    status:   'approved'
+    company: cid,
+    worker:  { $in: workerIds },
+    month:   Number(month),
+    year:    Number(year),
+    status:  'approved'
   }).lean();
 
   const shortageByWorker = {};
