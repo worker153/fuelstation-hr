@@ -21,6 +21,7 @@ import ActiveWorkers      from './pages/ActiveWorkers';
 import WorkerPrint        from './pages/WorkerPrint';
 import Payroll            from './pages/Payroll';
 import Shortages           from './pages/Shortages';
+import Expenses            from './pages/Expenses';
 import WorkerShortage      from './pages/WorkerShortage';
 import WorkerDashboard     from './pages/WorkerDashboard';
 import AttendanceDevices   from './pages/AttendanceDevices';
@@ -134,6 +135,7 @@ export default function App() {
               <Route path="/shifts"        element={<Shifts />} />
               <Route path="/payroll"       element={<Payroll />} />
               <Route path="/shortages"     element={<Shortages />} />
+              <Route path="/expenses"      element={<Expenses />} />
               <Route path="/attendance"    element={<Attendance />} />
               <Route path="/breaks"        element={<Breaks />} />
               <Route path="/documents"     element={<Documents />} />

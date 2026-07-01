@@ -28,6 +28,7 @@ const pumpShiftRoutes          = require('./routes/pumpShifts');
 const pumpRoutes               = require('./routes/pumps');
 const pumpAssignmentRoutes     = require('./routes/pumpAssignments');
 const pumpIslandRoutes         = require('./routes/pumpIslands');
+const expenseRoutes            = require('./routes/expenses');
 
 const app = express();
 
@@ -63,6 +64,7 @@ app.use('/api/pump-shifts',          pumpShiftRoutes);
 app.use('/api/pumps',               pumpRoutes);
 app.use('/api/pump-assignments',    pumpAssignmentRoutes);
 app.use('/api/pump-islands',       pumpIslandRoutes);
+app.use('/api/expenses',           expenseRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });
