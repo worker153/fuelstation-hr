@@ -518,7 +518,7 @@ export default function Payroll() {
       doc.setFontSize(8);
       doc.setTextColor(120, 190, 120);
       doc.text(
-        `Branch: ${payroll.branchName || '—'}   ·   ${entries.length} workers   ·   Printed: ${today}`,
+        `Branch: ${payroll.branchName || '-'}   |   ${entries.length} workers   |   Printed: ${today}`,
         14, 29
       );
 
@@ -598,7 +598,7 @@ export default function Payroll() {
         head: [['#', 'Worker', 'Bank Details', 'Gross', 'Deductions', 'Net Pay']],
         body: rows,
         foot: [[
-          '', `TOTAL — ${entries.length} workers`, '',
+          '', `TOTAL - ${entries.length} workers`, '',
           N(totalGross),
           totalShortage > 0 ? `-${N(totalShortage)}` : '-',
           N(totalNet),
@@ -626,7 +626,7 @@ export default function Payroll() {
         doc.setTextColor(130);
         [['Prepared By', 14], ['Reviewed By', 80], ['Authorised By', 147]].forEach(([lbl, x]) => {
           doc.line(x, finalY + 16, x + 54, finalY + 16);
-          doc.text(`${lbl}  —  Signature & Date`, x, finalY + 21);
+          doc.text(`${lbl} - Signature & Date`, x, finalY + 21);
         });
       }
 
