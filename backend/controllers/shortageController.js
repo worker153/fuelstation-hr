@@ -203,8 +203,15 @@ const getShortages = async (req, res) => {
   const shortages = await Shortage.find(filter)
     .populate('submittedBy', 'name')
     .populate('reviewedBy',  'name')
+    .populate('worker',      'phone')
     .sort({ createdAt: -1 })
     .lean();
+
+  // Lift worker phone onto each shortage for easy frontend use
+  shortages.forEach(s => {
+    if (s.worker?.phone) s.workerPhone = s.worker.phone;
+    if (s.worker?._id)   s.worker      = s.worker._id;
+  });
 
   res.json({ success: true, data: shortages });
 };

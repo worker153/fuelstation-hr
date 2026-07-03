@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   AlertTriangle, Plus, Check, X, Clock, CheckCircle, XCircle,
   ChevronDown, Building2, Users, Loader, Trash2, ReceiptText,
-  DollarSign, Filter, Search, GitMerge,
+  DollarSign, Filter, Search, GitMerge, MessageCircle,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -13,6 +13,31 @@ const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
 const fmt = n => `₦${Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+
+function sendWhatsApp(shortage) {
+  const phone = (shortage.workerPhone || '').replace(/\D/g, '');
+  if (!phone) { alert('No phone number on record for this worker.'); return; }
+  // Normalise Nigerian numbers: 08012345678 → 2348012345678
+  const intl = phone.startsWith('0') ? '234' + phone.slice(1) : phone.startsWith('234') ? phone : '234' + phone;
+  const month = ['January','February','March','April','May','June','July','August','September','October','November','December'][(shortage.month||1)-1];
+  const dateStr = shortage.date ? new Date(shortage.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }) : `${month} ${shortage.year}`;
+  const lines = [
+    `Dear ${shortage.workerName},`,
+    ``,
+    `This is to inform you of a shortage deduction recorded on your account:`,
+    ``,
+    `📋 *${shortage.about || 'Shortage Deduction'}*`,
+    `💰 Amount: *${fmt(shortage.amount)}*`,
+    `📅 Date: ${dateStr}`,
+    shortage.reason && shortage.reason !== 'other' ? `📌 Reason: ${shortage.reason.replace(/_/g, ' ')}` : null,
+    shortage.notes ? `📝 Note: ${shortage.notes}` : null,
+    ``,
+    `This amount will be deducted from your salary for ${month} ${shortage.year}.`,
+    ``,
+    `— Sage Energy HR`,
+  ].filter(Boolean).join('\n');
+  window.open(`https://wa.me/${intl}?text=${encodeURIComponent(lines)}`, '_blank');
+}
 
 const REASON_OPTIONS = [
   { value: 'cash_shortage',      label: 'Sales Shortage'     },
@@ -718,7 +743,7 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
         </div>
         {shortage.notes && <p className="text-xs text-gray-500 mt-1 italic">"{shortage.notes}"</p>}
       </div>
-      <div className="flex gap-2 shrink-0">
+      <div className="flex gap-2 shrink-0 flex-wrap">
         <button onClick={approve} disabled={approving}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 transition-colors">
           {approving ? <Loader size={12} className="animate-spin" /> : <><Check size={12} /> Approve</>}
@@ -726,6 +751,10 @@ function PendingRow({ shortage, onApprove, onReject, onDelete }) {
         <button onClick={onReject}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors">
           <X size={12} /> Reject
+        </button>
+        <button onClick={() => sendWhatsApp(shortage)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-200 bg-green-50 text-green-700 text-xs font-medium hover:bg-green-100 transition-colors">
+          <MessageCircle size={12} /> WhatsApp
         </button>
       </div>
     </div>
@@ -784,6 +813,11 @@ function ShortageRow({ shortage, isAdmin, onDelete, onJoin }) {
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
+        <button onClick={() => sendWhatsApp(shortage)}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+          title="Send via WhatsApp">
+          <MessageCircle size={14} />
+        </button>
         {onJoin && shortage.status !== 'rejected' && (
           <button onClick={onJoin}
             className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
