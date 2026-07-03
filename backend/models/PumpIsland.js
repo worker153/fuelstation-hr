@@ -12,6 +12,8 @@ const pumpIslandSchema = new Schema({
   rotationOrder: { type: Number, default: 0 },
   maxWorkers:    { type: Number, default: 1, min: 1, max: 2 }, // 1 = one worker, 2 = can share
   isPriority:    { type: Boolean, default: false },            // overflow workers go here first
+  fixedWorkerId:   { type: Schema.Types.ObjectId, ref: 'Worker', default: null },
+  fixedWorkerName: { type: String, default: '' },
   status:        { type: String, enum: ['active', 'inactive'], default: 'active' },
   notes:         { type: String },
 }, { timestamps: true });

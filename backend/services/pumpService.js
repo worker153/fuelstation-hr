@@ -108,6 +108,29 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
   }).lean();
   if (existing) return existing;
 
+  // ── Fixed assignment: if this worker is the designated fixed worker for an island,
+  //    send them straight there every day (no rotation for them).
+  const fixedIsland = islands.find(
+    i => i.fixedWorkerId && String(i.fixedWorkerId) === String(worker._id)
+  );
+  if (fixedIsland) {
+    const workerIndexOnIsland = 0;
+    const pumpIdAtIndex = fixedIsland.pumps?.[workerIndexOnIsland] ?? null;
+    const assignedPump  = pumpIdAtIndex ? await Pump.findById(pumpIdAtIndex).lean() : null;
+    const assignment = await PumpAssignment.create({
+      company, branchId, branchName,
+      island: fixedIsland._id, islandName: fixedIsland.name,
+      includesGas: fixedIsland.includesGas, productTypes: fixedIsland.productTypes || [],
+      pump: assignedPump?._id, pumpNumber: assignedPump?.pumpNumber,
+      pumpName: assignedPump?.pumpName || fixedIsland.name,
+      productType: assignedPump?.productType || (fixedIsland.productTypes || [])[0] || 'PMS',
+      worker: worker._id, workerName: worker.fullName, workerRole: worker.role,
+      date, shiftName: shiftName || '', assignedAt: new Date(),
+    });
+    await redistributeIslands({ company, branchId, date });
+    return PumpAssignment.findById(assignment._id).lean();
+  }
+
   // Count workers per island today
   const todayAssignments = await PumpAssignment.find({
     company, branchId, date, status: { $ne: 'cancelled' },
@@ -122,7 +145,29 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     }
   });
 
-  // Find worker's last island (for rotation continuity)
+  // Rotation pool: exclude islands that have a fixed worker (those are reserved)
+  // UNLESS the fixed worker hasn't clocked in today — then they're available as overflow
+  const fixedWorkerIslandIds = new Set(
+    islands
+      .filter(i => i.fixedWorkerId)
+      .map(i => String(i._id))
+  );
+  const fixedWorkersClockedInToday = new Set(
+    todayAssignments
+      .filter(a => {
+        const assignedIsland = islands.find(i => String(i._id) === String(a.island));
+        return assignedIsland?.fixedWorkerId &&
+               String(assignedIsland.fixedWorkerId) === String(a.worker);
+      })
+      .map(a => String(a.island))
+  );
+  // Rotatable: non-fixed islands + fixed islands whose fixed worker isn't in yet
+  const rotatableIslands = islands.filter(i => {
+    if (!fixedWorkerIslandIds.has(String(i._id))) return true;
+    return !fixedWorkersClockedInToday.has(String(i._id));
+  });
+
+  // Find worker's last island (for rotation continuity) — only among rotatable islands
   const lastAssignment = await PumpAssignment.findOne({
     company, branchId, worker: worker._id,
     island: { $exists: true, $ne: null },
@@ -131,12 +176,12 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
 
   let startOrder = -1;
   if (lastAssignment?.island) {
-    const last = islands.find(i => String(i._id) === String(lastAssignment.island));
+    const last = rotatableIslands.find(i => String(i._id) === String(lastAssignment.island));
     if (last) startOrder = last.rotationOrder;
   }
 
-  // Sort islands in rotation order starting just after last assignment
-  const sorted = [...islands].sort((a, b) => {
+  // Sort rotatable islands in rotation order starting just after last assignment
+  const sorted = [...rotatableIslands].sort((a, b) => {
     const oa = a.rotationOrder > startOrder ? a.rotationOrder : a.rotationOrder + 100000;
     const ob = b.rotationOrder > startOrder ? b.rotationOrder : b.rotationOrder + 100000;
     return oa - ob;
@@ -145,11 +190,12 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
   // Pick first island under capacity (respects maxWorkers)
   let selected = sorted.find(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
 
-  // All islands at maxWorkers capacity — overflow to priority islands first, then any island
+  // All rotatable islands at capacity — overflow to priority islands first, then any
   if (!selected) {
     selected =
-      sorted.find(i => i.isPriority) ||   // priority island gets overflow first
-      sorted[0];                           // fall back to first island in rotation
+      sorted.find(i => i.isPriority) ||
+      sorted[0] ||
+      islands[0]; // absolute fallback
   }
 
   // Assign a specific pump from the island to this worker.
@@ -227,8 +273,13 @@ async function redistributeIslands({ company, branchId, date }) {
     return (ix?.rotationOrder ?? 0) - (iy?.rotationOrder ?? 0);
   });
 
-  // Uncovered islands (no primary worker)
-  const uncovered = islands.filter(i => islandWorkers[String(i._id)].length === 0);
+  // Uncovered islands (no primary worker) — skip fixed islands whose fixed worker hasn't arrived yet
+  // (we don't redistribute them as secondary; we just leave them uncovered until the fixed worker arrives)
+  const uncovered = islands.filter(i => {
+    if (islandWorkers[String(i._id)].length > 0) return false; // already covered
+    if (i.fixedWorkerId) return false; // reserved for fixed worker — don't hand to someone else
+    return true;
+  });
 
   // Build the update payload for each assignment
   const updateMap = {}; // assignmentId → { assignedPumps, additionalIslands }

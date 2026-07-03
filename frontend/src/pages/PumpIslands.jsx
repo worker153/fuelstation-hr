@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Layers, Plus, Edit2, Trash2, X, Save, Loader,
   ChevronDown, Flame, Fuel, AlertCircle, CheckSquare, Square,
@@ -20,20 +20,31 @@ const PRODUCT_COLORS = {
 function IslandModal({ island, branches, pumps, onClose, onSaved }) {
   const notify = useNotify();
   const [saving, setSaving] = useState(false);
+  const [workers, setWorkers] = useState([]);
   const [form, setForm] = useState({
-    name:          island?.name          || '',
-    branchId:      island?.branchId?._id || island?.branchId || '',
-    productTypes:  island?.productTypes  || [],
-    includesGas:   island?.includesGas   || false,
-    rotationOrder: island?.rotationOrder ?? 0,
-    maxWorkers:    island?.maxWorkers    ?? 1,
-    isPriority:    island?.isPriority    || false,
-    status:        island?.status        || 'active',
-    notes:         island?.notes         || '',
-    pumps:         (island?.pumps || []).map(p => String(p._id || p)),
+    name:            island?.name            || '',
+    branchId:        island?.branchId?._id   || island?.branchId || '',
+    productTypes:    island?.productTypes    || [],
+    includesGas:     island?.includesGas     || false,
+    rotationOrder:   island?.rotationOrder   ?? 0,
+    maxWorkers:      island?.maxWorkers      ?? 1,
+    isPriority:      island?.isPriority      || false,
+    status:          island?.status          || 'active',
+    notes:           island?.notes           || '',
+    pumps:           (island?.pumps || []).map(p => String(p._id || p)),
+    fixedWorkerId:   island?.fixedWorkerId   ? String(island.fixedWorkerId._id || island.fixedWorkerId) : '',
+    fixedWorkerName: island?.fixedWorkerName || '',
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Load pump attendants for the selected branch
+  useEffect(() => {
+    if (!form.branchId) { setWorkers([]); return; }
+    api.get(`/workers/active-workers?branchId=${form.branchId}&status=active&limit=200`)
+      .then(r => setWorkers(r.data.data || []))
+      .catch(() => {});
+  }, [form.branchId]);
 
   const branchPumps = form.branchId
     ? pumps.filter(p => String(p.branchId) === form.branchId)
@@ -222,6 +233,34 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
             </select>
           </div>
 
+          {/* Fixed Worker */}
+          <div className="p-3 rounded-xl border border-brand-200 bg-brand-50 space-y-2">
+            <div>
+              <p className="text-sm font-semibold text-brand-800 mb-1">📌 Fixed Worker (optional)</p>
+              <p className="text-xs text-brand-600 mb-2">
+                This worker is always assigned to this island every day — they don't rotate.
+                All other pump attendants rotate among the remaining islands.
+              </p>
+              <select className="input" value={form.fixedWorkerId}
+                onChange={e => {
+                  const wid = e.target.value;
+                  const w = workers.find(w => w._id === wid);
+                  set('fixedWorkerId',   wid);
+                  set('fixedWorkerName', w?.fullName || '');
+                }}>
+                <option value="">— No fixed worker (rotate normally) —</option>
+                {workers.map(w => (
+                  <option key={w._id} value={w._id}>{w.fullName} · {w.role}</option>
+                ))}
+              </select>
+              {form.fixedWorkerId && (
+                <p className="text-xs text-brand-700 mt-1.5 font-medium">
+                  ✓ {form.fixedWorkerName} will always be assigned to {form.name || 'this island'}
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Notes */}
           <div>
             <label className="label">Notes (optional)</label>
@@ -269,6 +308,9 @@ function IslandCard({ island, canManage, onEdit, onDelete, selected, onToggle })
             )}
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{island.branchName || '—'} · Rotation #{island.rotationOrder}</p>
+          {island.fixedWorkerName && (
+            <p className="text-xs text-brand-700 font-medium mt-0.5">📌 Fixed: {island.fixedWorkerName}</p>
+          )}
           </div>
         </div>
         {canManage && (
