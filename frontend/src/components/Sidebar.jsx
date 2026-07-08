@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
   AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen, FileText,
-  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart,
+  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -53,6 +53,7 @@ export default function Sidebar({ onClose }) {
       label: 'Resources',
       items: [
         { to: '/documents', icon: FileText,  label: 'Documents',       show: isSuperAdmin() || can('manageBranches') },
+        { to: '/pdf-maker', icon: FileImage, label: 'PDF Maker',       show: true },
         { to: '/handbook',  icon: BookOpen,  label: 'Worker Handbook', show: true  },
       ],
     },
