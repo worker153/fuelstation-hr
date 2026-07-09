@@ -1002,6 +1002,11 @@ export default function AdminDashboard() {
                     <div className="text-3xl mb-1">⚠️</div>
                     <div className="text-sm font-black">Book Offence</div>
                   </button>
+                  <a href="/pdf-maker"
+                    className="col-span-2 rounded-2xl bg-blue-600 text-white p-4 text-center shadow active:scale-95 transition-all flex items-center justify-center gap-3">
+                    <div className="text-2xl">📄</div>
+                    <div className="text-sm font-black">PDF Maker — Create &amp; Share</div>
+                  </a>
                 </div>
               )}
             </div>
