@@ -71,135 +71,183 @@ async function makePdf({ images, layout, margin, title }) {
 }
 
 // ─── Image annotator ──────────────────────────────────────────────────────────
+// Flow: type text in the box → tap anywhere on the photo → text appears there.
 function Annotator({ dataUrl, onSave, onCancel }) {
   const canvasRef = useRef(null);
   const inputRef  = useRef(null);
   const imgRef    = useRef(null);
-  const [texts,   setTexts  ] = useState([]);
-  const [color,   setColor  ] = useState('#ffffff');
-  const [size,    setSize   ] = useState(28);
-  const [typing,  setTyping ] = useState(false);
-  const [draft,   setDraft  ] = useState('');
-  const [tapPos,  setTapPos ] = useState(null);
-  const [waiting, setWaiting] = useState(false);
+  const textsRef  = useRef([]);   // keep in sync with state for canvas draw
+  const [texts,  setTexts ] = useState([]);
+  const [color,  setColor ] = useState('#ffffff');
+  const [size,   setSize  ] = useState(28);
+  const [draft,  setDraft ] = useState('');
+  const [hint,   setHint  ] = useState('');  // brief flash message
 
+  // Load image and draw canvas once
   useEffect(() => {
     const img = new Image();
     img.onload = () => { imgRef.current = img; redraw([]); };
     img.src = dataUrl;
   }, []);
 
+  // Keep textsRef in sync so canvas callbacks see latest texts
+  useEffect(() => { textsRef.current = texts; }, [texts]);
+
   function redraw(list) {
-    const canvas = canvasRef.current; const img = imgRef.current;
+    const canvas = canvasRef.current;
+    const img    = imgRef.current;
     if (!canvas || !img) return;
-    const maxW = window.innerWidth, maxH = window.innerHeight - 180;
-    const sc = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
-    canvas.width = Math.round(img.naturalWidth * sc);
+    const maxW = window.innerWidth;
+    const maxH = window.innerHeight - 200;
+    const sc   = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+    canvas.width  = Math.round(img.naturalWidth  * sc);
     canvas.height = Math.round(img.naturalHeight * sc);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    (list ?? texts).forEach(t => drawT(ctx, t, sc));
+    list.forEach(t => stamp(ctx, t, canvas.width, canvas.height, sc));
   }
 
-  function drawT(ctx, t, sc) {
-    const fs = Math.round(t.size * sc);
-    ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'left';
-    ctx.lineWidth = Math.max(2, fs * 0.08);
-    ctx.strokeStyle = t.color === '#000000' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)';
-    ctx.strokeText(t.text, t.cx * canvasRef.current.width, t.cy * canvasRef.current.height);
+  function stamp(ctx, t, cw, ch, sc) {
+    const fs = Math.round(t.size * (sc || 1));
+    ctx.font      = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.lineWidth   = Math.max(2, fs * 0.08);
+    ctx.strokeStyle = t.color === '#000000' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)';
+    ctx.strokeText(t.text, t.cx * cw, t.cy * ch);
     ctx.fillStyle = t.color;
-    ctx.fillText(t.text,   t.cx * canvasRef.current.width, t.cy * canvasRef.current.height);
+    ctx.fillText(t.text,   t.cx * cw, t.cy * ch);
   }
 
-  useEffect(() => { redraw(texts); }, [texts, color, size]);
+  // Redraw whenever texts list changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const img    = imgRef.current;
+    if (!canvas || !img) return;
+    const sc = canvas.width / img.naturalWidth;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    texts.forEach(t => stamp(ctx, t, canvas.width, canvas.height, sc));
+  }, [texts]);
 
   function getPos(e) {
-    const r = canvasRef.current.getBoundingClientRect();
-    const cx = e.touches ? e.touches[0].clientX : e.clientX;
-    const cy = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: (cx - r.left) / r.width, y: (cy - r.top) / r.height };
+    const r  = canvasRef.current.getBoundingClientRect();
+    const src = e.changedTouches ? e.changedTouches[0] : e;
+    return {
+      x: (src.clientX - r.left) / r.width,
+      y: (src.clientY - r.top)  / r.height,
+    };
   }
 
-  function onTap(e) {
-    if (!waiting) return;
-    const pos = getPos(e);
-    setTapPos(pos); setWaiting(false); setTyping(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
+  // User taps/touches the photo — place text at that spot
+  function onPhotoTap(e) {
+    e.preventDefault();
+    if (!draft.trim()) {
+      // No text typed yet — focus the input to prompt them
+      inputRef.current?.focus();
+      flashHint('Type your text first, then tap the photo');
+      return;
+    }
+    const pos  = getPos(e);
+    const item = { id: Date.now(), text: draft.trim(), color, size, cx: pos.x, cy: pos.y };
+    const next = [...textsRef.current, item];
+    setTexts(next);
+    setDraft('');        // clear for next text
+    flashHint('Tap again to add more text');
+    inputRef.current?.focus();
   }
 
-  function place() {
-    if (!draft.trim()) { setTyping(false); setDraft(''); return; }
-    const next = [...texts, { id: Date.now(), text: draft.trim(), color, size, cx: tapPos?.x ?? 0.1, cy: tapPos?.y ?? 0.5 }];
-    setTexts(next); setDraft(''); setTyping(false); setTapPos(null);
+  function flashHint(msg) {
+    setHint(msg);
+    setTimeout(() => setHint(''), 2500);
+  }
+
+  function undo() {
+    setTexts(prev => prev.slice(0, -1));
   }
 
   function done() {
     const img = imgRef.current;
     if (!img) { onSave(dataUrl); return; }
+    // Render at full original resolution
     const out = document.createElement('canvas');
-    out.width = img.naturalWidth; out.height = img.naturalHeight;
-    const ctx = out.getContext('2d');
+    out.width  = img.naturalWidth;
+    out.height = img.naturalHeight;
+    const ctx  = out.getContext('2d');
     ctx.drawImage(img, 0, 0);
-    texts.forEach(t => {
-      const fs = t.size * 3;
-      ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'left';
-      ctx.lineWidth = Math.max(2, fs * 0.08);
-      ctx.strokeStyle = t.color === '#000000' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)';
-      ctx.strokeText(t.text, t.cx * out.width, t.cy * out.height);
-      ctx.fillStyle = t.color;
-      ctx.fillText(t.text,   t.cx * out.width, t.cy * out.height);
-    });
+    textsRef.current.forEach(t => stamp(ctx, t, out.width, out.height, 3));
     onSave(out.toDataURL('image/jpeg', 0.92));
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col" style={{ touchAction:'none' }}>
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+
+      {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-black/80 shrink-0">
-        <button onClick={onCancel} className="text-white/70 text-sm font-semibold px-3 py-2 rounded-xl">✕ Cancel</button>
-        <p className="text-white text-sm font-bold">{waiting ? '👆 Tap on photo to place text' : 'Add Text to Photo'}</p>
-        <button onClick={done} className="bg-green-500 text-white text-sm font-bold px-4 py-2 rounded-xl">Done ✓</button>
+        <button onClick={onCancel} className="text-white/60 text-sm font-semibold px-3 py-2 rounded-xl active:bg-white/10">
+          ✕ Cancel
+        </button>
+        <p className="text-white text-xs font-semibold text-center">
+          {hint || (draft.trim() ? '👆 Tap photo to place text' : 'Type below, then tap the photo')}
+        </p>
+        <button onClick={done} className="bg-green-500 text-white text-sm font-bold px-4 py-2 rounded-xl active:bg-green-400">
+          Done ✓
+        </button>
       </div>
-      <div className="flex-1 flex items-center justify-center overflow-hidden"
-        onClick={onTap} onTouchEnd={onTap}>
-        <canvas ref={canvasRef} style={{ maxWidth:'100%', maxHeight:'100%', display:'block',
-          border: waiting ? '2px dashed rgba(255,255,255,0.4)' : 'none' }} />
+
+      {/* Canvas — tap to place text */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden bg-black"
+        onTouchEnd={onPhotoTap} onClick={onPhotoTap}>
+        <canvas ref={canvasRef}
+          style={{ maxWidth: '100%', maxHeight: '100%', display: 'block',
+            outline: draft.trim() ? '2px dashed rgba(255,255,255,0.5)' : 'none' }} />
       </div>
-      <div className="shrink-0 bg-black/90 px-4 pb-6 pt-3 space-y-3">
-        {typing && (
-          <div className="flex gap-2">
-            <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && (() => { setTyping(false); setWaiting(true); })()}
-              placeholder="Type your text…"
-              className="flex-1 bg-white/10 text-white placeholder-white/40 rounded-xl px-4 py-3 text-base outline-none border border-white/20" autoComplete="off" />
-            <button onClick={() => { setTyping(false); setWaiting(true); }}
-              className="bg-green-500 text-white font-bold px-4 rounded-xl text-sm shrink-0">Place →</button>
-          </div>
-        )}
-        <div className="flex items-center gap-3">
-          <span className="text-white/50 text-xs font-semibold uppercase tracking-wide">Color</span>
-          {COLORS.map(c => (
-            <button key={c} onClick={() => setColor(c)}
-              style={{ background:c, border: color===c ? '3px solid #22c55e' : '2px solid rgba(255,255,255,0.2)' }}
-              className="w-8 h-8 rounded-full shrink-0" />
-          ))}
+
+      {/* Bottom controls */}
+      <div className="shrink-0 bg-black/95 px-4 pt-3 pb-6 space-y-3"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 16px)' }}>
+
+        {/* Text input — always visible */}
+        <div className="flex gap-2">
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
+            placeholder="Type your text, then tap the photo…"
+            className="flex-1 bg-white/10 text-white placeholder-white/30 rounded-xl px-4 py-3 text-base outline-none border border-white/20"
+            autoComplete="off"
+            autoCorrect="off"
+          />
+          {texts.length > 0 && (
+            <button onClick={undo}
+              className="shrink-0 bg-white/10 text-white text-sm font-semibold px-3 rounded-xl active:bg-white/20">
+              ↩
+            </button>
+          )}
         </div>
+
+        {/* Colour picker */}
         <div className="flex items-center gap-2">
-          <span className="text-white/50 text-xs font-semibold uppercase tracking-wide">Size</span>
+          <span className="text-white/40 text-xs font-semibold uppercase tracking-wide shrink-0">Colour</span>
+          <div className="flex gap-2 flex-1">
+            {COLORS.map(c => (
+              <button key={c} onClick={() => setColor(c)}
+                style={{ background: c, boxShadow: color === c ? '0 0 0 3px #22c55e' : '0 0 0 1.5px rgba(255,255,255,0.25)' }}
+                className="w-8 h-8 rounded-full shrink-0 transition-all active:scale-90" />
+            ))}
+          </div>
+        </div>
+
+        {/* Size picker */}
+        <div className="flex items-center gap-2">
+          <span className="text-white/40 text-xs font-semibold uppercase tracking-wide shrink-0">Size</span>
           {SIZES.map(s => (
             <button key={s.val} onClick={() => setSize(s.val)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold ${size===s.val ? 'bg-green-500 text-white' : 'bg-white/10 text-white/70'}`}>
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors
+                ${size === s.val ? 'bg-green-500 text-white' : 'bg-white/10 text-white/60'}`}>
               {s.label}
             </button>
           ))}
-          <div className="flex-1" />
-          {!typing && (
-            <button onClick={() => { setTyping(true); setTimeout(() => inputRef.current?.focus(), 50); }}
-              className="bg-white text-black text-sm font-bold px-4 py-2 rounded-xl">✏️ Add Text</button>
-          )}
-          {texts.length > 0 && (
-            <button onClick={() => setTexts(t => t.slice(0,-1))}
-              className="bg-white/10 text-white/70 text-sm font-semibold px-3 py-2 rounded-xl">↩ Undo</button>
-          )}
         </div>
       </div>
     </div>
