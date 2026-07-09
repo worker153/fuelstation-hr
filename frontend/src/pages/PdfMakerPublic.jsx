@@ -1,0 +1,430 @@
+/**
+ * Public PDF Maker — /pdf
+ * No login required. Works for admin-dashboard PIN users and anyone with the link.
+ * Generates PDFs client-side with jsPDF and shares via the native Web Share API.
+ */
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
+import { useNavigate } from 'react-router-dom';
+
+const LAYOUTS = [
+  { id: '1',  label: '1 photo',        cols: 1, rows: 1 },
+  { id: '2v', label: '2 stacked',      cols: 1, rows: 2 },
+  { id: '2h', label: '2 side by side', cols: 2, rows: 1 },
+  { id: '4',  label: '4 grid',         cols: 2, rows: 2 },
+];
+
+const COLORS = ['#ffffff','#000000','#ff0000','#ffdd00','#00cc44','#0088ff','#ff6600'];
+const SIZES  = [{ label:'S', val:18 },{ label:'M', val:28 },{ label:'L', val:42 },{ label:'XL', val:60 }];
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function readFile(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function imgDims(src) {
+  return new Promise(res => { const i = new Image(); i.onload = () => res({ w: i.naturalWidth, h: i.naturalHeight }); i.src = src; });
+}
+
+async function placeImg(pdf, url, x, y, mw, mh) {
+  if (!url) return;
+  const { w, h } = await imgDims(url);
+  const a = w / h;
+  let iw = mw, ih = iw / a;
+  if (ih > mh) { ih = mh; iw = ih * a; }
+  pdf.addImage(url, 'JPEG', x + (mw - iw) / 2, y + (mh - ih) / 2, iw, ih, undefined, 'FAST');
+}
+
+async function makePdf({ images, layout, margin, title }) {
+  const lay = LAYOUTS.find(l => l.id === layout) || LAYOUTS[0];
+  const { cols, rows } = lay;
+  const pp   = cols * rows;
+  const ps   = { w: 210, h: 297 };
+  const pages = [];
+  for (let i = 0; i < images.length; i += pp) pages.push(images.slice(i, i + pp));
+  if (!pages.length) pages.push([]);
+
+  const pdf = new jsPDF({ unit: 'mm', format: [ps.w, ps.h], compress: true });
+  for (let p = 0; p < pages.length; p++) {
+    if (p > 0) pdf.addPage([ps.w, ps.h]);
+    let topY = margin;
+    if (title && p === 0) {
+      pdf.setFontSize(13); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(17, 24, 39);
+      pdf.text(title, ps.w / 2, margin + 6, { align: 'center' }); topY += 13;
+    }
+    const gap = margin / 2;
+    const sw  = (ps.w - margin * 2 - gap * (cols - 1)) / cols;
+    const sh  = (ps.h - topY - margin - gap * (rows - 1)) / rows;
+    for (let i = 0; i < pages[p].length; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      await placeImg(pdf, pages[p][i].dataUrl, margin + col * (sw + gap), topY + row * (sh + gap), sw, sh);
+    }
+    pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(156,163,175);
+    pdf.text(`${p+1} / ${pages.length}`, ps.w/2, ps.h - 4, { align:'center' });
+  }
+  return pdf;
+}
+
+// ─── Image annotator ──────────────────────────────────────────────────────────
+function Annotator({ dataUrl, onSave, onCancel }) {
+  const canvasRef = useRef(null);
+  const inputRef  = useRef(null);
+  const imgRef    = useRef(null);
+  const [texts,   setTexts  ] = useState([]);
+  const [color,   setColor  ] = useState('#ffffff');
+  const [size,    setSize   ] = useState(28);
+  const [typing,  setTyping ] = useState(false);
+  const [draft,   setDraft  ] = useState('');
+  const [tapPos,  setTapPos ] = useState(null);
+  const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => { imgRef.current = img; redraw([]); };
+    img.src = dataUrl;
+  }, []);
+
+  function redraw(list) {
+    const canvas = canvasRef.current; const img = imgRef.current;
+    if (!canvas || !img) return;
+    const maxW = window.innerWidth, maxH = window.innerHeight - 180;
+    const sc = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+    canvas.width = Math.round(img.naturalWidth * sc);
+    canvas.height = Math.round(img.naturalHeight * sc);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    (list ?? texts).forEach(t => drawT(ctx, t, sc));
+  }
+
+  function drawT(ctx, t, sc) {
+    const fs = Math.round(t.size * sc);
+    ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'left';
+    ctx.lineWidth = Math.max(2, fs * 0.08);
+    ctx.strokeStyle = t.color === '#000000' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)';
+    ctx.strokeText(t.text, t.cx * canvasRef.current.width, t.cy * canvasRef.current.height);
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text,   t.cx * canvasRef.current.width, t.cy * canvasRef.current.height);
+  }
+
+  useEffect(() => { redraw(texts); }, [texts, color, size]);
+
+  function getPos(e) {
+    const r = canvasRef.current.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (cx - r.left) / r.width, y: (cy - r.top) / r.height };
+  }
+
+  function onTap(e) {
+    if (!waiting) return;
+    const pos = getPos(e);
+    setTapPos(pos); setWaiting(false); setTyping(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  function place() {
+    if (!draft.trim()) { setTyping(false); setDraft(''); return; }
+    const next = [...texts, { id: Date.now(), text: draft.trim(), color, size, cx: tapPos?.x ?? 0.1, cy: tapPos?.y ?? 0.5 }];
+    setTexts(next); setDraft(''); setTyping(false); setTapPos(null);
+  }
+
+  function done() {
+    const img = imgRef.current;
+    if (!img) { onSave(dataUrl); return; }
+    const out = document.createElement('canvas');
+    out.width = img.naturalWidth; out.height = img.naturalHeight;
+    const ctx = out.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    texts.forEach(t => {
+      const fs = t.size * 3;
+      ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'left';
+      ctx.lineWidth = Math.max(2, fs * 0.08);
+      ctx.strokeStyle = t.color === '#000000' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)';
+      ctx.strokeText(t.text, t.cx * out.width, t.cy * out.height);
+      ctx.fillStyle = t.color;
+      ctx.fillText(t.text,   t.cx * out.width, t.cy * out.height);
+    });
+    onSave(out.toDataURL('image/jpeg', 0.92));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col" style={{ touchAction:'none' }}>
+      <div className="flex items-center justify-between px-4 py-3 bg-black/80 shrink-0">
+        <button onClick={onCancel} className="text-white/70 text-sm font-semibold px-3 py-2 rounded-xl">✕ Cancel</button>
+        <p className="text-white text-sm font-bold">{waiting ? '👆 Tap on photo to place text' : 'Add Text to Photo'}</p>
+        <button onClick={done} className="bg-green-500 text-white text-sm font-bold px-4 py-2 rounded-xl">Done ✓</button>
+      </div>
+      <div className="flex-1 flex items-center justify-center overflow-hidden"
+        onClick={onTap} onTouchEnd={onTap}>
+        <canvas ref={canvasRef} style={{ maxWidth:'100%', maxHeight:'100%', display:'block',
+          border: waiting ? '2px dashed rgba(255,255,255,0.4)' : 'none' }} />
+      </div>
+      <div className="shrink-0 bg-black/90 px-4 pb-6 pt-3 space-y-3">
+        {typing && (
+          <div className="flex gap-2">
+            <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (() => { setTyping(false); setWaiting(true); })()}
+              placeholder="Type your text…"
+              className="flex-1 bg-white/10 text-white placeholder-white/40 rounded-xl px-4 py-3 text-base outline-none border border-white/20" autoComplete="off" />
+            <button onClick={() => { setTyping(false); setWaiting(true); }}
+              className="bg-green-500 text-white font-bold px-4 rounded-xl text-sm shrink-0">Place →</button>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <span className="text-white/50 text-xs font-semibold uppercase tracking-wide">Color</span>
+          {COLORS.map(c => (
+            <button key={c} onClick={() => setColor(c)}
+              style={{ background:c, border: color===c ? '3px solid #22c55e' : '2px solid rgba(255,255,255,0.2)' }}
+              className="w-8 h-8 rounded-full shrink-0" />
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-white/50 text-xs font-semibold uppercase tracking-wide">Size</span>
+          {SIZES.map(s => (
+            <button key={s.val} onClick={() => setSize(s.val)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-bold ${size===s.val ? 'bg-green-500 text-white' : 'bg-white/10 text-white/70'}`}>
+              {s.label}
+            </button>
+          ))}
+          <div className="flex-1" />
+          {!typing && (
+            <button onClick={() => { setTyping(true); setTimeout(() => inputRef.current?.focus(), 50); }}
+              className="bg-white text-black text-sm font-bold px-4 py-2 rounded-xl">✏️ Add Text</button>
+          )}
+          {texts.length > 0 && (
+            <button onClick={() => setTexts(t => t.slice(0,-1))}
+              className="bg-white/10 text-white/70 text-sm font-semibold px-3 py-2 rounded-xl">↩ Undo</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+export default function PdfMakerPublic() {
+  const navigate   = useNavigate();
+  const galleryRef = useRef(null);
+  const cameraRef  = useRef(null);
+
+  const [images,     setImages    ] = useState([]);
+  const [title,      setTitle     ] = useState('');
+  const [layout,     setLayout    ] = useState('1');
+  const [margin,     setMargin    ] = useState(10);
+  const [building,   setBuilding  ] = useState(false);
+  const [toast,      setToast     ] = useState('');
+  const [showCfg,    setShowCfg   ] = useState(false);
+  const [annotating, setAnnotating] = useState(null);
+
+  const showToast = msg => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const addFiles = useCallback(async files => {
+    const valid = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!valid.length) return;
+    const loaded = await Promise.all(valid.map(async f => ({
+      id: Math.random().toString(36).slice(2),
+      name: f.name,
+      dataUrl: await readFile(f),
+    })));
+    setImages(prev => [...prev, ...loaded]);
+  }, []);
+
+  const onGallery = e => { addFiles(e.target.files); e.target.value = ''; };
+  const onCamera  = e => { addFiles(e.target.files); e.target.value = ''; };
+  const remove    = id => setImages(prev => prev.filter(i => i.id !== id));
+  const moveUp    = idx => setImages(prev => { const a=[...prev]; [a[idx-1],a[idx]]=[a[idx],a[idx-1]]; return a; });
+  const moveDown  = idx => setImages(prev => { const a=[...prev]; [a[idx],a[idx+1]]=[a[idx+1],a[idx]]; return a; });
+
+  const saveAnnotated = (id, url) => {
+    setImages(prev => prev.map(i => i.id === id ? { ...i, dataUrl: url, annotated: true } : i));
+    setAnnotating(null);
+    showToast('Text added ✓');
+  };
+
+  const build = async (action) => {
+    if (!images.length) { showToast('Add at least one photo first'); return; }
+    setBuilding(true);
+    try {
+      const pdf  = await makePdf({ images, layout, margin, title });
+      const name = `${title.trim() || 'document'}.pdf`;
+      if (action === 'share') {
+        const blob = pdf.output('blob');
+        const file = new File([blob], name, { type: 'application/pdf' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: title || 'PDF Document' });
+          showToast('Shared!');
+        } else { pdf.save(name); showToast('Saved to downloads'); }
+      } else { pdf.save(name); showToast('PDF saved'); }
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('Something went wrong');
+    } finally { setBuilding(false); }
+  };
+
+  const annotatingImg = images.find(i => i.id === annotating);
+  const lay = LAYOUTS.find(l => l.id === layout) || LAYOUTS[0];
+  const pageCount = images.length ? Math.ceil(images.length / (lay.cols * lay.rows)) : 0;
+
+  return (
+    <>
+      {annotatingImg && (
+        <Annotator dataUrl={annotatingImg.dataUrl}
+          onSave={url => saveAnnotated(annotating, url)}
+          onCancel={() => setAnnotating(null)} />
+      )}
+
+      <div className="min-h-screen bg-green-50 flex flex-col max-w-lg mx-auto">
+
+        {/* Header */}
+        <div className="bg-green-700 text-white px-4 pt-12 pb-4" style={{ paddingTop: 'calc(env(safe-area-inset-top,0px) + 16px)' }}>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate(-1)}
+              className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white text-lg shrink-0">
+              ←
+            </button>
+            <div>
+              <h1 className="text-lg font-bold leading-tight">PDF Maker</h1>
+              <p className="text-green-200 text-xs">Sage Energy — create &amp; share</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Toast */}
+        {toast && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white text-sm font-medium px-5 py-2.5 rounded-2xl shadow-xl">
+            {toast}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4 space-y-4">
+
+          {/* Settings toggle */}
+          <button onClick={() => setShowCfg(c => !c)}
+            className="w-full flex items-center justify-between bg-white rounded-2xl px-4 py-3 border border-green-100 shadow-sm">
+            <span className="text-sm font-semibold text-gray-700">⚙️ Layout &amp; Margin Settings</span>
+            <span className="text-gray-400 text-sm">{showCfg ? '▲' : '▼'}</span>
+          </button>
+
+          {showCfg && (
+            <div className="bg-white rounded-2xl shadow-sm p-4 space-y-4 border border-green-100">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Photos per page</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {LAYOUTS.map(l => (
+                    <button key={l.id} onClick={() => setLayout(l.id)}
+                      className={`py-3 rounded-xl text-xs font-semibold border-2 transition-all
+                        ${layout===l.id ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Margins</p>
+                <div className="flex gap-2">
+                  {[['None',0],['Small',5],['Normal',10],['Large',18]].map(([lbl,v]) => (
+                    <button key={lbl} onClick={() => setMargin(v)}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border-2 transition-all
+                        ${margin===v ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Title */}
+          <div className="bg-white rounded-2xl shadow-sm border border-green-100 overflow-hidden">
+            <input type="text" placeholder="Document title (optional)"
+              value={title} onChange={e => setTitle(e.target.value)}
+              className="w-full px-4 py-4 text-base placeholder-gray-400 text-gray-800 outline-none font-medium" />
+          </div>
+
+          {/* Add photos */}
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => galleryRef.current?.click()}
+              className="flex flex-col items-center gap-2 bg-white rounded-2xl shadow-sm border-2 border-dashed border-green-200 py-6 text-green-700 font-semibold text-sm active:scale-95 transition-transform">
+              <span className="text-3xl">🖼️</span>From Gallery
+            </button>
+            <button onClick={() => cameraRef.current?.click()}
+              className="flex flex-col items-center gap-2 bg-white rounded-2xl shadow-sm border-2 border-dashed border-green-200 py-6 text-green-700 font-semibold text-sm active:scale-95 transition-transform">
+              <span className="text-3xl">📷</span>Take Photo
+            </button>
+            <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={onGallery} />
+            <input ref={cameraRef}  type="file" accept="image/*" capture="environment" className="hidden" onChange={onCamera} />
+          </div>
+
+          {/* Photo list */}
+          {images.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-green-100 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <p className="font-bold text-sm text-gray-800">
+                  {images.length} photo{images.length!==1?'s':''}
+                  {pageCount>0 && <span className="text-gray-400 font-normal"> · {pageCount} page{pageCount!==1?'s':''}</span>}
+                </p>
+                <button onClick={() => setImages([])} className="text-xs text-red-500 font-semibold">Remove all</button>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {images.map((img, idx) => (
+                  <div key={img.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="relative shrink-0">
+                      <img src={img.dataUrl} alt="" className="w-16 h-16 object-cover rounded-xl border border-gray-100" />
+                      {img.annotated && (
+                        <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">T</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 font-medium truncate">{img.name}</p>
+                      <button onClick={() => setAnnotating(img.id)}
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-lg">
+                        ✏️ {img.annotated ? 'Edit text' : 'Add text'}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => moveUp(idx)} disabled={idx===0}
+                        className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 disabled:opacity-20 text-sm font-bold flex items-center justify-center">↑</button>
+                      <button onClick={() => moveDown(idx)} disabled={idx===images.length-1}
+                        className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 disabled:opacity-20 text-sm font-bold flex items-center justify-center">↓</button>
+                      <button onClick={() => remove(img.id)}
+                        className="w-8 h-8 rounded-lg bg-red-50 text-red-500 text-sm font-bold flex items-center justify-center">✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => galleryRef.current?.click()}
+                className="w-full py-3 text-sm text-green-600 font-semibold border-t border-gray-100 hover:bg-green-50">
+                + Add more photos
+              </button>
+            </div>
+          )}
+
+          {images.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              <div className="text-6xl mb-3">📄</div>
+              <p className="font-semibold text-gray-500">No photos yet</p>
+              <p className="text-sm mt-1">Tap a button above to add photos</p>
+            </div>
+          )}
+        </div>
+
+        {/* Action bar */}
+        <div className="bg-white border-t border-gray-100 px-4 pt-3 pb-8 space-y-2 shadow-[0_-4px_24px_rgba(0,0,0,0.06)]"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 12px)' }}>
+          <button onClick={() => build('share')} disabled={building || images.length===0}
+            className="w-full flex items-center justify-center gap-2 bg-green-600 text-white text-base font-bold py-4 rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-sm">
+            {building ? <><span className="animate-spin">⏳</span> Building PDF…</> : <><span>📤</span> Create &amp; Share PDF</>}
+          </button>
+          <button onClick={() => build('download')} disabled={building || images.length===0}
+            className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-700 text-sm font-semibold py-3 rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all">
+            <span>⬇️</span> Download PDF Only
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

@@ -23,6 +23,7 @@ import Payroll            from './pages/Payroll';
 import Shortages           from './pages/Shortages';
 import Expenses            from './pages/Expenses';
 import PdfMaker            from './pages/PdfMaker';
+import PdfMakerPublic     from './pages/PdfMakerPublic';
 import WorkerShortage      from './pages/WorkerShortage';
 import WorkerDashboard     from './pages/WorkerDashboard';
 import AttendanceDevices   from './pages/AttendanceDevices';
@@ -117,6 +118,7 @@ export default function App() {
             <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/shortage"        element={<WorkerShortage />} />
+            <Route path="/pdf"             element={<PdfMakerPublic />} />
             <Route path="/policy"          element={<StaffPolicy />} />
             <Route path="/worker-handbook" element={<WorkerHandbook />} />
             <Route path="/ops"             element={<PrivateRoute><OpsView /></PrivateRoute>} />

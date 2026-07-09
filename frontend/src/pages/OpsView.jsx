@@ -214,7 +214,7 @@ export default function OpsView() {
             { to: '/attendance',  icon: Clock,         label: 'Attendance',   sub: 'Clock-in records' },
             { to: '/shortages',   icon: AlertTriangle, label: 'Shortages',    sub: 'Cash & fuel shortages' },
             { to: '/offences',    icon: AlertOctagon,  label: 'Disciplinary', sub: 'Offence bookings' },
-            { to: '/pdf-maker',   icon: FileImage,     label: 'PDF Maker',    sub: 'Create & share PDF from photos' },
+            { to: '/pdf',         icon: FileImage,     label: 'PDF Maker',    sub: 'Create & share PDF from photos' },
             { to: '/workers',     icon: Users,         label: 'Workers',      sub: 'All staff' },
             { to: '/payroll',     icon: Banknote,      label: 'Payroll',      sub: 'Salary & deductions' },
             { to: '/branches',    icon: Building2,     label: 'Branches',     sub: 'Branch settings' },
