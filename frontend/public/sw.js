@@ -4,7 +4,7 @@
  * offline fallback to cached shell for navigation.
  */
 
-const CACHE_VERSION  = 'v16';
+const CACHE_VERSION  = 'v17';
 const SHELL_CACHE    = `fuelstation-shell-${CACHE_VERSION}`;
 const ASSET_CACHE    = `fuelstation-assets-${CACHE_VERSION}`;
 const API_BASE       = '/api';
