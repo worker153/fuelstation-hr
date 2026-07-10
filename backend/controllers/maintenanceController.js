@@ -13,12 +13,14 @@ const getRecords = async (req, res) => {
 
 const createRecord = async (req, res) => {
   try {
-    const { pump, pumpId, date, workerName, description } = req.body;
+    const { pump, pumpId, branchId, branchName, date, workerName, description } = req.body;
     if (!pump || !date || !workerName || !description)
       return res.status(400).json({ success: false, message: 'All fields are required' });
 
     const record = await Maintenance.create({
       company: req.user.company._id,
+      branchId:   branchId   || undefined,
+      branchName: branchName || undefined,
       pump: pump.trim(),
       pumpId: pumpId || undefined,
       date: new Date(date),
