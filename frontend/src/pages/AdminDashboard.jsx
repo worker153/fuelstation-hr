@@ -1000,6 +1000,17 @@ export default function AdminDashboard() {
                 <div className="ml-auto text-blue-200 text-xl">›</div>
               </a>
 
+              {/* Maintenance Log — always visible */}
+              <a href="/maintenance"
+                className="block rounded-2xl bg-orange-600 text-white px-5 py-4 shadow active:scale-95 transition-all flex items-center gap-4">
+                <div className="text-3xl shrink-0">🔧</div>
+                <div>
+                  <div className="font-black text-base leading-tight">Maintenance Log</div>
+                  <div className="text-orange-200 text-xs mt-0.5">Track pump servicing — what, when, who</div>
+                </div>
+                <div className="ml-auto text-orange-200 text-xl">›</div>
+              </a>
+
               {/* Quick actions */}
               {isToday && (
                 <div className="grid grid-cols-2 gap-3">

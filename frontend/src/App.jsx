@@ -46,6 +46,7 @@ import PumpShifts             from './pages/PumpShifts';
 import Pumps                  from './pages/Pumps';
 import PumpAssignments        from './pages/PumpAssignments';
 import PumpIslands            from './pages/PumpIslands';
+import Maintenance            from './pages/Maintenance';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -129,6 +130,7 @@ export default function App() {
             <Route path="/admin"           element={<AdminLanding />} />
             <Route path="/admin/:userId"   element={<AdminPinLogin />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
+            <Route path="/maintenance"     element={<Maintenance />} />
 
             <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route path="/dashboard"     element={<Dashboard />} />
