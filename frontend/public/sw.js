@@ -4,7 +4,7 @@
  * offline fallback to cached shell for navigation.
  */
 
-const CACHE_VERSION  = 'v15';
+const CACHE_VERSION  = 'v16';
 const SHELL_CACHE    = `fuelstation-shell-${CACHE_VERSION}`;
 const ASSET_CACHE    = `fuelstation-assets-${CACHE_VERSION}`;
 const API_BASE       = '/api';
@@ -13,7 +13,7 @@ const API_BASE       = '/api';
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(SHELL_CACHE).then(cache =>
-      cache.addAll(['/index.html', '/admin.html', '/terminal', '/worker', '/'])
+      cache.addAll(['/index.html', '/admin.html', '/terminal.html', '/worker', '/'])
         .catch(() => cache.add('/index.html'))  // SPA routes may 404 — that's OK
     )
   );
@@ -47,9 +47,10 @@ self.addEventListener('fetch', event => {
 
   // ── Navigation requests (HTML pages) ─────────────────────────────────────────
   if (request.mode === 'navigate') {
-    // Determine which shell to serve: /admin routes → admin.html, everything else → index.html
-    const isAdmin = url.pathname === '/admin' || url.pathname.startsWith('/admin/');
-    const shellKey = isAdmin ? '/admin.html' : '/index.html';
+    // Determine which shell to serve based on route
+    const isAdmin    = url.pathname === '/admin' || url.pathname.startsWith('/admin/');
+    const isTerminal = url.pathname === '/terminal';
+    const shellKey   = isAdmin ? '/admin.html' : isTerminal ? '/terminal.html' : '/index.html';
 
     event.respondWith(
       fetch(request)
@@ -63,7 +64,7 @@ self.addEventListener('fetch', event => {
           // Offline → serve the correct cached shell
           const cached = await caches.match(shellKey);
           if (cached) return cached;
-          // Fallback to index.html if admin shell not cached yet
+          // Fallback to index.html if specific shell not cached yet
           const fallback = await caches.match('/index.html');
           if (fallback) return fallback;
           return new Response('<h1>Offline</h1><p>Open the app when online to cache it first.</p>',
