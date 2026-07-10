@@ -10,6 +10,7 @@ const maintenanceSchema = new Schema({
   date:        { type: Date, required: true },
   workerName:  { type: String, required: true },
   description: { type: String, required: true },
+  photo:       { url: { type: String }, publicId: { type: String } },
   loggedBy:    { type: String },
 }, { timestamps: true });
 

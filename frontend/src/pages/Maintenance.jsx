@@ -1,8 +1,8 @@
 /**
  * Maintenance Log — /maintenance
- * Admin-only. Track pump maintenance: location, pump, date, who, what.
+ * Admin-only. Track pump maintenance with photo, edit, and delete support.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
@@ -22,6 +22,30 @@ const fmtDate = (d) =>
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
   });
 
+// Compress image to base64 (max 1200px, quality 0.8)
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1200;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+          else                { width  = Math.round(width  * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const emptyForm = () => ({
   branchId:    '',
   branchName:  '',
@@ -31,8 +55,209 @@ const emptyForm = () => ({
   date:        todayStr(),
   workerName:  '',
   description: '',
+  photoBase64: null,
+  photoPreview: null,
 });
 
+// ── Shared form fields ────────────────────────────────────────────────────────
+function MaintenanceForm({ form, setForm, branches, pumps, onSubmit, saving, error, submitLabel }) {
+  const fileRef = useRef();
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const branchPumps = useMemo(() =>
+    form.branchId ? pumps.filter(p => String(p.branchId) === form.branchId) : pumps,
+    [pumps, form.branchId]);
+
+  const handleBranchChange = (e) => {
+    const id = e.target.value;
+    const branch = branches.find(b => String(b._id) === id);
+    setForm(f => ({ ...f, branchId: id, branchName: branch?.name || '', pumpChoice: '', pumpCustom: '', pumpId: '' }));
+  };
+
+  const handlePumpChange = (e) => {
+    const val = e.target.value;
+    if (val === 'other') {
+      setForm(f => ({ ...f, pumpChoice: 'other', pumpCustom: '', pumpId: '' }));
+    } else {
+      const pump = pumps.find(p => p.pumpName === val);
+      setForm(f => ({ ...f, pumpChoice: val, pumpCustom: '', pumpId: pump?._id || '' }));
+    }
+  };
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const b64 = await compressImage(file);
+    setForm(f => ({ ...f, photoBase64: b64, photoPreview: b64, removePhoto: false }));
+  };
+
+  const removePhoto = () => {
+    setForm(f => ({ ...f, photoBase64: null, photoPreview: null, removePhoto: true }));
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const inputCls = 'w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400';
+  const labelCls = 'block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide';
+
+  return (
+    <div className="space-y-4">
+      {/* Location */}
+      <div>
+        <label className={labelCls}>Location</label>
+        <select value={form.branchId} onChange={handleBranchChange} className={`${inputCls} bg-white font-medium`}>
+          <option value="">— Select location —</option>
+          {branches.map(b => <option key={b._id} value={String(b._id)}>{b.name}</option>)}
+        </select>
+      </div>
+
+      {/* Pump / Area */}
+      <div>
+        <label className={labelCls}>Pump / Area</label>
+        <select value={form.pumpChoice} onChange={handlePumpChange} className={`${inputCls} bg-white font-medium`}>
+          <option value="">— Select pump —</option>
+          {branchPumps.map(p => <option key={p._id} value={p.pumpName}>{p.pumpName}</option>)}
+          <option value="other">Other / Type custom</option>
+        </select>
+        {form.pumpChoice === 'other' && (
+          <input type="text" placeholder="e.g. Generator, Canopy light, Island 3…"
+            value={form.pumpCustom} onChange={e => set('pumpCustom', e.target.value)}
+            className={`mt-2 ${inputCls}`} />
+        )}
+      </div>
+
+      {/* Date */}
+      <div>
+        <label className={labelCls}>Date of Maintenance</label>
+        <input type="date" value={form.date} onChange={e => set('date', e.target.value)}
+          className={`${inputCls} font-medium`} />
+      </div>
+
+      {/* Worker name */}
+      <div>
+        <label className={labelCls}>Name of Person Who Did the Work</label>
+        <input type="text" placeholder="e.g. Emeka, NSPC Technician, Chidi…"
+          value={form.workerName} onChange={e => set('workerName', e.target.value)}
+          className={inputCls} />
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className={labelCls}>What Was Done</label>
+        <textarea rows={3} placeholder="e.g. Replaced nozzle, serviced meter, changed oil filter…"
+          value={form.description} onChange={e => set('description', e.target.value)}
+          className={`${inputCls} resize-none`} />
+      </div>
+
+      {/* Photo */}
+      <div>
+        <label className={labelCls}>Photo (optional)</label>
+        {form.photoPreview ? (
+          <div className="relative">
+            <img src={form.photoPreview} alt="preview"
+              className="w-full rounded-2xl object-cover max-h-52" />
+            <button onClick={removePhoto}
+              className="absolute top-2 right-2 bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow">
+              Remove
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => fileRef.current?.click()}
+            className="w-full border-2 border-dashed border-gray-200 rounded-2xl py-6 text-gray-400 font-semibold text-sm hover:border-orange-300 hover:text-orange-500 transition-colors flex flex-col items-center gap-1">
+            <span className="text-3xl">📷</span>
+            Tap to add photo
+          </button>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" capture="environment"
+          className="hidden" onChange={handlePhoto} />
+      </div>
+
+      {error && <p className="text-red-600 text-sm font-semibold text-center">{error}</p>}
+
+      <button onClick={onSubmit} disabled={saving}
+        className="w-full py-4 rounded-2xl bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-black text-base shadow active:scale-95 transition-all">
+        {saving ? 'Saving…' : submitLabel}
+      </button>
+    </div>
+  );
+}
+
+// ── Edit modal ────────────────────────────────────────────────────────────────
+function EditModal({ record, branches, pumps, onSave, onClose }) {
+  const initPumpChoice = () => {
+    if (!record.pump) return '';
+    const found = pumps.find(p => p.pumpName === record.pump);
+    return found ? record.pump : 'other';
+  };
+
+  const [form, setForm] = useState({
+    branchId:     String(record.branchId || ''),
+    branchName:   record.branchName || '',
+    pumpChoice:   initPumpChoice(),
+    pumpCustom:   pumps.find(p => p.pumpName === record.pump) ? '' : (record.pump || ''),
+    pumpId:       String(record.pumpId || ''),
+    date:         record.date ? new Date(record.date).toISOString().slice(0, 10) : todayStr(),
+    workerName:   record.workerName || '',
+    description:  record.description || '',
+    photoBase64:  null,
+    photoPreview: record.photo?.url || null,
+    removePhoto:  false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError ] = useState('');
+
+  const handleSave = async () => {
+    setError('');
+    if (!form.branchId)         { setError('Select a location'); return; }
+    const pumpName = form.pumpChoice === 'other' ? form.pumpCustom.trim() : form.pumpChoice;
+    if (!pumpName)              { setError('Select or type a pump'); return; }
+    if (!form.workerName.trim()) { setError('Enter the worker name'); return; }
+    if (!form.description.trim()) { setError('Enter what was done'); return; }
+
+    setSaving(true);
+    try {
+      const payload = {
+        branchId: form.branchId, branchName: form.branchName,
+        pump: pumpName, pumpId: form.pumpId || undefined,
+        date: form.date,
+        workerName: form.workerName.trim(),
+        description: form.description.trim(),
+      };
+      if (form.removePhoto) payload.removePhoto = true;
+      if (form.photoBase64) payload.photoBase64 = form.photoBase64;
+
+      const { data } = await adminApi.put(`/maintenance/${record._id}`, payload);
+      onSave(data.data);
+    } catch (e) {
+      setError(e.response?.data?.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+      onClick={onClose}>
+      <div className="bg-white rounded-t-3xl w-full max-w-lg max-h-[92vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="font-black text-gray-900 text-lg">Edit Record</p>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
+        </div>
+        <div className="px-5 py-4">
+          <MaintenanceForm
+            form={form} setForm={setForm}
+            branches={branches} pumps={pumps}
+            onSubmit={handleSave} saving={saving} error={error}
+            submitLabel="Save Changes"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Maintenance() {
   const navigate = useNavigate();
 
@@ -40,16 +265,18 @@ export default function Maintenance() {
     if (!localStorage.getItem('adminToken')) navigate('/admin-dashboard', { replace: true });
   }, [navigate]);
 
-  const [branches,  setBranches ] = useState([]);
-  const [pumps,     setPumps    ] = useState([]);
-  const [records,   setRecords  ] = useState([]);
-  const [loading,   setLoading  ] = useState(true);
-  const [showForm,  setShowForm ] = useState(false);
-  const [form,      setForm     ] = useState(emptyForm());
-  const [saving,    setSaving   ] = useState(false);
-  const [error,     setError    ] = useState('');
-  const [delId,     setDelId    ] = useState(null);
+  const [branches,     setBranches    ] = useState([]);
+  const [pumps,        setPumps       ] = useState([]);
+  const [records,      setRecords     ] = useState([]);
+  const [loading,      setLoading     ] = useState(true);
+  const [showForm,     setShowForm    ] = useState(false);
+  const [form,         setForm        ] = useState(emptyForm());
+  const [saving,       setSaving      ] = useState(false);
+  const [error,        setError       ] = useState('');
+  const [delId,        setDelId       ] = useState(null);
+  const [editRecord,   setEditRecord  ] = useState(null);
   const [filterBranch, setFilterBranch] = useState('');
+  const [lightbox,     setLightbox    ] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -71,55 +298,23 @@ export default function Maintenance() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  // Pumps filtered to the selected branch
-  const branchPumps = useMemo(() =>
-    form.branchId ? pumps.filter(p => String(p.branchId) === form.branchId) : pumps,
-    [pumps, form.branchId]);
-
-  const handleBranchChange = (e) => {
-    const id = e.target.value;
-    const branch = branches.find(b => String(b._id) === id);
-    setForm(f => ({
-      ...f,
-      branchId:   id,
-      branchName: branch?.name || '',
-      pumpChoice: '',
-      pumpCustom: '',
-      pumpId:     '',
-    }));
-  };
-
-  const handlePumpChange = (e) => {
-    const val = e.target.value;
-    if (val === 'other') {
-      setForm(f => ({ ...f, pumpChoice: 'other', pumpCustom: '', pumpId: '' }));
-    } else {
-      const pump = pumps.find(p => p.pumpName === val);
-      setForm(f => ({ ...f, pumpChoice: val, pumpCustom: '', pumpId: pump?._id || '' }));
-    }
-  };
-
   const handleSubmit = async () => {
     setError('');
     if (!form.branchId) { setError('Please select a location'); return; }
     const pumpName = form.pumpChoice === 'other' ? form.pumpCustom.trim() : form.pumpChoice;
-    if (!pumpName)             { setError('Please select or type a pump / area'); return; }
-    if (!form.date)            { setError('Please pick a date'); return; }
-    if (!form.workerName.trim()) { setError('Please enter the name of the person who did the work'); return; }
+    if (!pumpName)      { setError('Please select or type a pump / area'); return; }
+    if (!form.workerName.trim())  { setError('Please enter the worker name'); return; }
     if (!form.description.trim()) { setError('Please describe what was done'); return; }
 
     setSaving(true);
     try {
       await adminApi.post('/maintenance', {
-        branchId:    form.branchId,
-        branchName:  form.branchName,
-        pump:        pumpName,
-        pumpId:      form.pumpId || undefined,
-        date:        form.date,
-        workerName:  form.workerName.trim(),
+        branchId: form.branchId, branchName: form.branchName,
+        pump: pumpName, pumpId: form.pumpId || undefined,
+        date: form.date,
+        workerName: form.workerName.trim(),
         description: form.description.trim(),
+        photoBase64: form.photoBase64 || undefined,
       });
       setForm(emptyForm());
       setShowForm(false);
@@ -129,6 +324,11 @@ export default function Maintenance() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveEdit = (updated) => {
+    setRecords(rs => rs.map(r => r._id === updated._id ? updated : r));
+    setEditRecord(null);
   };
 
   const handleDelete = async (id) => {
@@ -144,7 +344,6 @@ export default function Maintenance() {
     }
   };
 
-  // Records filtered by branch if a filter is active
   const displayed = filterBranch
     ? records.filter(r => String(r.branchId) === filterBranch)
     : records;
@@ -152,10 +351,10 @@ export default function Maintenance() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 100%)' }}
         className="px-4 pt-10 pb-5 text-white">
-        <div className="flex items-center gap-3 mb-1">
+        <div className="flex items-center gap-3">
           <button onClick={() => navigate('/admin-dashboard')}
             className="text-white/70 hover:text-white text-xl leading-none px-1">←</button>
           <div>
@@ -165,132 +364,39 @@ export default function Maintenance() {
         </div>
       </div>
 
-      {/* ── Filter bar ─────────────────────────────────────────────────────── */}
+      {/* Filter */}
       {branches.length > 1 && (
         <div className="px-4 pt-3">
-          <select
-            value={filterBranch}
-            onChange={e => setFilterBranch(e.target.value)}
+          <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}
             className="w-full border border-gray-200 rounded-2xl px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-orange-400">
             <option value="">All Locations</option>
-            {branches.map(b => (
-              <option key={b._id} value={String(b._id)}>{b.name}</option>
-            ))}
+            {branches.map(b => <option key={b._id} value={String(b._id)}>{b.name}</option>)}
           </select>
         </div>
       )}
 
-      {/* ── Add button ─────────────────────────────────────────────────────── */}
+      {/* Add button */}
       <div className="px-4 py-3">
-        <button
-          onClick={() => { setShowForm(s => !s); setError(''); }}
+        <button onClick={() => { setShowForm(s => !s); setError(''); }}
           className="w-full py-3.5 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-black text-base shadow active:scale-95 transition-all">
           {showForm ? '✕  Cancel' : '+ Add Maintenance Record'}
         </button>
       </div>
 
-      {/* ── Add form ───────────────────────────────────────────────────────── */}
+      {/* Add form */}
       {showForm && (
-        <div className="mx-4 mb-4 bg-white rounded-3xl shadow-sm border border-gray-100 p-5 space-y-4">
-          <p className="font-black text-gray-900 text-base">New Record</p>
-
-          {/* Location (Branch) */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Location
-            </label>
-            <select
-              value={form.branchId}
-              onChange={handleBranchChange}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white">
-              <option value="">— Select location —</option>
-              {branches.map(b => (
-                <option key={b._id} value={String(b._id)}>{b.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Pump / Area */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Pump / Area
-            </label>
-            <select
-              value={form.pumpChoice}
-              onChange={handlePumpChange}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white">
-              <option value="">— Select pump —</option>
-              {branchPumps.map(p => (
-                <option key={p._id} value={p.pumpName}>{p.pumpName}</option>
-              ))}
-              <option value="other">Other / Type custom</option>
-            </select>
-            {form.pumpChoice === 'other' && (
-              <input
-                type="text"
-                placeholder="e.g. Generator, Canopy light, Island 3…"
-                value={form.pumpCustom}
-                onChange={e => set('pumpCustom', e.target.value)}
-                className="mt-2 w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-              />
-            )}
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Date of Maintenance
-            </label>
-            <input
-              type="date"
-              value={form.date}
-              onChange={e => set('date', e.target.value)}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
-          </div>
-
-          {/* Worker name */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Name of Person Who Did the Work
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Emeka, NSPC Technician, Chidi…"
-              value={form.workerName}
-              onChange={e => set('workerName', e.target.value)}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-              What Was Done
-            </label>
-            <textarea
-              rows={3}
-              placeholder="e.g. Replaced nozzle, serviced meter, changed oil filter…"
-              value={form.description}
-              onChange={e => set('description', e.target.value)}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
-            />
-          </div>
-
-          {error && (
-            <p className="text-red-600 text-sm font-semibold text-center">{error}</p>
-          )}
-
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="w-full py-4 rounded-2xl bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-black text-base shadow active:scale-95 transition-all">
-            {saving ? 'Saving…' : 'Save Record'}
-          </button>
+        <div className="mx-4 mb-4 bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
+          <p className="font-black text-gray-900 text-base mb-4">New Record</p>
+          <MaintenanceForm
+            form={form} setForm={setForm}
+            branches={branches} pumps={pumps}
+            onSubmit={handleSubmit} saving={saving} error={error}
+            submitLabel="Save Record"
+          />
         </div>
       )}
 
-      {/* ── Records list ───────────────────────────────────────────────────── */}
+      {/* Records list */}
       <div className="flex-1 px-4 pb-8">
         {loading ? (
           <p className="text-center text-gray-400 py-12 text-sm">Loading…</p>
@@ -306,9 +412,9 @@ export default function Maintenance() {
               {displayed.length} record{displayed.length !== 1 ? 's' : ''}
               {filterBranch ? ` · ${branches.find(b => String(b._id) === filterBranch)?.name}` : ''}
             </p>
+
             {displayed.map(r => (
-              <div key={r._id}
-                className="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
+              <div key={r._id} className="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
 
                 {/* Location badge */}
                 {r.branchName && (
@@ -325,9 +431,7 @@ export default function Maintenance() {
                     <span className="text-xl">⛽</span>
                     <span className="font-black text-gray-900 text-base">{r.pump}</span>
                   </div>
-                  <span className="text-xs text-gray-400 shrink-0 font-medium mt-0.5">
-                    {fmtDate(r.date)}
-                  </span>
+                  <span className="text-xs text-gray-400 shrink-0 font-medium mt-0.5">{fmtDate(r.date)}</span>
                 </div>
 
                 {/* Worker */}
@@ -337,15 +441,26 @@ export default function Maintenance() {
                 </div>
 
                 {/* Description */}
-                <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-xl px-3 py-2">
+                <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-xl px-3 py-2 mb-3">
                   {r.description}
                 </p>
 
-                {/* Delete */}
-                <div className="mt-3 flex justify-end">
-                  <button
-                    onClick={() => handleDelete(r._id)}
-                    disabled={delId === r._id}
+                {/* Photo */}
+                {r.photo?.url && (
+                  <button onClick={() => setLightbox(r.photo.url)} className="w-full mb-3">
+                    <img src={r.photo.url} alt="maintenance"
+                      className="w-full rounded-2xl object-cover max-h-48 hover:opacity-90 transition-opacity" />
+                    <p className="text-xs text-gray-400 text-center mt-1">Tap to enlarge</p>
+                  </button>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-3">
+                  <button onClick={() => setEditRecord(r)}
+                    className="text-xs text-orange-600 hover:text-orange-800 font-bold px-3 py-1.5 rounded-xl hover:bg-orange-50 transition-colors">
+                    ✏️ Edit
+                  </button>
+                  <button onClick={() => handleDelete(r._id)} disabled={delId === r._id}
                     className="text-xs text-red-400 hover:text-red-600 font-semibold px-3 py-1.5 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-40">
                     {delId === r._id ? 'Deleting…' : 'Delete'}
                   </button>
@@ -355,6 +470,27 @@ export default function Maintenance() {
           </div>
         )}
       </div>
+
+      {/* Edit modal */}
+      {editRecord && (
+        <EditModal
+          record={editRecord}
+          branches={branches}
+          pumps={pumps}
+          onSave={handleSaveEdit}
+          onClose={() => setEditRecord(null)}
+        />
+      )}
+
+      {/* Photo lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="full" className="max-w-full max-h-full rounded-2xl object-contain" />
+          <button onClick={() => setLightbox(null)}
+            className="absolute top-6 right-6 text-white text-3xl leading-none">✕</button>
+        </div>
+      )}
     </div>
   );
 }
