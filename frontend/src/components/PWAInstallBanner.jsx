@@ -67,18 +67,6 @@ function usePWAInstall(manifest) {
 function InstallGuideModal({ platform, onClose, onDismiss }) {
   const isIOS = platform === 'ios';
 
-  const steps = isIOS
-    ? [
-        { step: '1', text: 'Tap the Share button',     sub: '⬆️ at the bottom of Safari' },
-        { step: '2', text: 'Tap "Add to Home Screen"', sub: 'Scroll down in the share sheet' },
-        { step: '3', text: 'Tap "Add" to confirm',     sub: 'The app icon appears on your home screen' },
-      ]
-    : [
-        { step: '1', text: 'Tap the menu icon',            sub: '⋮ at the top-right of Chrome' },
-        { step: '2', text: 'Tap "Add to Home screen"',     sub: 'Scroll down the menu if needed' },
-        { step: '3', text: 'Tap "Add" to confirm',         sub: 'The app icon appears on your home screen' },
-      ];
-
   return (
     <div
       className="fixed inset-0 z-[60] flex items-end justify-center p-4"
@@ -90,27 +78,81 @@ function InstallGuideModal({ platform, onClose, onDismiss }) {
         onClick={e => e.stopPropagation()}
       >
         <p className="font-black text-gray-900 text-lg mb-1 text-center">
-          {isIOS ? 'Install on iPhone / iPad' : 'Install on Android'}
+          {isIOS ? 'Install on iPhone / iPad' : 'Install on Android (Chrome)'}
         </p>
         <p className="text-gray-400 text-xs text-center mb-5">
-          {isIOS ? 'Must be opened in Safari' : 'Must be opened in Chrome'}
+          {isIOS ? 'Must be opened in Safari' : 'Must be opened in Google Chrome'}
         </p>
-        <div className="space-y-4">
-          {steps.map(({ step, text, sub }) => (
-            <div key={step} className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
-                <span className="text-white font-bold text-sm">{step}</span>
+
+        {isIOS ? (
+          <div className="space-y-4">
+            {[
+              { step: '1', text: 'Tap the Share button',     sub: '⬆️ at the bottom of Safari' },
+              { step: '2', text: 'Tap "Add to Home Screen"', sub: 'Scroll down in the share sheet' },
+              { step: '3', text: 'Tap "Add" to confirm',     sub: 'The app icon appears on your home screen' },
+            ].map(({ step, text, sub }) => (
+              <div key={step} className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
+                  <span className="text-white font-bold text-sm">{step}</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">{text}</p>
+                  <p className="text-gray-500 text-xs">{sub}</p>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-gray-900 text-sm">{text}</p>
-                <p className="text-gray-500 text-xs">{sub}</p>
-              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Method A — Share button (works on all Chrome versions) */}
+            <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
+              <p className="font-black text-green-800 text-sm mb-3">Method A — Share button</p>
+              {[
+                { step: '1', text: 'Tap the Share ⬆️ icon',     sub: 'In the Chrome address bar (looks like a box with an arrow)' },
+                { step: '2', text: 'Scroll down → tap "Add to Home Screen"', sub: 'In the share sheet that appears' },
+                { step: '3', text: 'Tap "Add"',                  sub: 'App icon added to home screen' },
+              ].map(({ step, text, sub }) => (
+                <div key={step} className="flex items-start gap-3 mb-2 last:mb-0">
+                  <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="text-white font-bold text-xs">{step}</span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">{text}</p>
+                    <p className="text-gray-500 text-xs">{sub}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+
+            {/* Method B — 3-dot menu */}
+            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+              <p className="font-black text-gray-700 text-sm mb-3">Method B — Menu</p>
+              {[
+                { step: '1', text: 'Tap ⋮ at top-right of Chrome', sub: 'The 3-dot menu button' },
+                { step: '2', text: 'Tap "Add to Home Screen"',      sub: 'Scroll down if you don\'t see it' },
+                { step: '3', text: 'Tap "Add"',                     sub: 'App icon added to home screen' },
+              ].map(({ step, text, sub }) => (
+                <div key={step} className="flex items-start gap-3 mb-2 last:mb-0">
+                  <div className="w-7 h-7 rounded-full bg-gray-500 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="text-white font-bold text-xs">{step}</span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">{text}</p>
+                    <p className="text-gray-500 text-xs">{sub}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-gray-400 text-xs text-center">
+              Not working? Make sure you are using Google Chrome, not Mi Browser or Samsung Internet
+            </p>
+          </div>
+        )}
+
         <button
           onClick={onDismiss}
-          className="w-full mt-6 py-3 bg-brand-600 text-white font-bold rounded-2xl text-sm"
+          className="w-full mt-5 py-3 bg-brand-600 text-white font-bold rounded-2xl text-sm"
         >
           Got it!
         </button>
