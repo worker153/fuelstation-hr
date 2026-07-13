@@ -715,11 +715,24 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
 
       {/* Fail */}
       {stage === 'fail' && (
-        <div className="bg-red-900/50 border border-red-700 rounded-2xl p-4 text-center space-y-3">
-          <XCircle size={28} className="text-red-400 mx-auto" />
-          <p className="text-white font-semibold">Camera unavailable</p>
-          <p className="text-red-300 text-sm">{failMsg || 'Allow camera access and try again'}</p>
-          <p className="text-white/40 text-xs">In Chrome: tap the 🔒 lock icon in the address bar → Allow camera</p>
+        <div className="space-y-3">
+          <div className="bg-red-900/50 border border-red-700 rounded-2xl p-4 text-center space-y-2">
+            <XCircle size={28} className="text-red-400 mx-auto" />
+            <p className="text-white font-semibold">Camera unavailable</p>
+            <p className="text-red-300 text-sm">{failMsg || 'Camera could not be accessed'}</p>
+          </div>
+
+          <div className="bg-white/5 rounded-2xl p-3 space-y-1.5 text-left">
+            <p className="text-white/60 text-xs font-bold uppercase tracking-wide">Try these fixes:</p>
+            <p className="text-white/50 text-xs">1. Close WhatsApp, TikTok or any app using the camera, then refresh</p>
+            <p className="text-white/50 text-xs">2. Go to phone Settings → Apps → Chrome → Permissions → Camera → Allow</p>
+            <p className="text-white/50 text-xs">3. Restart the phone and try again</p>
+          </div>
+
+          <button onClick={() => onVerified(null, null)}
+            className="w-full py-3.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+            <ShieldAlert size={16} /> Continue with PIN only (no face scan)
+          </button>
         </div>
       )}
 
