@@ -261,16 +261,18 @@ export default function PdfMakerPublic() {
   const galleryRef = useRef(null);
   const cameraRef  = useRef(null);
 
-  const [images,     setImages    ] = useState([]);
-  const [title,      setTitle     ] = useState('');
-  const [layout,     setLayout    ] = useState('1');
-  const [margin,     setMargin    ] = useState(10);
-  const [building,   setBuilding  ] = useState(false);
-  const [toast,      setToast     ] = useState('');
-  const [showCfg,    setShowCfg   ] = useState(false);
-  const [annotating, setAnnotating] = useState(null);
+  const [images,       setImages      ] = useState([]);
+  const [title,        setTitle       ] = useState('');
+  const [layout,       setLayout      ] = useState('1');
+  const [margin,       setMargin      ] = useState(10);
+  const [building,     setBuilding    ] = useState(false);
+  const [toast,        setToast       ] = useState('');
+  const [showCfg,      setShowCfg     ] = useState(false);
+  const [annotating,   setAnnotating  ] = useState(null);
+  const [savedName,    setSavedName   ] = useState('');
+  const [showWaGuide,  setShowWaGuide ] = useState(false);
 
-  const showToast = msg => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  const showToast = msg => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
   const addFiles = useCallback(async files => {
     const valid = Array.from(files).filter(f => f.type.startsWith('image/'));
@@ -300,19 +302,39 @@ export default function PdfMakerPublic() {
     setBuilding(true);
     try {
       const pdf  = await makePdf({ images, layout, margin, title });
-      const name = `${title.trim() || 'document'}.pdf`;
+      const name = `${title.trim() || 'Sage-document'}.pdf`;
+
       if (action === 'share') {
         const buf  = pdf.output('arraybuffer');
         const blob = new Blob([buf], { type: 'application/pdf' });
         const file = new File([blob], name, { type: 'application/pdf' });
+
+        // Try native share sheet first (works on most Android + iOS)
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: title || 'PDF Document' });
-          showToast('Shared!');
-        } else { pdf.save(name); showToast('Saved to downloads'); }
-      } else { pdf.save(name); showToast('PDF saved'); }
+          try {
+            await navigator.share({ files: [file], title: title || 'PDF Document' });
+            showToast('Shared ✓');
+            return;
+          } catch (shareErr) {
+            if (shareErr.name === 'AbortError') return; // user cancelled — do nothing
+            // share failed for other reason — fall through to download + guide
+          }
+        }
+
+        // Fallback: download the file then show WhatsApp instructions
+        pdf.save(name);
+        setSavedName(name);
+        setShowWaGuide(true);
+
+      } else {
+        pdf.save(name);
+        showToast('PDF saved to Downloads ✓');
+      }
     } catch (err) {
-      if (err.name !== 'AbortError') showToast(`Error: ${err.message || 'Something went wrong'}`);
-    } finally { setBuilding(false); }
+      showToast(`Could not create PDF: ${err.message || 'unknown error'}`);
+    } finally {
+      setBuilding(false);
+    }
   };
 
   const annotatingImg = images.find(i => i.id === annotating);
@@ -475,6 +497,46 @@ export default function PdfMakerPublic() {
           </button>
         </div>
       </div>
+
+      {/* WhatsApp sharing guide — shown when native share isn't available */}
+      {showWaGuide && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-4"
+          onClick={() => setShowWaGuide(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6"
+            onClick={e => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-5xl mb-2">✅</div>
+              <p className="font-black text-gray-900 text-lg">PDF Saved!</p>
+              <p className="text-gray-500 text-sm mt-1">
+                <span className="font-semibold text-green-700">{savedName}</span> is in your Downloads folder
+              </p>
+            </div>
+
+            <p className="font-black text-gray-800 text-sm mb-3">To send on WhatsApp:</p>
+            <div className="space-y-3">
+              {[
+                { n:'1', text:'Open WhatsApp and go to a chat' },
+                { n:'2', text:'Tap the 📎 paperclip (attachment) button' },
+                { n:'3', text:'Tap "Document"' },
+                { n:'4', text:`Find "${savedName}" in Downloads` },
+                { n:'5', text:'Tap Send ✓' },
+              ].map(({ n, text }) => (
+                <div key={n} className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center shrink-0">
+                    <span className="text-white font-bold text-xs">{n}</span>
+                  </div>
+                  <p className="text-sm text-gray-700">{text}</p>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => setShowWaGuide(false)}
+              className="w-full mt-6 py-3.5 bg-green-600 text-white font-black rounded-2xl text-base active:scale-95 transition-all">
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
