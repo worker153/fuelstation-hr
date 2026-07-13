@@ -37,7 +37,8 @@ async function placeImg(pdf, url, x, y, mw, mh) {
   const a = w / h;
   let iw = mw, ih = iw / a;
   if (ih > mh) { ih = mh; iw = ih * a; }
-  pdf.addImage(url, 'JPEG', x + (mw - iw) / 2, y + (mh - ih) / 2, iw, ih, undefined, 'FAST');
+  const fmt = url.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+  pdf.addImage(url, fmt, x + (mw - iw) / 2, y + (mh - ih) / 2, iw, ih, undefined, 'FAST');
 }
 
 async function makePdf({ images, layout, margin, title }) {
@@ -301,7 +302,8 @@ export default function PdfMakerPublic() {
       const pdf  = await makePdf({ images, layout, margin, title });
       const name = `${title.trim() || 'document'}.pdf`;
       if (action === 'share') {
-        const blob = pdf.output('blob');
+        const buf  = pdf.output('arraybuffer');
+        const blob = new Blob([buf], { type: 'application/pdf' });
         const file = new File([blob], name, { type: 'application/pdf' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: title || 'PDF Document' });
@@ -309,7 +311,7 @@ export default function PdfMakerPublic() {
         } else { pdf.save(name); showToast('Saved to downloads'); }
       } else { pdf.save(name); showToast('PDF saved'); }
     } catch (err) {
-      if (err.name !== 'AbortError') showToast('Something went wrong');
+      if (err.name !== 'AbortError') showToast(`Error: ${err.message || 'Something went wrong'}`);
     } finally { setBuilding(false); }
   };
 
