@@ -135,13 +135,11 @@ const terminalClock = async (req, res) => {
   }
 
   // ── 5. Determine overall status ──────────────────────────────────────────────
-  const deviceVerified  = true;
-  const cameraSkipped   = faceMatchScore == null;  // null/undefined = worker used PIN-only (camera unavailable)
-  const faceVerified    = typeof faceMatchScore === 'number' && faceMatchScore >= 55;
+  const deviceVerified = true;
+  const faceVerified   = typeof faceMatchScore === 'number' && faceMatchScore >= 55;
 
-  // Block only when face IS registered AND a score was sent AND it didn't match.
-  // If camera was unavailable (cameraSkipped), allow through but mark partial.
-  if (worker.faceDescriptor?.length && !faceVerified && !cameraSkipped) {
+  // Block clock-in if worker has a registered face but the presented face doesn't match
+  if (worker.faceDescriptor?.length && !faceVerified) {
     return res.status(400).json({
       success:     false,
       faceBlocked: true,
@@ -150,13 +148,9 @@ const terminalClock = async (req, res) => {
     });
   }
 
-  if (cameraSkipped && worker.faceDescriptor?.length) {
-    failReasons.push('Camera unavailable — PIN only');
-  }
-
   const status = (gpsVerified && selfie.url && faceVerified && failReasons.length === 0)
     ? 'verified'
-    : 'partial';
+    : failReasons.length > 0 ? 'partial' : 'verified';
 
   // ── 6. Save attendance record ────────────────────────────────────────────────
   const record = await Attendance.create({

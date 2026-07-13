@@ -729,10 +729,6 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
             <p className="text-white/50 text-xs">3. Restart the phone and try again</p>
           </div>
 
-          <button onClick={() => onVerified(null, null)}
-            className="w-full py-3.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
-            <ShieldAlert size={16} /> Continue with PIN only (no face scan)
-          </button>
         </div>
       )}
 
