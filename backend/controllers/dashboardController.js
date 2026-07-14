@@ -192,10 +192,15 @@ const getOpsStats = async (req, res) => {
   Object.values(branchMap).forEach(b => {
     // Only count clock-ins from workers expected today
     const bid = String(b._id);
-    const expectedInBranch = new Set(
-      expectedWorkers.filter(w => String(w.branchId) === bid).map(w => String(w._id))
-    );
-    b.clockedIn    = [...(b._clockedSet || [])].filter(id => expectedInBranch.has(id)).length;
+    const expectedInBranch = expectedWorkers.filter(w => String(w.branchId) === bid);
+    const expectedIdSet    = new Set(expectedInBranch.map(w => String(w._id)));
+    const clockedSet       = b._clockedSet || new Set();
+    const actualClocked    = [...clockedSet].filter(id => expectedIdSet.has(id)).length;
+    // alwaysPresent workers who didn't clock in still count as present
+    const alwaysPresentExtra = expectedInBranch.filter(
+      w => w.alwaysPresent && !clockedSet.has(String(w._id))
+    ).length;
+    b.clockedIn    = actualClocked + alwaysPresentExtra;
     b.notClockedIn = Math.max(0, b.total - b.clockedIn);
     delete b._clockedSet;
   });
@@ -450,6 +455,13 @@ const getAdminSummary = async (req, res) => {
         shiftName: shift?.name || null,
       };
 
+      // alwaysPresent workers are never absent/off — always show as present
+      if (w.alwaysPresent) {
+        const rec = ci.find(c => c.workerId === String(w._id));
+        presentWorkers.push({ ...wBase, clockInTime: rec?.clockInTime, hasClockOut: rec?.hasClockOut, alwaysPresent: true });
+        return;
+      }
+
       if (status === 'off') {
         offTodayWorkers.push(wBase);
         return;
@@ -463,9 +475,6 @@ const getAdminSummary = async (req, res) => {
           clockInTime: rec?.clockInTime,
           hasClockOut: rec?.hasClockOut,
         });
-      } else if (w.alwaysPresent) {
-        // Always-present workers are never marked absent
-        presentWorkers.push({ ...wBase, alwaysPresent: true });
       } else {
         absentWorkers.push(wBase);
       }
