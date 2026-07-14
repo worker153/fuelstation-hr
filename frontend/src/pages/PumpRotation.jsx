@@ -101,7 +101,10 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center md:p-4 md:pl-64">
       <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="font-bold text-gray-900">{group?._id ? 'Edit' : 'Create'} Rotation Group</h3>
+          <div>
+            <h3 className="font-bold text-gray-900">{group?._id ? 'Edit' : 'Create'} Rotation Group</h3>
+            <p className="text-xs text-brand-600 font-semibold mt-0.5">📍 {branchName}</p>
+          </div>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={18} /></button>
         </div>
 
@@ -116,9 +119,21 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
 
           {/* Workers */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Workers in rotation order <span className="text-gray-400 font-normal">(top = position 1)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-gray-500">
+                Workers in rotation order <span className="text-gray-400 font-normal">(top = position 1)</span>
+              </label>
+              {pumpAttendants.length > 0 && (
+                <button type="button"
+                  onClick={() => {
+                    const toAdd = pumpAttendants.filter(w => !addedWorkerIds.has(String(w._id)));
+                    toAdd.forEach(w => addWorker(w));
+                  }}
+                  className="text-xs font-semibold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg hover:bg-brand-100 transition-colors">
+                  + Pull all from {branchName}
+                </button>
+              )}
+            </div>
             <div className="space-y-2 mb-2">
               {workers.map((w, i) => (
                 <OrderableItem key={String(w.workerId)} item={w} index={i} total={workers.length}
@@ -126,20 +141,34 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
                   onRemove={removeWorker} />
               ))}
             </div>
-            <select onChange={e => { const w = pumpAttendants.find(x => String(x._id) === e.target.value); if (w) addWorker(w); e.target.value = ''; }}
-              className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-2 text-sm text-gray-500 focus:outline-none">
-              <option value="">+ Add pump attendant…</option>
-              {pumpAttendants.filter(w => !addedWorkerIds.has(String(w._id))).map(w => (
-                <option key={w._id} value={w._id}>{w.fullName} — {w.role}</option>
-              ))}
-            </select>
+            {pumpAttendants.filter(w => !addedWorkerIds.has(String(w._id))).length > 0 && (
+              <select onChange={e => { const w = pumpAttendants.find(x => String(x._id) === e.target.value); if (w) addWorker(w); e.target.value = ''; }}
+                className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-2 text-sm text-gray-500 focus:outline-none">
+                <option value="">+ Add individual pump attendant…</option>
+                {pumpAttendants.filter(w => !addedWorkerIds.has(String(w._id))).map(w => (
+                  <option key={w._id} value={w._id}>{w.fullName}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Islands */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Islands in order <span className="text-gray-400 font-normal">(top = Island slot 1)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-gray-500">
+                Islands in order <span className="text-gray-400 font-normal">(top = Island slot 1)</span>
+              </label>
+              {allIslands.length > 0 && (
+                <button type="button"
+                  onClick={() => {
+                    const toAdd = allIslands.filter(isl => !addedIslandIds.has(String(isl._id)));
+                    toAdd.forEach(isl => addIsland(isl));
+                  }}
+                  className="text-xs font-semibold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg hover:bg-brand-100 transition-colors">
+                  + Pull all islands
+                </button>
+              )}
+            </div>
             <div className="space-y-2 mb-2">
               {islands.map((isl, i) => (
                 <OrderableItem key={String(isl.islandId)} item={isl} index={i} total={islands.length}
@@ -147,13 +176,15 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
                   onRemove={removeIsland} />
               ))}
             </div>
-            <select onChange={e => { const isl = allIslands.find(x => String(x._id) === e.target.value); if (isl) addIsland(isl); e.target.value = ''; }}
-              className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-2 text-sm text-gray-500 focus:outline-none">
-              <option value="">+ Add island…</option>
-              {allIslands.filter(isl => !addedIslandIds.has(String(isl._id))).map(isl => (
-                <option key={isl._id} value={isl._id}>{isl.name}</option>
-              ))}
-            </select>
+            {allIslands.filter(isl => !addedIslandIds.has(String(isl._id))).length > 0 && (
+              <select onChange={e => { const isl = allIslands.find(x => String(x._id) === e.target.value); if (isl) addIsland(isl); e.target.value = ''; }}
+                className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-2 text-sm text-gray-500 focus:outline-none">
+                <option value="">+ Add individual island…</option>
+                {allIslands.filter(isl => !addedIslandIds.has(String(isl._id))).map(isl => (
+                  <option key={isl._id} value={isl._id}>{isl.name}</option>
+                ))}
+              </select>
+            )}
             {workers.length > 0 && islands.length > 0 && workers.length !== islands.length && (
               <p className="text-xs text-amber-600 mt-1">⚠ Workers ({workers.length}) and islands ({islands.length}) must match</p>
             )}
