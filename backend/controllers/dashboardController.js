@@ -112,7 +112,7 @@ const getOpsStats = async (req, res) => {
 
     // All active workers — include rotation fields so duty check works
     Worker.find({ company: cid, employmentStatus: 'active' })
-      .select('_id branchId shiftId clockInRequired rotationSchedule resumptionDate activatedAt')
+      .select('_id branchId shiftId clockInRequired alwaysPresent rotationSchedule resumptionDate activatedAt')
       .populate('shiftId', '_id shiftType days rotationPattern')
       .lean(),
 
@@ -154,9 +154,10 @@ const getOpsStats = async (req, res) => {
     if (status !== 'skip' && status !== 'off') expectedWorkers.push(w);
   });
 
-  const totalActive  = activeWorkers.length;
+  const totalActive   = activeWorkers.length;
   const totalExpected = expectedWorkers.length;
-  const clockedIn    = expectedWorkers.filter(w => clockedInSet.has(String(w._id))).length;
+  // Always-present workers count as clocked in even without an attendance record
+  const clockedIn    = expectedWorkers.filter(w => clockedInSet.has(String(w._id)) || w.alwaysPresent).length;
   const notClockedIn = totalExpected - clockedIn;
 
   // ── Per-branch breakdown (rotation-aware) ────────────────────────────────
@@ -282,7 +283,7 @@ const getAdminSummary = async (req, res) => {
 
     // Populate shift for grouping
     Worker.find({ company: cid, employmentStatus: 'active' })
-          .select('_id fullName role branchId shiftId clockInRequired rotationSchedule resumptionDate activatedAt')
+          .select('_id fullName role branchId shiftId clockInRequired alwaysPresent rotationSchedule resumptionDate activatedAt')
           .populate('shiftId', '_id name startTime endTime shiftType days rotationPattern')
           .lean(),
 
@@ -462,6 +463,9 @@ const getAdminSummary = async (req, res) => {
           clockInTime: rec?.clockInTime,
           hasClockOut: rec?.hasClockOut,
         });
+      } else if (w.alwaysPresent) {
+        // Always-present workers are never marked absent
+        presentWorkers.push({ ...wBase, alwaysPresent: true });
       } else {
         absentWorkers.push(wBase);
       }
