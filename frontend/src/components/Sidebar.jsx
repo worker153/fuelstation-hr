@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
   AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen, FileText,
-  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage,
+  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage, RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -64,6 +64,7 @@ export default function Sidebar({ onClose }) {
         { to: '/pumps',                icon: Fuel,           label: 'Pumps',            show: isSuperAdmin() || can('manageBranches') },
         { to: '/pump-islands',         icon: Layers,         label: 'Pump Islands',     show: isSuperAdmin() || can('manageBranches') },
         { to: '/pump-assignments',     icon: ArrowLeftRight, label: 'Pump Assignments', show: isSuperAdmin() || can('manageBranches') },
+        { to: '/pump-rotation',        icon: RefreshCw,      label: 'Pump Rotation',    show: isSuperAdmin() || can('manageBranches') },
         { to: '/pump-shifts',          icon: Gauge,          label: 'Pump Shifts',      show: isSuperAdmin() || can('manageBranches') },
       ],
     },

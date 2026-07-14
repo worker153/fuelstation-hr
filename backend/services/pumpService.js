@@ -1,6 +1,7 @@
-const Pump           = require('../models/Pump');
-const PumpIsland     = require('../models/PumpIsland');
-const PumpAssignment = require('../models/PumpAssignment');
+const Pump              = require('../models/Pump');
+const PumpIsland        = require('../models/PumpIsland');
+const PumpAssignment    = require('../models/PumpAssignment');
+const PumpRotationGroup = require('../models/PumpRotationGroup');
 
 /**
  * Auto-assign a pump to a worker on clock-in.
@@ -89,6 +90,100 @@ async function overrideAssignment({ assignmentId, newPumpId, overrideBy, overrid
 }
 
 /**
+ * Group rotation assignment — used when worker belongs to a PumpRotationGroup.
+ * Each shift, every island passes forward to the next worker in the group.
+ */
+async function autoAssignByRotationGroup({ group, company, branchId, branchName, worker, date, shiftName }) {
+  // Idempotency
+  const existing = await PumpAssignment.findOne({
+    company, worker: worker._id, date, status: { $ne: 'cancelled' },
+  }).lean();
+  if (existing) return existing;
+
+  const n       = group.workers.length;
+  const myEntry = group.workers.find(w => String(w.workerId) === String(worker._id));
+  if (!myEntry) return null;
+  const myPos = myEntry.position;
+
+  // Find most recent date when any group member had an island assignment before today
+  const workerIds = group.workers.map(w => w.workerId);
+  const lastAny   = await PumpAssignment.findOne({
+    company, branchId,
+    worker: { $in: workerIds },
+    island: { $exists: true, $ne: null },
+    date:   { $lt: date },
+    status: { $ne: 'cancelled' },
+  }).sort({ date: -1 }).lean();
+
+  let islandPos;
+  if (!lastAny) {
+    // No seed yet — assign by worker position directly (0→island0, 1→island1 …)
+    islandPos = myPos % group.islands.length;
+  } else {
+    const lastDate        = lastAny.date;
+    const lastAssignments = await PumpAssignment.find({
+      company, branchId,
+      worker: { $in: workerIds },
+      date:   lastDate,
+      status: { $ne: 'cancelled' },
+    }).lean();
+
+    // I get the island that the person BEFORE me had last shift
+    const prevPos    = (myPos - 1 + n) % n;
+    const prevWorker = group.workers.find(w => w.position === prevPos);
+    const prevAsgn   = prevWorker
+      ? lastAssignments.find(a => String(a.worker) === String(prevWorker.workerId))
+      : null;
+
+    if (prevAsgn?.island) {
+      const prevIslandEntry = group.islands.find(
+        i => String(i.islandId) === String(prevAsgn.island)
+      );
+      islandPos = prevIslandEntry !== undefined
+        ? prevIslandEntry.position
+        : myPos % group.islands.length;
+    } else {
+      islandPos = myPos % group.islands.length;
+    }
+  }
+
+  const islandEntry = group.islands.find(i => i.position === islandPos);
+  if (!islandEntry) return null;
+
+  const island = await PumpIsland.findById(islandEntry.islandId).lean();
+  if (!island) return null;
+
+  // How many workers are already assigned to this island today?
+  const todayOnIsland = await PumpAssignment.countDocuments({
+    company, branchId, date, island: island._id, status: { $ne: 'cancelled' },
+  });
+  const pumpId = island.pumps?.[todayOnIsland] ?? island.pumps?.[0];
+  const pump   = pumpId ? await Pump.findById(pumpId).lean() : null;
+
+  const assignment = await PumpAssignment.create({
+    company, branchId, branchName,
+    island:       island._id,
+    islandName:   island.name,
+    includesGas:  island.includesGas,
+    productTypes: island.productTypes || [],
+    pump:         pump?._id,
+    pumpNumber:   pump?.pumpNumber,
+    pumpName:     pump?.pumpName || island.name,
+    productType:  pump?.productType || (island.productTypes || [])[0] || 'PMS',
+    assignedPumps: [],
+    worker:       worker._id,
+    workerName:   worker.fullName,
+    workerRole:   worker.role,
+    date,
+    shiftName:    shiftName || '',
+    assignedAt:   new Date(),
+  });
+
+  await redistributeIslands({ company, branchId, date });
+  return PumpAssignment.findById(assignment._id).lean();
+}
+
+/**
  * Auto-assign a pump ISLAND to a worker on clock-in.
  * Returns the PumpAssignment, or null if no islands configured (falls back to autoAssignPump).
  *
@@ -98,6 +193,15 @@ async function overrideAssignment({ assignmentId, newPumpId, overrideBy, overrid
  *  - If all islands are at capacity, assign to the least-loaded island (overflow).
  */
 async function autoAssignIsland({ company, branchId, branchName, worker, date, shiftName }) {
+  // ── Check rotation group first ────────────────────────────────────────────
+  const group = await PumpRotationGroup.findOne({
+    company, branchId, isActive: true,
+    'workers.workerId': worker._id,
+  }).lean();
+  if (group) {
+    return autoAssignByRotationGroup({ group, company, branchId, branchName, worker, date, shiftName });
+  }
+
   const islands = await PumpIsland.find({ company, branchId, status: 'active' })
     .sort({ rotationOrder: 1 }).lean();
   if (!islands.length) return null; // no islands — caller falls back to autoAssignPump
