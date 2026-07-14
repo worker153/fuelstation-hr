@@ -61,7 +61,8 @@ async function processAllAbsences(dateStr) {
         branchId:         branch._id,
         employmentStatus: 'active',
         clockInRequired:  { $ne: false },
-      }).lean();
+        alwaysPresent:    { $ne: true },   // never charge always-present workers
+      }).populate('shiftId', 'shiftType days rotationPattern').lean();
 
       // Workers who DID clock in that day
       const clockedInIds = await Attendance.find({
