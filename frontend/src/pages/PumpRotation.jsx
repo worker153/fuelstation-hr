@@ -37,16 +37,25 @@ function OrderableItem({ item, index, total, onMove, onRemove, label }) {
 }
 
 // ── Create / Edit Group Modal ─────────────────────────────────────────────────
-function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClose, onSaved }) {
+function GroupModal({ branchId, branchName, group, allWorkers, allIslands, allShifts, onClose, onSaved }) {
   const notify = useNotify();
-  const [name,    setName   ] = useState(group?.name    || '');
-  const [workers, setWorkers] = useState(group?.workers  || []);
-  const [islands, setIslands] = useState(group?.islands  || []);
-  const [saving,  setSaving ] = useState(false);
+  const [name,      setName     ] = useState(group?.name      || '');
+  const [shiftId,   setShiftId  ] = useState(group?.shiftId   ? String(group.shiftId) : '');
+  const [workers,   setWorkers  ] = useState(group?.workers   || []);
+  const [islands,   setIslands  ] = useState(group?.islands   || []);
+  const [saving,    setSaving   ] = useState(false);
 
-  const pumpAttendants = allWorkers.filter(
-    w => /pump.?attendant|fuel.?attendant|^attendant$/i.test(w.role || '')
-  );
+  const selShift = allShifts.find(s => String(s._id) === shiftId);
+
+  // Pump attendants filtered to the selected shift (or all if no shift chosen)
+  const pumpAttendants = allWorkers.filter(w => {
+    if (!/pump.?attendant|fuel.?attendant|^attendant$/i.test(w.role || '')) return false;
+    if (shiftId) {
+      const wShift = w.shiftId?._id || w.shiftId;
+      return wShift && String(wShift) === shiftId;
+    }
+    return true;
+  });
   const addedWorkerIds = new Set(workers.map(w => String(w.workerId)));
   const addedIslandIds = new Set(islands.map(i => String(i.islandId)));
 
@@ -84,7 +93,7 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
       return notify(`Workers (${workers.length}) and islands (${islands.length}) must be the same count`, 'error');
     setSaving(true);
     try {
-      const payload = { branchId, branchName, name: name.trim(), workers, islands };
+      const payload = { branchId, branchName, name: name.trim(), shiftId: shiftId || undefined, shiftName: selShift?.name || '', workers, islands };
       const res = group?._id
         ? await api.put(`/pump-rotation-groups/${group._id}`, payload)
         : await api.post('/pump-rotation-groups', payload);
@@ -113,8 +122,25 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Group Name</label>
             <input value={name} onChange={e => setName(e.target.value)}
-              placeholder="e.g. Main Shift Rotation"
+              placeholder="e.g. Morning Shift Rotation"
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+          </div>
+
+          {/* Shift */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
+              Shift <span className="text-gray-400 font-normal">(filters which pump attendants are shown)</span>
+            </label>
+            <select value={shiftId} onChange={e => { setShiftId(e.target.value); setWorkers([]); }}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500">
+              <option value="">— All shifts / No filter —</option>
+              {allShifts.map(s => (
+                <option key={s._id} value={s._id}>{s.name}</option>
+              ))}
+            </select>
+            {shiftId && pumpAttendants.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">⚠ No pump attendants found on this shift</p>
+            )}
           </div>
 
           {/* Workers */}
@@ -130,7 +156,7 @@ function GroupModal({ branchId, branchName, group, allWorkers, allIslands, onClo
                     toAdd.forEach(w => addWorker(w));
                   }}
                   className="text-xs font-semibold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg hover:bg-brand-100 transition-colors">
-                  + Pull all from {branchName}
+                  + Pull all from {selShift ? selShift.name : branchName}
                 </button>
               )}
             </div>
@@ -308,10 +334,13 @@ function GroupCard({ group, onEdit, onDelete, onSeed }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Layers size={16} className="text-brand-600 shrink-0" />
-          <span className="font-bold text-gray-900 text-sm">{group.name}</span>
-          {!group.isActive && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactive</span>}
+          <div className="min-w-0">
+            <span className="font-bold text-gray-900 text-sm block truncate">{group.name}</span>
+            {group.shiftName && <span className="text-xs text-gray-400">{group.shiftName}</span>}
+          </div>
+          {!group.isActive && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">Inactive</span>}
         </div>
         <div className="flex gap-2 shrink-0">
           <button onClick={() => onSeed(group)}
@@ -377,6 +406,7 @@ export default function PumpRotation() {
   const [groups,     setGroups    ] = useState([]);
   const [workers,    setWorkers   ] = useState([]);
   const [islands,    setIslands   ] = useState([]);
+  const [shifts,     setShifts    ] = useState([]);
   const [loading,    setLoading   ] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
@@ -395,14 +425,16 @@ export default function PumpRotation() {
     if (!selBranch) return;
     setLoading(true);
     try {
-      const [gRes, wRes, iRes] = await Promise.all([
+      const [gRes, wRes, iRes, sRes] = await Promise.all([
         api.get(`/pump-rotation-groups?branchId=${selBranch}`),
         api.get(`/workers?branchId=${selBranch}&limit=200`),
         api.get(`/pump-islands?branchId=${selBranch}`),
+        api.get(`/shifts?branchId=${selBranch}`),
       ]);
       setGroups(gRes.data.data  || []);
       setWorkers(wRes.data.data || []);
       setIslands(iRes.data.data || []);
+      setShifts(sRes.data.data  || []);
     } catch (err) {
       notify(err.response?.data?.message || 'Failed to load', 'error');
     } finally {
@@ -491,6 +523,7 @@ export default function PumpRotation() {
           group={editGroup}
           allWorkers={workers}
           allIslands={islands}
+          allShifts={shifts}
           onClose={() => { setShowCreate(false); setEditGroup(null); }}
           onSaved={() => { setShowCreate(false); setEditGroup(null); load(); }}
         />

@@ -6,6 +6,8 @@ const pumpRotationGroupSchema = new Schema({
   branchId:   { type: Schema.Types.ObjectId, ref: 'Branch',  required: true },
   branchName: { type: String },
   name:       { type: String, required: true, trim: true },
+  shiftId:    { type: Schema.Types.ObjectId, ref: 'Shift' },
+  shiftName:  { type: String },
 
   // Ordered list of pump attendants — position 0 is first in rotation
   workers: [{

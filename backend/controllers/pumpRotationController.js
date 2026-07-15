@@ -16,12 +16,12 @@ const getGroups = async (req, res) => {
 // POST create group
 const createGroup = async (req, res) => {
   const cid = req.user.company._id;
-  const { branchId, branchName, name, workers, islands } = req.body;
+  const { branchId, branchName, name, shiftId, shiftName, workers, islands } = req.body;
   if (!branchId || !name || !workers?.length || !islands?.length)
     return res.status(400).json({ success: false, message: 'branchId, name, workers and islands are required' });
 
   const group = await PumpRotationGroup.create({
-    company: cid, branchId, branchName, name, workers, islands,
+    company: cid, branchId, branchName, name, shiftId, shiftName, workers, islands,
   });
   res.status(201).json({ success: true, data: group });
 };
@@ -32,11 +32,13 @@ const updateGroup = async (req, res) => {
   const group = await PumpRotationGroup.findOne({ _id: req.params.id, company: cid });
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
-  const { name, workers, islands, isActive } = req.body;
-  if (name    !== undefined) group.name    = name;
-  if (workers !== undefined) group.workers = workers;
-  if (islands !== undefined) group.islands = islands;
-  if (isActive !== undefined) group.isActive = isActive;
+  const { name, shiftId, shiftName, workers, islands, isActive } = req.body;
+  if (name      !== undefined) group.name      = name;
+  if (shiftId   !== undefined) group.shiftId   = shiftId;
+  if (shiftName !== undefined) group.shiftName = shiftName;
+  if (workers   !== undefined) group.workers   = workers;
+  if (islands   !== undefined) group.islands   = islands;
+  if (isActive  !== undefined) group.isActive  = isActive;
   await group.save();
   res.json({ success: true, data: group });
 };
