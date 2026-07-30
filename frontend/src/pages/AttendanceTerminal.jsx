@@ -27,7 +27,7 @@ const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/mode
 
 // Match threshold — euclidean distance (lower = stricter)
 // face-api default is 0.6; we use 0.50 for higher security
-const VERIFY_THRESHOLD  = 0.50;
+const VERIFY_THRESHOLD  = 0.58;
 // Require this many consecutive matched frames before auto-capture
 const STABLE_FRAMES     = 4;
 
@@ -521,13 +521,26 @@ function FaceRegister({ worker, token, onDone, onBack }) {
 // ── Face VERIFY step (returning workers) ──────────────────────────────────────
 function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
   const { videoRef, videoNodeRef, overlayRef, captureRef, loopRef, startCamera, stopCamera } = useFaceCamera();
-  const [stage,     setStage    ] = useState('loading');  // loading | scanning | matched | fail
+  const [stage,     setStage    ] = useState('loading');  // loading | scanning | matched | fail | timeout
   const [progress,  setProgress ] = useState(0);
   const [liveScore, setLiveScore] = useState(null);
   const [faceFound, setFaceFound] = useState(false);
   const [capturedB64, setCapturedB64] = useState(null);
   const [failMsg,   setFailMsg  ] = useState('');
+  const [timeLeft,  setTimeLeft ] = useState(60);
   const stableRef  = useRef(0);
+
+  // 60-second timeout — if no match, show bypass option
+  useEffect(() => {
+    if (stage !== 'scanning') return;
+    const timer = setInterval(() => {
+      setTimeLeft(t => {
+        if (t <= 1) { clearInterval(timer); stopCamera(); setStage('timeout'); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [stage, stopCamera]);
 
   useEffect(() => {
     let cancelled = false;
@@ -687,8 +700,27 @@ function FaceVerify({ worker, storedDescriptor, type, onVerified, onBack }) {
 
           <p className="text-center text-white/30 text-xs">
             Auto-captures when identity is confirmed ({Math.round(VERIFY_THRESHOLD * 100)}%+ required)
+            {' · '}<span className={timeLeft <= 15 ? 'text-amber-400' : ''}>{timeLeft}s</span>
           </p>
         </>
+      )}
+
+      {/* Timeout — face didn't match in time */}
+      {stage === 'timeout' && (
+        <div className="space-y-3">
+          <div className="bg-amber-900/50 border border-amber-600 rounded-2xl p-4 text-center space-y-2">
+            <AlertTriangle size={28} className="text-amber-400 mx-auto" />
+            <p className="text-white font-semibold">Face scan timed out</p>
+            <p className="text-amber-300/80 text-sm">Camera could not confirm your identity. You can still clock in — it will be flagged for admin review.</p>
+          </div>
+          <button onClick={() => onVerified(null, 0)}
+            className={`w-full py-4 rounded-2xl text-white font-bold text-lg shadow-xl flex items-center justify-center gap-3 ${
+              type === 'clock_in' ? 'bg-green-600 hover:bg-green-500' : 'bg-red-600 hover:bg-red-500'
+            }`}>
+            {type === 'clock_in' ? <LogIn size={22} /> : <LogOut size={22} />}
+            {type === 'clock_in' ? 'Clock In Anyway' : 'Clock Out Anyway'}
+          </button>
+        </div>
       )}
 
       {/* Matched */}
