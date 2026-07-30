@@ -4,7 +4,7 @@ import {
   Plus, Search, Phone, ChevronRight, Users, ShieldCheck,
   Play, Pause, Ban, RefreshCw, ArrowLeftRight, MoreVertical,
   X, Loader, Building2, Briefcase, Clock, Check, Printer, Share2, Calendar,
-  UserCog, Eye, EyeOff
+  UserCog, Eye, EyeOff, ScanFace
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -383,6 +383,44 @@ function ReactivateModal({ worker, onClose, onDone }) {
   );
 }
 
+// ─── Reset Face Modal ─────────────────────────────────────────────────────────
+function ResetFaceModal({ worker, onClose, onDone }) {
+  const notify  = useNotify();
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await api.delete(`/workers/${worker._id}/face`);
+      notify(`${worker.fullName}'s face data cleared — they can re-register on next clock-in`);
+      onDone(); onClose();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to reset face', 'error');
+    } finally { setSaving(false); }
+  };
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100">
+        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+          <ScanFace size={15} className="text-purple-600" />
+        </div>
+        <p className="font-bold text-gray-900 text-sm">Reset Face Data</p>
+      </div>
+      <div className="px-5 py-4 space-y-4">
+        <p className="text-sm text-gray-600">
+          This will clear <strong>{worker.fullName}</strong>'s stored face. On their next clock-in they will be asked to register their face again fresh.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={submit} disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-600 text-white font-medium text-sm hover:bg-purple-700 transition-colors">
+            {saving ? <Loader size={15} className="animate-spin" /> : <><ScanFace size={14} /> Reset Face</>}
+          </button>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 // ─── Shared Modal components ──────────────────────────────────────────────────
 function Overlay({ onClose, children }) {
   return (
@@ -669,6 +707,7 @@ function ActionMenu({ worker, onAction }) {
             <>
               <MenuItem icon={ArrowLeftRight} label="Transfer"  cls="text-blue-600"  onClick={() => trigger('transfer')} />
               <MenuItem icon={Pause}          label="Suspend"   cls="text-amber-600" onClick={() => trigger('suspend')} />
+              <MenuItem icon={ScanFace}       label="Reset Face" cls="text-purple-600" onClick={() => trigger('resetFace')} />
               <div className="border-t border-gray-100 my-1" />
               <MenuItem icon={Ban}            label="Dismiss"   cls="text-red-600"   onClick={() => trigger('sack')} />
             </>
@@ -923,6 +962,7 @@ export default function Workers() {
       {modal?.type === 'sack'        && <SackModal              worker={modal.worker}                     onClose={closeModal} onDone={onDone} />}
       {modal?.type === 'reactivate'  && <ReactivateModal        worker={modal.worker}                     onClose={closeModal} onDone={onDone} />}
       {modal?.type === 'createStaff' && <CreateStaffAccountModal worker={modal.worker}                    onClose={closeModal} onDone={onDone} />}
+      {modal?.type === 'resetFace'   && <ResetFaceModal         worker={modal.worker}                     onClose={closeModal} onDone={onDone} />}
     </div>
   );
 }

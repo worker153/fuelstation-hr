@@ -81,5 +81,15 @@ router.put('/:id/rotation-schedule',   adminOnly, updateRotationSchedule);
 router.put('/:id/clock-in-required',   requirePermission('editWorkers'), updateClockInRequired);
 router.put('/:id/always-present',      requirePermission('editWorkers'), updateAlwaysPresent);
 router.put('/:id/auto-clock-in',       requirePermission('editWorkers'), updateAutoClockIn);
+router.delete('/:id/face',             adminOnly, async (req, res) => {
+  const Worker = require('../models/Worker');
+  const worker = await Worker.findOneAndUpdate(
+    { _id: req.params.id, company: req.user.company._id },
+    { $unset: { faceDescriptor: '', faceRegisteredAt: '', faceRegisteredOn: '' } },
+    { new: true }
+  );
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  res.json({ success: true, message: 'Face data cleared — worker can re-register on next clock-in' });
+});
 
 module.exports = router;
