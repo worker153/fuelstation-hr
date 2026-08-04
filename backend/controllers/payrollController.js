@@ -54,13 +54,19 @@ const generatePayroll = async (req, res) => {
     data: existing
   });
 
-  // Fetch active workers for THIS BRANCH ONLY
+  // Fetch active workers + workers sacked THIS month (they still get paid for days worked)
+  const monthStart = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+  const monthEnd   = new Date(Date.UTC(Number(year), Number(month), 0, 23, 59, 59));
+
   const workers = await Worker.find({
-    company:          cid,
-    branchId:         branchId,
-    employmentStatus: 'active'
+    company:  cid,
+    branchId: branchId,
+    $or: [
+      { employmentStatus: 'active' },
+      { employmentStatus: 'sacked', sackedAt: { $gte: monthStart, $lte: monthEnd } },
+    ],
   })
-  .select('fullName role branchId branch salary bankDetails resumptionDate')
+  .select('fullName role branchId branch salary bankDetails resumptionDate sackedAt employmentStatus')
   .populate('branchId', 'name')
   .lean();
 
@@ -104,7 +110,7 @@ const generatePayroll = async (req, res) => {
       accountNumber: w.bankDetails?.accountNumber || '',
       accountName:   w.bankDetails?.accountName   || '',
       paid:          false,
-      notes:         '',
+      notes:         w.employmentStatus === 'sacked' ? `Sacked ${new Date(w.sackedAt).toLocaleDateString('en-NG')} — partial month` : '',
     };
 
     if (paymentMode === 'per_litre') {
@@ -145,6 +151,16 @@ const generatePayroll = async (req, res) => {
         isProrated    = true;
         resumDate     = rd;
         daysWorked    = totalDays - rd.getDate() + 1;
+        calculatedSal = Math.round((gross * daysWorked / totalDays) * 100) / 100;
+      }
+    }
+
+    // Sacked this month — prorate up to sacking date
+    if (w.employmentStatus === 'sacked' && w.sackedAt) {
+      const sd = new Date(w.sackedAt);
+      if (sd.getFullYear() === y && sd.getMonth() + 1 === m) {
+        isProrated    = true;
+        daysWorked    = sd.getDate();  // worked day 1 up to sacking day
         calculatedSal = Math.round((gross * daysWorked / totalDays) * 100) / 100;
       }
     }
