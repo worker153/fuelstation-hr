@@ -380,7 +380,9 @@ export default function Payroll() {
   const [finalising, setFinalising] = useState(false);
   const [unlocking,  setUnlocking ] = useState(false);
   const [deleting,   setDeleting  ] = useState(false);
-  const [sharingPDF, setSharingPDF] = useState(false);
+  const [sharingPDF,  setSharingPDF ] = useState(false);
+  const [showWaGuide, setShowWaGuide] = useState(false);
+  const [savedPDFName, setSavedPDFName] = useState('');
   const [listKey,    setListKey   ] = useState(0);
 
   // Open a payroll by ID
@@ -631,21 +633,33 @@ export default function Payroll() {
       }
 
       // ── Share or download ─────────────────────────────────────────────────
-      const blob = doc.output('blob');
+      const buf  = doc.output('arraybuffer');
+      const blob = new Blob([buf], { type: 'application/pdf' });
       const file = new File([blob], filename, { type: 'application/pdf' });
 
+      let shared = false;
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          title: `Payroll — ${payroll.label}`,
-          text:  `${companyName} · ${payroll.label} payroll`,
-          files: [file],
-        });
-      } else {
-        // Desktop fallback — download
+        try {
+          await navigator.share({
+            title: `Payroll — ${payroll.label}`,
+            text:  `${companyName} · ${payroll.label} payroll`,
+            files: [file],
+          });
+          shared = true;
+        } catch (shareErr) {
+          if (shareErr.name === 'AbortError') { setSharingPDF(false); return; }
+          // Share failed — fall through to download + WhatsApp guide
+        }
+      }
+
+      if (!shared) {
+        // Save to downloads then show WhatsApp guide
         const url = URL.createObjectURL(blob);
         const a   = document.createElement('a');
         a.href = url; a.download = filename; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setSavedPDFName(filename);
+        setShowWaGuide(true);
       }
     } catch (err) {
       if (err.name !== 'AbortError')
@@ -854,6 +868,47 @@ export default function Payroll() {
           onClose={() => setShowGen(false)}
           onGenerated={(p) => { setShowGen(false); openPayroll(p._id); setListKey(k=>k+1); }}
         />
+      )}
+
+      {/* WhatsApp share guide modal */}
+      {showWaGuide && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center md:p-4 md:pl-64">
+          <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-gray-900">Send via WhatsApp</h3>
+                <p className="text-xs text-gray-400 mt-0.5">PDF saved to your Downloads folder</p>
+              </div>
+              <button onClick={() => setShowWaGuide(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2 font-mono break-all">{savedPDFName}</p>
+              <ol className="space-y-2.5">
+                {[
+                  'Open WhatsApp',
+                  'Open the chat you want to send to',
+                  'Tap the 📎 attachment icon',
+                  'Choose Document',
+                  `Find "${savedPDFName}" in Downloads`,
+                  'Tap Send',
+                ].map((step, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
+                    <span className="shrink-0 w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center justify-center mt-0.5">{i+1}</span>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100">
+              <button onClick={() => setShowWaGuide(false)}
+                className="w-full py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold">
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <style>{`
