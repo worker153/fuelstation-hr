@@ -669,6 +669,114 @@ export default function Payroll() {
     }
   };
 
+  // ── WhatsApp: always save to downloads + show guide ───────────────────────
+  const handleWhatsApp = async () => {
+    if (!payroll || sharingPDF) return;
+    setSharingPDF(true);
+    try {
+      const { jsPDF }              = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+
+      const companyName = user?.company?.name || 'HR System';
+      const today    = new Date().toLocaleDateString('en-NG',
+        { day: 'numeric', month: 'long', year: 'numeric' });
+      const filename = `Payroll-${payroll.label.replace(/\s+/g, '-')}.pdf`;
+      const N = (n) => `NGN ${Number(n || 0).toLocaleString('en-NG')}`;
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const PW  = doc.internal.pageSize.getWidth();
+
+      doc.setFillColor(20, 83, 45);
+      doc.rect(0, 0, PW, 36, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(17);
+      doc.setTextColor(255, 255, 255);
+      doc.text(companyName.toUpperCase(), 14, 13);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(166, 228, 166);
+      doc.text(`PAYROLL SHEET  |  ${payroll.label}  |  ${payroll.status === 'finalised' ? 'FINALISED' : 'DRAFT'}`, 14, 21);
+      doc.setFontSize(8);
+      doc.setTextColor(120, 190, 120);
+      doc.text(`Branch: ${payroll.branchName || '-'}   |   ${entries.length} workers   |   Printed: ${today}`, 14, 29);
+
+      const SY = 39;
+      doc.setFillColor(240, 250, 240);
+      doc.rect(0, SY, PW, 20, 'F');
+      doc.setDrawColor(200, 230, 200);
+      doc.line(0, SY, PW, SY);
+      doc.line(0, SY + 20, PW, SY + 20);
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(110);
+      doc.text('GROSS SALARY', 14, SY + 7);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(30);
+      doc.text(N(totalGross), 14, SY + 15);
+      if (totalShortage > 0) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(160, 0, 0);
+        doc.text('TOTAL SHORTAGE', 82, SY + 7);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
+        doc.text(`-${N(totalShortage)}`, 82, SY + 15);
+      }
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(20, 83, 45);
+      doc.text('NET PAYABLE', PW - 14, SY + 7, { align: 'right' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(N(totalNet), PW - 14, SY + 16, { align: 'right' });
+
+      const rows = entries.map((e, idx) => {
+        const net = computeNetPay(e);
+        const wdm = e.workingDaysInMonth || 26;
+        const absDeduct = (e.absentDays || 0) * ((e.grossSalary || 0) / wdm);
+        const deductLines = [];
+        if (e.shortage > 0)   deductLines.push(`-${N(e.shortage)} shortage`);
+        if (e.absentDays > 0) deductLines.push(`-${N(absDeduct)} absent`);
+        if (e.bonus > 0)      deductLines.push(`+${N(e.bonus)} bonus`);
+        return [
+          String(idx + 1),
+          `${e.workerName || '—'}\n${e.workerRole || ''}`,
+          `${e.bankName || '—'}\n${e.accountNumber || '—'}`,
+          N(e.grossSalary),
+          deductLines.join('\n') || '—',
+          N(net),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: SY + 24,
+        head: [['#', 'Worker / Role', 'Bank / Account', 'Gross', 'Deductions', 'Net Pay']],
+        body: rows,
+        styles: { fontSize: 7.5, cellPadding: 2.5, lineColor: [220,230,220], lineWidth: 0.2 },
+        headStyles: { fillColor: [20,83,45], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+        alternateRowStyles: { fillColor: [245,250,245] },
+        columnStyles: {
+          0: { cellWidth: 8 }, 1: { cellWidth: 42 }, 2: { cellWidth: 40 },
+          3: { cellWidth: 30 }, 4: { cellWidth: 35 }, 5: { cellWidth: 27, fontStyle: 'bold' },
+        },
+        margin: { left: 14, right: 14 },
+      });
+
+      const finalY = (doc.lastAutoTable?.finalY ?? 240) + 14;
+      if (finalY + 30 < doc.internal.pageSize.getHeight()) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(130);
+        [['Prepared By', 14], ['Reviewed By', 80], ['Authorised By', 147]].forEach(([lbl, x]) => {
+          doc.line(x, finalY + 16, x + 54, finalY + 16);
+          doc.text(`${lbl} - Signature & Date`, x, finalY + 21);
+        });
+      }
+
+      const buf  = doc.output('arraybuffer');
+      const blob = new Blob([buf], { type: 'application/pdf' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setSavedPDFName(filename);
+      setShowWaGuide(true);
+    } catch (err) {
+      notify(`PDF failed: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setSharingPDF(false);
+    }
+  };
+
   // Computed totals from local state
   const totalGross    = entries.reduce((s, e) => s + (e.grossSalary || 0), 0);
   const totalShortage = entries.reduce((s, e) => s + (e.shortage    || 0), 0);
@@ -703,6 +811,13 @@ export default function Payroll() {
                 <button onClick={handleSharePDF} disabled={sharingPDF}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100 transition-colors disabled:opacity-60">
                   {sharingPDF ? <Loader size={14} className="animate-spin" /> : <><Share2 size={14} /> Share PDF</>}
+                </button>
+                <button onClick={handleWhatsApp} disabled={sharingPDF}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#25D366] text-white text-sm font-medium hover:bg-[#1ebe5d] transition-colors disabled:opacity-60">
+                  {sharingPDF ? <Loader size={14} className="animate-spin" /> : <>
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    WhatsApp
+                  </>}
                 </button>
                 {canManage && !readonly && (
                   <button onClick={handleSave} disabled={saving}
