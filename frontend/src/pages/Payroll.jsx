@@ -768,8 +768,6 @@ export default function Payroll() {
       const a    = document.createElement('a');
       a.href = url; a.download = filename; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      setSavedPDFName(filename);
-      setShowWaGuide(true);
     } catch (err) {
       notify(`PDF failed: ${err.message || 'Unknown error'}`, 'error');
     } finally {
