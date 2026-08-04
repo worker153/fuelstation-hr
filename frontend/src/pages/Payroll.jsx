@@ -731,7 +731,7 @@ export default function Payroll() {
         if (e.bonus > 0)      deductLines.push(`+${N(e.bonus)} bonus`);
         return [
           String(idx + 1),
-          `${e.workerName || '—'}\n${e.workerRole || ''}`,
+          `${e.fullName || e.workerName || '—'}\n${e.role || e.workerRole || ''}`,
           `${e.bankName || '—'}\n${e.accountNumber || '—'}`,
           N(e.grossSalary),
           deductLines.join('\n') || '—',
