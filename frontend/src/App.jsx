@@ -48,6 +48,7 @@ import PumpAssignments        from './pages/PumpAssignments';
 import PumpIslands            from './pages/PumpIslands';
 import Maintenance            from './pages/Maintenance';
 import PumpRotation           from './pages/PumpRotation';
+import DailyMeters            from './pages/DailyMeters';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -168,6 +169,7 @@ export default function App() {
               <Route path="/pump-islands"         element={<PumpIslands />} />
               <Route path="/pump-assignments"     element={<PumpAssignments />} />
               <Route path="/pump-rotation"        element={<PumpRotation />} />
+              <Route path="/daily-meters"         element={<DailyMeters />} />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -14,7 +14,7 @@ const pumpIslandSchema = new Schema({
   isPriority:    { type: Boolean, default: false },            // overflow workers go here first
   fixedWorkerId:   { type: Schema.Types.ObjectId, ref: 'Worker', default: null },
   fixedWorkerName: { type: String, default: '' },
-  status:        { type: String, enum: ['active', 'inactive'], default: 'active' },
+  status:        { type: String, enum: ['active', 'inactive', 'out_of_stock', 'faulty'], default: 'active' },
   notes:         { type: String },
 }, { timestamps: true });
 

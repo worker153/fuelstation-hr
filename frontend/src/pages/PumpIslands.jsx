@@ -229,6 +229,8 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
             <label className="label">Status</label>
             <select className="input" value={form.status} onChange={e => set('status', e.target.value)}>
               <option value="active">Active</option>
+              <option value="out_of_stock">Out of Stock (skip auto-assign)</option>
+              <option value="faulty">Faulty (skip auto-assign)</option>
               <option value="inactive">Inactive (skip in rotation)</option>
             </select>
           </div>
@@ -284,7 +286,7 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
 // ─── Island Card ──────────────────────────────────────────────────────────────
 function IslandCard({ island, canManage, onEdit, onDelete, selected, onToggle }) {
   return (
-    <div className={`card p-4 space-y-3 ${island.status === 'inactive' ? 'opacity-60' : ''}`}>
+    <div className={`card p-4 space-y-3 ${['inactive','out_of_stock','faulty'].includes(island.status) ? 'opacity-70' : ''}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-2 min-w-0">
           {canManage && onToggle && (
@@ -297,6 +299,12 @@ function IslandCard({ island, canManage, onEdit, onDelete, selected, onToggle })
             <h3 className="font-bold text-gray-900">{island.name}</h3>
             {island.status === 'inactive' && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold uppercase">Inactive</span>
+            )}
+            {island.status === 'out_of_stock' && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold uppercase">⛽ Out of Stock</span>
+            )}
+            {island.status === 'faulty' && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold uppercase">🔧 Faulty</span>
             )}
             {island.isPriority && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">⭐ Priority</span>

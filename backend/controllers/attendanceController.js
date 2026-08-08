@@ -355,6 +355,26 @@ const terminalClock = async (req, res) => {
       };
       pumpAssignment = await autoAssignIsland(params);
       if (!pumpAssignment) pumpAssignment = await autoAssignPump(params);
+
+      // Link meter log: if supervisor pre-entered opening meter for this island, attach it
+      if (pumpAssignment?.island) {
+        try {
+          const IslandMeterLog = require('../models/IslandMeterLog');
+          const meterLog = await IslandMeterLog.findOneAndUpdate(
+            { company: device.company, islandId: pumpAssignment.island, date: dateStr },
+            { $set: { workerId: worker._id, workerName: worker.fullName, pumpAssignmentId: pumpAssignment._id } },
+            { new: true }
+          ).lean();
+          // Backfill openingMeter onto PumpAssignment if supervisor already entered it
+          if (meterLog?.openingMeter != null && !pumpAssignment.openingMeter) {
+            const PumpAssignmentM = require('../models/PumpAssignment');
+            await PumpAssignmentM.findByIdAndUpdate(pumpAssignment._id, { openingMeter: meterLog.openingMeter });
+            pumpAssignment = { ...pumpAssignment, openingMeter: meterLog.openingMeter };
+          }
+        } catch (e) {
+          console.error('[MeterLog] link error:', e.message);
+        }
+      }
     } catch (e) {
       console.error('[PumpAssign] error:', e.message);
     }
