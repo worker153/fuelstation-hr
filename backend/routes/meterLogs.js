@@ -1,6 +1,8 @@
 const express = require('express');
 const router  = express.Router();
-const { protect, checkSubscription, requirePermission } = require('../middleware/auth');
+const { protect }            = require('../middleware/auth');
+const { checkSubscription }  = require('../middleware/subscription');
+const { requirePermission }  = require('../middleware/permissions');
 const { getLogs, saveOpening, saveClosing, getReport } = require('../controllers/meterLogController');
 
 router.use(protect, checkSubscription);
