@@ -87,8 +87,8 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-64 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-4">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-64">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
@@ -104,7 +104,7 @@ function IslandModal({ island, branches, pumps, onClose, onSaved }) {
           </button>
         </div>
 
-        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+        <form onSubmit={submit} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
           {/* Name */}
           <div>
             <label className="label">Island Name *</label>
