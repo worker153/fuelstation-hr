@@ -31,7 +31,11 @@ const getLogs = async (req, res) => {
       islandName: island.name,
       islandStatus: island.status,
       log,
-      worker: assign ? { workerId: assign.worker, workerName: assign.workerName } : null,
+      worker: assign ? {
+        workerId:      assign.worker,
+        workerName:    assign.workerName,
+        pinnedIslands: assign.pinnedIslands || [],
+      } : null,
       pumpAssignmentId: assign?._id || null,
     };
   });

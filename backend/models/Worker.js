@@ -141,6 +141,9 @@ const workerSchema = new mongoose.Schema({
   sackedAt:   Date,
   sackedBy:   { type: ObjectId, ref: 'User' },
 
+  // ── Salary structure (template that defines component breakdown) ────────
+  salaryStructureId: { type: ObjectId, ref: 'SalaryStructure', default: null },
+
   // ── Salary & bank ────────────────────────────────────────────────────────
   salary: {
     monthly:        { type: Number, default: 0 },

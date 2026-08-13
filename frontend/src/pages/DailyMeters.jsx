@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Gauge, ChevronDown, Save, Loader, CheckCircle, Clock, AlertCircle,
   Droplets, User, Calendar, Building2, X, RefreshCw, BarChart2,
-  ChevronLeft, ChevronRight, Wrench, PackageX,
+  ChevronLeft, ChevronRight, Wrench, PackageX, Zap,
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -179,19 +179,93 @@ function ClosingModal({ island, date, onClose, onSaved }) {
   );
 }
 
+// ─── Island Status Modal ──────────────────────────────────────────────────────
+function IslandStatusModal({ island, onClose, onSaved }) {
+  const notify  = useNotify();
+  const [saving, setSaving] = useState(false);
+
+  const isDown = island.islandStatus !== 'active' && island.islandStatus !== 'inactive';
+
+  const mark = async (newStatus) => {
+    setSaving(true);
+    try {
+      const { data } = await api.patch(`/pump-islands/${island.islandId}/status`, { status: newStatus });
+      notify(newStatus === 'active' ? 'Island restored — worker now has two pumps ✓' : 'Island marked as down — worker reassigned ✓');
+      onSaved(data.data);
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to update status', 'error');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <p className="font-bold text-gray-900">{island.islandName}</p>
+            <p className="text-xs text-gray-400">Change island status</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-5 space-y-3">
+          {!isDown ? (
+            <>
+              <p className="text-sm text-gray-600">Mark this island as unavailable. The assigned worker will be moved to another island automatically.</p>
+              <button disabled={saving} onClick={() => mark('out_of_stock')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-60">
+                <PackageX size={20} className="text-amber-600 shrink-0" />
+                <div className="text-left">
+                  <p className="font-semibold text-amber-800 text-sm">Out of Fuel</p>
+                  <p className="text-xs text-amber-600">Worker reassigned until fuel arrives</p>
+                </div>
+              </button>
+              <button disabled={saving} onClick={() => mark('faulty')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-60">
+                <Wrench size={20} className="text-red-600 shrink-0" />
+                <div className="text-left">
+                  <p className="font-semibold text-red-800 text-sm">Pump Faulty</p>
+                  <p className="text-xs text-red-600">Worker reassigned until pump is repaired</p>
+                </div>
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600">
+                This island is currently <strong>{island.islandStatus === 'faulty' ? 'faulty' : 'out of fuel'}</strong>. Mark it as available — the original worker will automatically get this island as a second pump for today.
+              </p>
+              <button disabled={saving} onClick={() => mark('active')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-green-200 bg-green-50 hover:bg-green-100 transition-colors disabled:opacity-60">
+                {saving ? <Loader size={20} className="animate-spin text-green-600" /> : <Zap size={20} className="text-green-600 shrink-0" />}
+                <div className="text-left">
+                  <p className="font-semibold text-green-800 text-sm">Mark Available</p>
+                  <p className="text-xs text-green-600">Worker gets both islands for today</p>
+                </div>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Island Card ──────────────────────────────────────────────────────────────
-function IslandCard({ island, onOpenOpening, onOpenClosing }) {
-  const log    = island.log;
-  const worker = island.worker;
-  const st     = ISLAND_STATUS[island.islandStatus] || ISLAND_STATUS.active;
-  const StIcon = st.icon;
+function IslandCard({ island, onOpenOpening, onOpenClosing, onStatusChange }) {
+  const log     = island.log;
+  const worker  = island.worker;
+  const st      = ISLAND_STATUS[island.islandStatus] || ISLAND_STATUS.active;
+  const StIcon  = st.icon;
+  const isDown  = island.islandStatus === 'out_of_stock' || island.islandStatus === 'faulty';
 
   const hasOpening = log?.openingMeter != null;
   const hasClosing = log?.closingMeter != null;
   const isClosed   = log?.status === 'closed';
 
+  // Restored islands: worker now covers their current island PLUS this restored island
+  const pinned = island.worker?.pinnedIslands || [];
+
   return (
-    <div className={`card p-4 space-y-3 ${isClosed ? 'opacity-80' : ''}`}>
+    <div className={`card p-4 space-y-3 ${isDown ? 'border-2 border-amber-300' : ''} ${isClosed ? 'opacity-80' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -201,10 +275,36 @@ function IslandCard({ island, onOpenOpening, onOpenClosing }) {
             : <span className="text-xs text-gray-400">No worker assigned yet</span>
           }
         </div>
-        <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${st.cls}`}>
-          <StIcon size={10} /> {st.label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${st.cls}`}>
+            <StIcon size={10} /> {st.label}
+          </span>
+          {/* Status change button — only for active/down islands, not inactive */}
+          {island.islandStatus !== 'inactive' && (
+            <button onClick={() => onStatusChange(island)}
+              className="text-gray-400 hover:text-gray-700 p-0.5 rounded-lg hover:bg-gray-100 transition-colors"
+              title="Change island status">
+              <ChevronDown size={14} />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Down banner — shows when island is unavailable */}
+      {isDown && (
+        <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl ${isDown ? 'bg-amber-50 border border-amber-200 text-amber-700' : ''}`}>
+          {island.islandStatus === 'faulty' ? <Wrench size={12} /> : <PackageX size={12} />}
+          <span>Island down — worker moved to another pump. Tap <strong>↓</strong> to restore when ready.</span>
+        </div>
+      )}
+
+      {/* Restored second island (worker now covers two pumps) */}
+      {pinned.length > 0 && pinned.map((pi, idx) => (
+        <div key={idx} className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl bg-green-50 border border-green-200 text-green-700">
+          <Zap size={12} />
+          <span>Also covering <strong>{pi.islandName}</strong> (restored mid-day)</span>
+        </div>
+      ))}
 
       {/* Meter readings */}
       <div className="grid grid-cols-3 gap-2 text-center">
@@ -405,10 +505,11 @@ export default function DailyMeters() {
   const [branchId,   setBranchId  ] = useState('');
   const [branchName, setBranchName] = useState('');
   const [date,       setDate      ] = useState(todayStr());
-  const [islands,    setIslands   ] = useState([]);
-  const [loading,    setLoading   ] = useState(false);
-  const [view,       setView      ] = useState('daily'); // 'daily' | 'report'
-  const [openModal,  setOpenModal ] = useState(null);   // { type: 'opening'|'closing', island }
+  const [islands,      setIslands     ] = useState([]);
+  const [loading,      setLoading     ] = useState(false);
+  const [view,         setView        ] = useState('daily'); // 'daily' | 'report'
+  const [openModal,    setOpenModal   ] = useState(null);    // { type: 'opening'|'closing', island }
+  const [statusIsland, setStatusIsland] = useState(null);   // island being marked down/up
 
   useEffect(() => {
     api.get('/branches').then(r => {
@@ -442,6 +543,21 @@ export default function DailyMeters() {
       return { ...isl, log: updatedLog };
     }));
     setOpenModal(null);
+  };
+
+  // Called after supervisor changes an island's status mid-day
+  const handleIslandStatusSaved = (updatedIsland) => {
+    setIslands(prev => prev.map(isl => {
+      if (String(isl.islandId) !== String(updatedIsland._id)) return isl;
+      return { ...isl, islandStatus: updatedIsland.status };
+    }));
+    setStatusIsland(null);
+    // Reload full island list to get updated worker assignments
+    if (branchId && date) {
+      api.get('/meter-logs', { params: { branchId, date } })
+        .then(r => setIslands(r.data.data || []))
+        .catch(() => {});
+    }
   };
 
   // Navigation helpers for date
@@ -562,6 +678,7 @@ export default function DailyMeters() {
                     island={island}
                     onOpenOpening={(isl) => setOpenModal({ type: 'opening', island: { ...isl, branchId } })}
                     onOpenClosing={(isl) => setOpenModal({ type: 'closing', island: isl })}
+                    onStatusChange={(isl) => setStatusIsland(isl)}
                   />
                 ))}
               </div>
@@ -585,6 +702,13 @@ export default function DailyMeters() {
           date={date}
           onClose={() => setOpenModal(null)}
           onSaved={(log) => updateIsland(openModal.island.islandId, log)}
+        />
+      )}
+      {statusIsland && (
+        <IslandStatusModal
+          island={statusIsland}
+          onClose={() => setStatusIsland(null)}
+          onSaved={handleIslandStatusSaved}
         />
       )}
     </div>

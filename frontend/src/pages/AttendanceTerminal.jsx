@@ -916,16 +916,23 @@ export default function AttendanceTerminal() {
       const w = data.data;
       setWorker(w);
 
-      // Also load break status
+      // Load break status — keep local copy for immediate use below
+      let bs = null;
       try {
-        const { data: bs } = await axios.get(`${BASE}/breaks/status`, {
+        const { data: bsData } = await axios.get(`${BASE}/breaks/status`, {
           params: { deviceToken: token, workerId: w._id }
         });
-        setBreakStatus(bs.data);
+        bs = bsData.data;
+        setBreakStatus(bs);
       } catch { setBreakStatus(null); }
 
-      // First time → face registration; then straight to action panel
-      setStep(w.hasFace ? 'action' : 'register');
+      // Breaks are PIN-only — skip face registration if worker is currently on break
+      const onBreak = bs?.attendanceStatus === 'on_break' || bs?.attendanceStatus === 'break_overdue';
+      if (!w.hasFace && !onBreak) {
+        setStep('register');
+      } else {
+        setStep('action');
+      }
     } catch (err) {
       setPinError(err.response?.data?.message || 'Invalid PIN');
     } finally { setPinLoading(false); }
@@ -1127,7 +1134,7 @@ export default function AttendanceTerminal() {
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-xl truncate">{worker.fullName}</p>
               <p className="text-white/50 text-sm">{worker.role}</p>
-              {!worker.hasFace && (
+              {worker.hasFace && (
                 <p className="text-green-400 text-xs mt-0.5 flex items-center gap-1"><CheckCircle size={10} /> Face registered!</p>
               )}
             </div>

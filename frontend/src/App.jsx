@@ -49,6 +49,7 @@ import PumpIslands            from './pages/PumpIslands';
 import Maintenance            from './pages/Maintenance';
 import PumpRotation           from './pages/PumpRotation';
 import DailyMeters            from './pages/DailyMeters';
+import SalaryStructures       from './pages/SalaryStructures';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -146,7 +147,8 @@ export default function App() {
               <Route path="/pdf-maker"    element={<PdfMaker />} />
               <Route path="/attendance"    element={<Attendance />} />
               <Route path="/breaks"        element={<Breaks />} />
-              <Route path="/documents"     element={<Documents />} />
+              <Route path="/documents"          element={<Documents />} />
+              <Route path="/salary-structures" element={<SalaryStructures />} />
               <Route path="/offences"      element={<Offences />} />
               <Route path="/handbook"      element={<WorkerHandbook />} />
 

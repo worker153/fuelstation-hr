@@ -33,6 +33,16 @@ const pumpAssignmentSchema = new Schema({
     productTypes: [{ type: String }],
     assignedPumps: [assignedPumpSchema],
   }],
+  // Islands restored mid-day (went down → repaired/refueled → worker now covers two)
+  pinnedIslands: [{
+    island:       { type: Schema.Types.ObjectId, ref: 'PumpIsland' },
+    islandName:   { type: String },
+    includesGas:  { type: Boolean, default: false },
+    productTypes: [{ type: String }],
+    assignedPumps: [assignedPumpSchema],
+  }],
+  // Tracks which island this worker was displaced FROM (cleared once island is restored)
+  displacedFromIsland: { type: Schema.Types.ObjectId, ref: 'PumpIsland', default: null },
   worker:          { type: Schema.Types.ObjectId, ref: 'Worker',  required: true },
   workerName:      { type: String },
   workerRole:      { type: String },

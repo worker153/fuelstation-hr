@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
   AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen, FileText,
-  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage, RefreshCw, ClipboardList,
+  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage, RefreshCw, ClipboardList, DollarSign,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -34,7 +34,8 @@ export default function Sidebar({ onClose }) {
         { to: '/shifts',     icon: Clock,        label: 'Shifts',     show: isSuperAdmin() || can('manageBranches') || can('viewWorkers') },
         { to: '/attendance', icon: CalendarCheck, label: 'Attendance', show: isSuperAdmin() || can('manageBranches') },
         { to: '/breaks',     icon: Coffee,       label: 'Breaks',     show: isSuperAdmin() || can('manageBranches') },
-        { to: '/payroll',    icon: ReceiptText,  label: 'Payroll',    show: isSuperAdmin() || can('manageBranches') },
+        { to: '/payroll',           icon: ReceiptText,  label: 'Payroll',          show: isSuperAdmin() || can('manageBranches') },
+        { to: '/salary-structures', icon: DollarSign,   label: 'Salary Structures', show: isSuperAdmin() || can('manageBranches') },
         { to: '/shortages',  icon: AlertTriangle,  label: 'Shortages',   show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
         { to: '/expenses',   icon: ShoppingCart,   label: 'Expenses',    show: isSuperAdmin() || can('manageBranches') },
         { to: '/offences',   icon: AlertOctagon,   label: 'Disciplinary',show: isSuperAdmin() || can('bookOffences') },

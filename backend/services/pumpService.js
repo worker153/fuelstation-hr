@@ -284,22 +284,31 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     if (last) startOrder = last.rotationOrder;
   }
 
-  // Sort rotatable islands in rotation order starting just after last assignment
-  const sorted = [...rotatableIslands].sort((a, b) => {
+  // Rotation sort helper — wraps around after startOrder
+  const rotSort = (arr) => [...arr].sort((a, b) => {
     const oa = a.rotationOrder > startOrder ? a.rotationOrder : a.rotationOrder + 100000;
     const ob = b.rotationOrder > startOrder ? b.rotationOrder : b.rotationOrder + 100000;
     return oa - ob;
   });
 
-  // Pick first island under capacity (respects maxWorkers)
-  let selected = sorted.find(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
+  // Priority-fill: staff isPriority islands before any non-priority island.
+  // Only fall through to non-priority once every priority island is at capacity.
+  const priorityWithCapacity = rotatableIslands.filter(
+    i => i.isPriority && (islandCount[String(i._id)] || 0) < i.maxWorkers
+  );
 
-  // All rotatable islands at capacity — overflow to priority islands first, then any
-  if (!selected) {
-    selected =
-      sorted.find(i => i.isPriority) ||
-      sorted[0] ||
-      islands[0]; // absolute fallback
+  let selected;
+  if (priorityWithCapacity.length > 0) {
+    // Rotate fairly among whichever priority islands still have room
+    selected = rotSort(priorityWithCapacity)[0];
+  } else {
+    // All priority islands full (or none exist) — use full rotation
+    const sorted = rotSort(rotatableIslands);
+    selected = sorted.find(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
+    // Absolute fallback when every island is at capacity
+    if (!selected) {
+      selected = sorted.find(i => i.isPriority) || sorted[0] || islands[0];
+    }
   }
 
   // Assign a specific pump from the island to this worker.
@@ -377,11 +386,17 @@ async function redistributeIslands({ company, branchId, date }) {
     return (ix?.rotationOrder ?? 0) - (iy?.rotationOrder ?? 0);
   });
 
+  // Islands already pinned to a specific worker (mid-day restoration) — don't re-distribute these
+  const pinnedIslandIds = new Set(
+    assignments.flatMap(a => (a.pinnedIslands || []).map(pi => String(pi.island)))
+  );
+
   // Uncovered islands (no primary worker) — skip fixed islands whose fixed worker hasn't arrived yet
   // (we don't redistribute them as secondary; we just leave them uncovered until the fixed worker arrives)
   const uncovered = islands.filter(i => {
     if (islandWorkers[String(i._id)].length > 0) return false; // already covered
     if (i.fixedWorkerId) return false; // reserved for fixed worker — don't hand to someone else
+    if (pinnedIslandIds.has(String(i._id))) return false; // already pinned to someone mid-day
     return true;
   });
 

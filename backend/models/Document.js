@@ -17,9 +17,16 @@ const documentSchema = new mongoose.Schema({
   },
   requiresSignature: { type: Boolean, default: true },
 
+  // Uploaded file attachment (optional — document can be text-only or file-only)
+  fileUrl:       { type: String, default: null },
+  fileName:      { type: String, default: null },
+  filePublicId:  { type: String, default: null },
+  fileType:      { type: String, default: null }, // 'pdf' | 'image' | 'word' | etc.
+
   // Who this document is shared with
-  targetType:    { type: String, enum: ['all', 'selected'], default: 'all' },
+  targetType:    { type: String, enum: ['all', 'selected', 'role'], default: 'all' },
   targetWorkers: [{ type: ObjectId, ref: 'Worker' }],
+  targetRoles:   [{ type: String }], // e.g. ['Pump Attendant', 'Supervisor']
 
   createdBy:   { type: ObjectId, ref: 'User' },
   publishedAt: { type: Date },
