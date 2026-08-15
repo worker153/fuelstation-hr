@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, LogOut, Leaf, ShieldCheck, UserCog,
   Building2, Briefcase, Clock, CalendarCheck, ReceiptText,
   AlertTriangle, Smartphone, KeyRound, Coffee, AlertOctagon, BookOpen, FileText,
-  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage, RefreshCw, ClipboardList, DollarSign,
+  Plug2, Gauge, Fuel, ArrowLeftRight, Layers, ShoppingCart, FileImage, RefreshCw, ClipboardList, DollarSign, BarChart2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -38,7 +38,8 @@ export default function Sidebar({ onClose }) {
         { to: '/salary-structures', icon: DollarSign,   label: 'Salary Structures', show: isSuperAdmin() || can('manageBranches') },
         { to: '/shortages',  icon: AlertTriangle,  label: 'Shortages',   show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
         { to: '/expenses',   icon: ShoppingCart,   label: 'Expenses',    show: isSuperAdmin() || can('manageBranches') },
-        { to: '/offences',   icon: AlertOctagon,   label: 'Disciplinary',show: isSuperAdmin() || can('bookOffences') },
+        { to: '/offences',          icon: AlertOctagon, label: 'Disciplinary',       show: isSuperAdmin() || can('bookOffences') },
+        { to: '/staff-performance', icon: BarChart2,    label: 'Staff Performance',  show: isSuperAdmin() || can('manageBranches') },
       ],
     },
     {
