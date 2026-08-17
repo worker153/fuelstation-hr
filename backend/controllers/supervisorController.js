@@ -364,6 +364,22 @@ const supervisorReassign = async (req, res) => {
   if (!pump) return res.status(404).json({ success: false, message: 'Pump not found' });
 
   const oldIslandId = assignment.island;
+
+  // Archive the worker's current pump before reassigning (enables multi-pump breakdown)
+  if ((assignment.assignedPumps || []).length === 1) {
+    const old = assignment.assignedPumps[0];
+    if (!assignment.pumpHistory) assignment.pumpHistory = [];
+    assignment.pumpHistory.push({
+      pumpId:       old.pumpId,
+      pumpNumber:   old.pumpNumber,
+      pumpName:     old.pumpName,
+      productType:  old.productType,
+      islandId:     assignment.island,
+      islandName:   assignment.islandName,
+      reassignedAt: new Date(),
+    });
+  }
+
   assignment.island        = newIsland._id;
   assignment.islandName    = newIsland.name;
   assignment.assignedPumps = [{

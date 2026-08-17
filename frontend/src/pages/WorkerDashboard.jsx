@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Delete, Loader, ChevronLeft, ChevronRight, LogOut, X, Clock, Calendar, Gauge, Droplets } from 'lucide-react';
+import { Delete, Loader, ChevronLeft, ChevronRight, LogOut, X, Clock, Calendar, Gauge, Droplets, Fuel } from 'lucide-react';
 import axios from 'axios';
 
 const BASE   = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -8,19 +8,16 @@ const fmtL   = n  => n == null ? '—' : `${Number(n).toLocaleString('en-NG', { 
 const fmtNum = n  => n == null ? '—' : Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
-
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function fmtTime(ts) {
   if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return new Date(ts).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 function fmtDate(dateStr) {
   if (!dateStr) return '—';
-  // dateStr could be 'YYYY-MM-DD' or a full ISO timestamp
-  const d = new Date(dateStr);
+  const d   = new Date(dateStr);
   const dow = DAY_NAMES[d.getDay()];
   return `${dow} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
@@ -28,16 +25,13 @@ function fmtDate(dateStr) {
 // ── Bottom-sheet detail modal ──────────────────────────────────────────────────
 function DetailSheet({ title, emoji, rows, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end"
-         onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40" />
       <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[70vh] flex flex-col"
            onClick={e => e.stopPropagation()}>
-        {/* Handle */}
         <div className="flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 bg-gray-300 rounded-full" />
         </div>
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <span className="text-xl">{emoji}</span>
@@ -46,12 +40,10 @@ function DetailSheet({ title, emoji, rows, onClose }) {
               {rows.length}
             </span>
           </div>
-          <button onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-gray-100 transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 transition-colors">
             <X size={18} className="text-gray-500" />
           </button>
         </div>
-        {/* List */}
         <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
           {rows.length === 0 ? (
             <p className="text-center text-gray-400 py-10">No records</p>
@@ -148,18 +140,101 @@ function StatCard({ value, label, emoji, color, onClick, hasDetail }) {
   );
 }
 
+// ── Per-pump meter card for dashboard ─────────────────────────────────────────
+function PumpReadingCard({ pump }) {
+  const { pumpName, islandName, nozzle1: n1, nozzle2: n2, litres, productType } = pump;
+  const hasMeter = n1?.opening != null || n2?.opening != null;
+  const isClosed = n1?.closing != null || n2?.closing != null;
+
+  return (
+    <div className="bg-gray-50 rounded-xl overflow-hidden">
+      {/* Pump header */}
+      <div className="flex items-center justify-between px-3 py-2.5 bg-gray-100">
+        <div className="flex items-center gap-2">
+          <Fuel size={13} className="text-brand-500" />
+          <span className="text-xs font-bold text-gray-700">{pumpName}</span>
+          {productType && (
+            <span className="text-[10px] bg-brand-100 text-brand-700 font-semibold px-1.5 py-0.5 rounded-full">
+              {productType}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {isClosed && litres != null && (
+            <span className="text-xs font-black text-brand-700">{fmtL(litres)}</span>
+          )}
+          {isClosed
+            ? <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">Closed</span>
+            : hasMeter
+            ? <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">Open</span>
+            : null
+          }
+        </div>
+      </div>
+
+      {!hasMeter ? (
+        <p className="text-xs text-gray-400 text-center py-3">Supervisor hasn't entered opening meter yet</p>
+      ) : (
+        <div className="px-3 py-2.5 space-y-2">
+          {/* Outer nozzle */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Outer Nozzle</p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-500">Open:</span>
+              <span className="font-semibold text-gray-700">{fmtNum(n1?.opening)}</span>
+              {n1?.closing != null && (
+                <>
+                  <span className="text-gray-300">→</span>
+                  <span className="text-gray-500">Close:</span>
+                  <span className="font-semibold text-green-700">{fmtNum(n1.closing)}</span>
+                  {n1.litresSold != null && (
+                    <span className="ml-auto text-xs font-bold text-brand-600">{fmtL(n1.litresSold)}</span>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          {/* Inner nozzle */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Inner Nozzle</p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-500">Open:</span>
+              <span className="font-semibold text-gray-700">{fmtNum(n2?.opening)}</span>
+              {n2?.closing != null && (
+                <>
+                  <span className="text-gray-300">→</span>
+                  <span className="text-gray-500">Close:</span>
+                  <span className="font-semibold text-green-700">{fmtNum(n2.closing)}</span>
+                  {n2.litresSold != null && (
+                    <span className="ml-auto text-xs font-bold text-brand-600">{fmtL(n2.litresSold)}</span>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          {!isClosed && (
+            <p className="text-[10px] text-gray-400 italic pt-0.5">Closing meter not entered yet</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function WorkerDashboard() {
   const now = new Date();
-  const [step,    setStep   ] = useState('pin');
-  const [pin,     setPin    ] = useState('');
-  const [error,   setError  ] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [data,    setData   ] = useState(null);
-  const [month,   setMonth  ] = useState(now.getMonth() + 1);
-  const [year,    setYear   ] = useState(now.getFullYear());
-  const [sheet,   setSheet  ] = useState(null);  // { title, emoji, rows }
-  const [docs,    setDocs   ] = useState(null);  // { pending, signed }
+  const [step,          setStep        ] = useState('pin');
+  const [pin,           setPin         ] = useState('');
+  const [error,         setError       ] = useState('');
+  const [loading,       setLoading     ] = useState(false);
+  const [data,          setData        ] = useState(null);
+  const [month,         setMonth       ] = useState(now.getMonth() + 1);
+  const [year,          setYear        ] = useState(now.getFullYear());
+  const [sheet,         setSheet       ] = useState(null);
+  const [docs,          setDocs        ] = useState(null);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError,   setPickerError ] = useState('');
 
   const load = async (p, mo, yr) => {
     setLoading(true); setError('');
@@ -170,11 +245,22 @@ export default function WorkerDashboard() {
       ]);
       setData(dashRes.data.data);
       setDocs(docsRes.data.data);
-      setStep('dashboard');
+      setStep(dashRes.data.data.pump?.needsPicker ? 'pump-picker' : 'dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid PIN — try again');
       setPin('');
     } finally { setLoading(false); }
+  };
+
+  const handleSelectPump = async (pumpId) => {
+    setPickerLoading(true); setPickerError('');
+    try {
+      await axios.post(`${BASE}/worker/select-pump`, { pin, pumpId });
+      await load(pin, month, year);
+    } catch (err) {
+      setPickerError(err.response?.data?.message || 'Failed to select pump — try again');
+      setPickerLoading(false);
+    }
   };
 
   const changeMonth = (dir) => {
@@ -185,7 +271,6 @@ export default function WorkerDashboard() {
     if (pin) load(pin, mo, yr);
   };
 
-  // ── Build detail rows for each card ──────────────────────────────────────────
   const openSheet = (type) => {
     if (!data) return;
     const { shortages, attendanceDays } = data;
@@ -199,58 +284,35 @@ export default function WorkerDashboard() {
       }));
       setSheet({ title: 'Days Present', emoji: '✅', rows });
     }
-
     if (type === 'late') {
-      const rows = shortages.filter(s => s.source === 'late_arrival').map(s => ({
-        date: s.date,
-        badge:    fmt(s.amount),
-        badgeCls: 'bg-amber-100 text-amber-700',
-        sub: s.notes || 'Late arrival',
-      }));
-      setSheet({ title: 'Came Late', emoji: '🕐', rows });
+      setSheet({ title: 'Came Late', emoji: '🕐', rows: shortages.filter(s => s.source === 'late_arrival').map(s => ({
+        date: s.date, badge: fmt(s.amount), badgeCls: 'bg-amber-100 text-amber-700', sub: s.notes || 'Late arrival',
+      }))});
     }
-
     if (type === 'absent') {
-      const rows = shortages.filter(s => s.source === 'absent').map(s => ({
-        date: s.date,
-        badge:    fmt(s.amount),
-        badgeCls: 'bg-red-100 text-red-700',
-        sub: s.notes || 'Absent',
-      }));
-      setSheet({ title: 'Marked Absent', emoji: '❌', rows });
+      setSheet({ title: 'Marked Absent', emoji: '❌', rows: shortages.filter(s => s.source === 'absent').map(s => ({
+        date: s.date, badge: fmt(s.amount), badgeCls: 'bg-red-100 text-red-700', sub: s.notes || 'Absent',
+      }))});
     }
-
     if (type === 'noshow') {
-      const rows = shortages.filter(s => s.source === 'no_clockin').map(s => ({
-        date: s.date,
-        badge:    fmt(s.amount),
-        badgeCls: 'bg-red-100 text-red-700',
-        sub: s.notes || 'Did not come in',
-      }));
-      setSheet({ title: 'Did Not Come', emoji: '❌', rows });
+      setSheet({ title: 'Did Not Come', emoji: '❌', rows: shortages.filter(s => s.source === 'no_clockin').map(s => ({
+        date: s.date, badge: fmt(s.amount), badgeCls: 'bg-red-100 text-red-700', sub: s.notes || 'Did not come in',
+      }))});
     }
-
     if (type === 'early') {
-      const rows = shortages.filter(s => s.source === 'early_departure').map(s => ({
-        date: s.date,
-        badge:    fmt(s.amount),
-        badgeCls: 'bg-orange-100 text-orange-700',
-        sub: s.notes || 'Left early',
-      }));
-      setSheet({ title: 'Left Early', emoji: '🚪', rows });
+      setSheet({ title: 'Left Early', emoji: '🚪', rows: shortages.filter(s => s.source === 'early_departure').map(s => ({
+        date: s.date, badge: fmt(s.amount), badgeCls: 'bg-orange-100 text-orange-700', sub: s.notes || 'Left early',
+      }))});
     }
-
     if (type === 'litres') {
       const rows = (data.pump?.dailyLitres || []).map(d => ({
-        date: d.date,
-        badge:    fmtL(d.litres),
-        badgeCls: 'bg-brand-100 text-brand-700',
-        sub: d.islandName || '',
+        date: d.date, badge: fmtL(d.litres), badgeCls: 'bg-brand-100 text-brand-700', sub: d.islandName || '',
       }));
       setSheet({ title: 'Litres Sold', emoji: '⛽', rows });
     }
   };
 
+  // ── PIN screen ─────────────────────────────────────────────────────────────
   if (step === 'pin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-brand-50 to-white flex items-center justify-center p-4">
@@ -268,21 +330,123 @@ export default function WorkerDashboard() {
     );
   }
 
+  // ── Pump picker screen ─────────────────────────────────────────────────────
+  if (step === 'pump-picker') {
+    const pumpData  = data?.pump;
+    const island    = pumpData?.assignment;
+    const pumps     = pumpData?.islandPumps || [];
+    const firstName = data?.worker?.fullName?.split(' ')[0] || 'there';
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-brand-50 to-white flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm overflow-hidden">
+          {/* Header */}
+          <div className="bg-brand-600 px-6 py-8 text-center">
+            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+              <span className="text-3xl">⛽</span>
+            </div>
+            <h1 className="text-white text-xl font-bold">Welcome, {firstName}!</h1>
+            <p className="text-brand-100 text-sm mt-1">
+              You're assigned to <span className="font-bold text-white">{island?.islandName || 'your island'}</span>
+            </p>
+          </div>
+
+          {/* Pump list */}
+          <div className="px-5 py-5">
+            <p className="text-sm font-semibold text-gray-600 text-center mb-4">
+              Which pump will you be selling from today?
+            </p>
+
+            <div className="space-y-3">
+              {pumps.map(p => {
+                const isAvailable = !p.inUse && p.status === 'active';
+                const statusLabel = p.inUse
+                  ? 'In Use'
+                  : p.status === 'faulty'
+                  ? 'Faulty'
+                  : p.status === 'out_of_stock'
+                  ? 'No Fuel'
+                  : 'Available';
+                const statusCls = p.inUse
+                  ? 'bg-red-100 text-red-600'
+                  : p.status === 'faulty'
+                  ? 'bg-orange-100 text-orange-600'
+                  : p.status === 'out_of_stock'
+                  ? 'bg-yellow-100 text-yellow-700'
+                  : 'bg-green-100 text-green-700';
+
+                return (
+                  <button
+                    key={p.pumpId}
+                    disabled={!isAvailable || pickerLoading}
+                    onClick={() => handleSelectPump(p.pumpId)}
+                    className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl border-2 transition-all
+                      ${isAvailable
+                        ? 'border-brand-200 bg-brand-50 hover:border-brand-500 hover:bg-brand-100 active:scale-95 cursor-pointer'
+                        : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0
+                        ${isAvailable ? 'bg-brand-100' : 'bg-gray-100'}`}>
+                        <Fuel size={18} className={isAvailable ? 'text-brand-600' : 'text-gray-400'} />
+                      </div>
+                      <div className="text-left">
+                        <p className={`font-bold text-base ${isAvailable ? 'text-gray-800' : 'text-gray-400'}`}>
+                          {p.pumpName}
+                        </p>
+                        <p className="text-xs text-gray-400">{p.productType}</p>
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${statusCls}`}>
+                      {statusLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {pickerError && (
+              <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl mt-4 text-center font-medium">
+                {pickerError}
+              </p>
+            )}
+
+            {pickerLoading && (
+              <div className="flex items-center justify-center gap-2 mt-4 text-brand-600">
+                <Loader size={18} className="animate-spin" />
+                <span className="text-sm font-medium">Selecting pump…</span>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setStep('pin'); setPin(''); setData(null); }}
+              className="w-full mt-5 text-xs text-gray-400 hover:text-gray-600 transition-colors text-center py-1">
+              ← Exit
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Dashboard screen ───────────────────────────────────────────────────────
   const { worker, attendance, salary, shortages, period } = data;
   const pct = salary.baseSalary > 0
     ? Math.max(0, Math.round((salary.expectedPay / salary.baseSalary) * 100))
     : 100;
 
+  // Pump data
+  const pumpData      = data.pump;
+  const breakdown     = pumpData?.todayPumpBreakdown || [];
+  const grandTotal    = breakdown.reduce((s, p) => s + (p.litres || 0), 0);
+  const hasBreakdown  = breakdown.length > 0;
+  const isMultiPump   = breakdown.length > 1;
+
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Detail bottom sheet */}
       {sheet && (
-        <DetailSheet
-          title={sheet.title}
-          emoji={sheet.emoji}
-          rows={sheet.rows}
-          onClose={() => setSheet(null)}
-        />
+        <DetailSheet title={sheet.title} emoji={sheet.emoji} rows={sheet.rows} onClose={() => setSheet(null)} />
       )}
 
       {/* Top bar */}
@@ -338,72 +502,92 @@ export default function WorkerDashboard() {
           )}
         </div>
 
-        {/* ── TODAY'S PUMP ASSIGNMENT + METER READINGS ── */}
-        {data.pump && (
+        {/* ── TODAY'S PUMP CARD ── */}
+        {pumpData && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Gauge size={15} className="text-brand-500" />
-                <p className="font-bold text-gray-800">Today's Pump</p>
+                <p className="font-bold text-gray-800">
+                  {isMultiPump ? "Today's Sales" : "Today's Pump"}
+                </p>
               </div>
-              {data.pump.meterLog?.totalLitres != null && (
-                <span className="text-sm font-bold text-brand-600">{fmtL(data.pump.meterLog.totalLitres)} sold</span>
+              {isMultiPump && grandTotal > 0 && (
+                <span className="text-sm font-black text-brand-700">{fmtL(grandTotal)} total</span>
+              )}
+              {!isMultiPump && breakdown[0]?.litres != null && (
+                <span className="text-sm font-bold text-brand-600">{fmtL(breakdown[0].litres)} sold</span>
               )}
             </div>
 
-            {!data.pump.assignment ? (
+            {!pumpData.assignment ? (
               <div className="px-4 py-5 text-center text-gray-400 text-sm">
                 No pump assigned today
               </div>
             ) : (
               <div className="px-4 py-3 space-y-3">
-                {/* Island name */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Island</span>
-                  <span className="text-sm font-bold text-gray-800">{data.pump.assignment.islandName}</span>
-                  {data.pump.meterLog?.status === 'closed' && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Closed</span>
-                  )}
-                </div>
+                {/* Island + pump name header */}
+                {!isMultiPump && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      {pumpData.assignment.islandName}
+                    </span>
+                    {breakdown[0] && (
+                      <>
+                        <span className="text-gray-300">›</span>
+                        <span className="text-sm font-bold text-gray-800">{breakdown[0].pumpName}</span>
+                        {breakdown[0].productType && (
+                          <span className="text-[10px] bg-brand-100 text-brand-700 font-semibold px-1.5 py-0.5 rounded-full">
+                            {breakdown[0].productType}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {!breakdown.length && (
+                      <span className="text-sm font-bold text-gray-800">
+                        {pumpData.assignment.assignedPumps?.[0]?.pumpName || '—'}
+                      </span>
+                    )}
+                  </div>
+                )}
 
-                {/* Per-pump meter readings */}
-                {data.pump.meterLog?.pumps?.length > 0 ? (
+                {/* Per-pump breakdown */}
+                {hasBreakdown ? (
                   <div className="space-y-2">
-                    {data.pump.meterLog.pumps.map((p, i) => (
-                      <div key={i} className="bg-gray-50 rounded-xl px-3 py-2.5">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold text-gray-700">{p.pumpName}</span>
-                          {p.totalLitres != null && (
-                            <span className="text-xs font-bold text-brand-600">{fmtL(p.totalLitres)}</span>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500">
-                          <div className="flex justify-between">
-                            <span>Outer open:</span>
-                            <span className="font-medium text-gray-700">{fmtNum(p.nozzle1?.opening)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Outer close:</span>
-                            <span className={`font-medium ${p.nozzle1?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmtNum(p.nozzle1?.closing)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Inner open:</span>
-                            <span className="font-medium text-gray-700">{fmtNum(p.nozzle2?.opening)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Inner close:</span>
-                            <span className={`font-medium ${p.nozzle2?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmtNum(p.nozzle2?.closing)}</span>
-                          </div>
-                        </div>
+                    {breakdown.map((p, i) => (
+                      <div key={p.pumpId || i}>
+                        {isMultiPump && (
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1">
+                            {p.islandName} · {p.pumpName}
+                            {i < breakdown.length - 1 && (
+                              <span className="ml-1 text-orange-400">(previous)</span>
+                            )}
+                          </p>
+                        )}
+                        <PumpReadingCard pump={p} />
                       </div>
                     ))}
+                    {isMultiPump && grandTotal > 0 && (
+                      <div className="flex items-center justify-between bg-brand-50 rounded-xl px-3 py-2.5">
+                        <span className="text-sm font-bold text-brand-700">Grand Total Sold Today</span>
+                        <span className="text-base font-black text-brand-700">{fmtL(grandTotal)}</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 py-1">Meter readings not entered yet for today</p>
+                  <div className="bg-gray-50 rounded-xl px-3 py-4 text-center">
+                    <Fuel size={20} className="text-gray-300 mx-auto mb-1.5" />
+                    <p className="text-xs text-gray-400">
+                      {pumpData.assignment.assignedPumps?.length === 1
+                        ? 'Supervisor hasn\'t entered your opening meter yet'
+                        : 'Meter readings not entered yet for today'
+                      }
+                    </p>
+                  </div>
                 )}
 
                 {/* Monthly litres */}
-                {data.pump.monthlyLitres > 0 && (
+                {pumpData.monthlyLitres > 0 && (
                   <button onClick={() => openSheet('litres')}
                     className="w-full flex items-center justify-between bg-brand-50 rounded-xl px-3 py-2.5 active:bg-brand-100 transition-colors">
                     <div className="flex items-center gap-2">
@@ -411,7 +595,7 @@ export default function WorkerDashboard() {
                       <span className="text-sm font-semibold text-brand-700">Total This Month</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-sm font-black text-brand-700">{fmtL(data.pump.monthlyLitres)}</span>
+                      <span className="text-sm font-black text-brand-700">{fmtL(pumpData.monthlyLitres)}</span>
                       <span className="text-xs text-brand-400">→</span>
                     </div>
                   </button>
@@ -421,36 +605,16 @@ export default function WorkerDashboard() {
           </div>
         )}
 
-        {/* ── ATTENDANCE CARDS (tappable) ── */}
+        {/* ── ATTENDANCE CARDS ── */}
         <div className="grid grid-cols-2 gap-3">
-          <StatCard
-            value={attendance.daysPresent}
-            label="Days Present" emoji="✅"
-            color="text-green-600"
-            hasDetail={attendance.daysPresent > 0}
-            onClick={() => attendance.daysPresent > 0 && openSheet('present')}
-          />
-          <StatCard
-            value={attendance.noShowDays}
-            label="Did Not Come" emoji="❌"
-            color="text-red-500"
-            hasDetail={attendance.noShowDays > 0}
-            onClick={() => attendance.noShowDays > 0 && openSheet('noshow')}
-          />
-          <StatCard
-            value={attendance.lateDays}
-            label="Came Late" emoji="🕐"
-            color="text-amber-500"
-            hasDetail={attendance.lateDays > 0}
-            onClick={() => attendance.lateDays > 0 && openSheet('late')}
-          />
-          <StatCard
-            value={attendance.earlyExitDays}
-            label="Left Early" emoji="🚪"
-            color="text-orange-500"
-            hasDetail={attendance.earlyExitDays > 0}
-            onClick={() => attendance.earlyExitDays > 0 && openSheet('early')}
-          />
+          <StatCard value={attendance.daysPresent}   label="Days Present"  emoji="✅" color="text-green-600"
+            hasDetail={attendance.daysPresent > 0}   onClick={() => attendance.daysPresent > 0 && openSheet('present')} />
+          <StatCard value={attendance.noShowDays}    label="Did Not Come"  emoji="❌" color="text-red-500"
+            hasDetail={attendance.noShowDays > 0}    onClick={() => attendance.noShowDays > 0 && openSheet('noshow')} />
+          <StatCard value={attendance.lateDays}      label="Came Late"     emoji="🕐" color="text-amber-500"
+            hasDetail={attendance.lateDays > 0}      onClick={() => attendance.lateDays > 0 && openSheet('late')} />
+          <StatCard value={attendance.earlyExitDays} label="Left Early"    emoji="🚪" color="text-orange-500"
+            hasDetail={attendance.earlyExitDays > 0} onClick={() => attendance.earlyExitDays > 0 && openSheet('early')} />
         </div>
 
         {/* ── DEDUCTIONS LIST ── */}
@@ -493,7 +657,6 @@ export default function WorkerDashboard() {
             <div className="px-4 py-3 border-b border-gray-100">
               <p className="font-bold text-gray-800">📄 Company Documents</p>
             </div>
-
             {docs.pending?.length > 0 && (
               <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100">
                 <p className="text-xs font-bold text-amber-700 mb-2">⚠️ Requires your signature</p>
@@ -505,7 +668,6 @@ export default function WorkerDashboard() {
                 ))}
               </div>
             )}
-
             {docs.signed?.length > 0 && (
               <div className="divide-y divide-gray-50">
                 {docs.signed.map(d => (

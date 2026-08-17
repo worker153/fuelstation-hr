@@ -4,6 +4,9 @@ const Branch          = require('../models/Branch');
 const Payroll         = require('../models/Payroll');
 const PumpAssignment  = require('../models/PumpAssignment');
 const IslandMeterLog  = require('../models/IslandMeterLog');
+const PumpIsland      = require('../models/PumpIsland');
+const Pump            = require('../models/Pump');
+const Attendance      = require('../models/Attendance');
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -455,8 +458,6 @@ const workerPinLookup = async (req, res) => {
 
 // ─── GET /api/shortages/worker/dashboard?pin=xxxx&month=5&year=2026 ──────────
 // Public — worker enters PIN, sees their attendance + salary summary
-const Attendance = require('../models/Attendance');
-
 const workerDashboard = async (req, res) => {
   const { pin, month, year } = req.query;
   if (!pin) return res.status(400).json({ success: false, message: 'PIN required' });
@@ -559,6 +560,17 @@ const workerDashboard = async (req, res) => {
     `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
   const todayDate = toDateStr(watNow);
 
+  // Today's clock status (separate from the month filter)
+  const todayAtt = await Attendance.find({
+    company: worker.company,
+    worker:  worker._id,
+    date:    todayDate,
+  }).select('type').lean();
+  const todayStatus = {
+    clockedIn:  todayAtt.some(a => a.type === 'clock_in'),
+    clockedOut: todayAtt.some(a => a.type === 'clock_out'),
+  };
+
   const todayAssignment = await PumpAssignment.findOne({
     company: worker.company,
     worker:  worker._id,
@@ -567,12 +579,102 @@ const workerDashboard = async (req, res) => {
   }).lean();
 
   let todayMeterLog = null;
+  let islandPumps   = [];
+  let needsPicker   = false;
+
   if (todayAssignment?.island) {
     todayMeterLog = await IslandMeterLog.findOne({
       company:  worker.company,
       islandId: todayAssignment.island,
       date:     todayDate,
     }).lean();
+
+    // All pumps on the worker's island for the pump picker
+    const island = await PumpIsland.findById(todayAssignment.island)
+      .populate('pumps', '_id pumpNumber pumpName productType status')
+      .lean();
+
+    if (island?.pumps?.length > 0) {
+      // Find pumps in use by OTHER workers today
+      const otherAssigns = await PumpAssignment.find({
+        company: worker.company,
+        date:    todayDate,
+        status:  { $ne: 'cancelled' },
+        worker:  { $ne: worker._id },
+      }).lean();
+      const otherPumpIds = new Set();
+      otherAssigns.forEach(a => (a.assignedPumps || []).forEach(p => otherPumpIds.add(String(p.pumpId))));
+
+      const myPumpIds = new Set((todayAssignment.assignedPumps || []).map(p => String(p.pumpId)));
+
+      islandPumps = island.pumps.map(p => ({
+        pumpId:      String(p._id),
+        pumpNumber:  p.pumpNumber,
+        pumpName:    p.pumpName,
+        productType: p.productType,
+        status:      p.status,
+        inUse:       otherPumpIds.has(String(p._id)),
+        selected:    myPumpIds.has(String(p._id)),
+      }));
+
+      // Show picker when: clocked in + island has >1 pump + worker hasn't selected exactly 1
+      needsPicker = todayStatus.clockedIn &&
+        island.pumps.length > 1 &&
+        (todayAssignment.assignedPumps || []).length !== 1;
+    }
+  }
+
+  // Per-pump breakdown for today — current pump + any previous pumps (if reassigned mid-day)
+  let todayPumpBreakdown = [];
+  if (todayAssignment) {
+    const allSessions = [
+      ...(todayAssignment.pumpHistory || []).map(h => ({
+        pumpId:      h.pumpId,
+        pumpNumber:  h.pumpNumber,
+        pumpName:    h.pumpName,
+        productType: h.productType,
+        islandId:    h.islandId,
+        islandName:  h.islandName,
+      })),
+      ...(todayAssignment.assignedPumps || []).map(p => ({
+        pumpId:      p.pumpId,
+        pumpNumber:  p.pumpNumber,
+        pumpName:    p.pumpName,
+        productType: p.productType,
+        islandId:    todayAssignment.island,
+        islandName:  todayAssignment.islandName,
+      })),
+    ];
+
+    if (allSessions.length > 0) {
+      const uniqueIslandIds = [...new Set(allSessions.map(s => String(s.islandId)).filter(Boolean))];
+      const logs = await IslandMeterLog.find({
+        company:  worker.company,
+        islandId: { $in: uniqueIslandIds },
+        date:     todayDate,
+      }).lean();
+      const logByIsland = Object.fromEntries(logs.map(l => [String(l.islandId), l]));
+
+      todayPumpBreakdown = allSessions.map(session => {
+        const mlog    = logByIsland[String(session.islandId)] || null;
+        const pumpLog = (mlog?.pumps || []).find(lp => String(lp.pumpId) === String(session.pumpId));
+        const n1 = pumpLog?.nozzle1 || {};
+        const n2 = pumpLog?.nozzle2 || {};
+        const litresN1 = (n1.opening != null && n1.closing != null) ? Math.max(0, n1.closing - n1.opening) : null;
+        const litresN2 = (n2.opening != null && n2.closing != null) ? Math.max(0, n2.closing - n2.opening) : null;
+        const litres   = (litresN1 != null || litresN2 != null) ? (litresN1 || 0) + (litresN2 || 0) : null;
+        return {
+          pumpId:      String(session.pumpId),
+          pumpNumber:  session.pumpNumber,
+          pumpName:    session.pumpName,
+          productType: session.productType,
+          islandName:  session.islandName,
+          nozzle1: { opening: n1.opening ?? null, closing: n1.closing ?? null, litresSold: litresN1 },
+          nozzle2: { opening: n2.opening ?? null, closing: n2.closing ?? null, litresSold: litresN2 },
+          litres,
+        };
+      });
+    }
   }
 
   // Monthly litres sold — sum all meter logs for this worker this month
@@ -633,17 +735,22 @@ const workerDashboard = async (req, res) => {
       attendanceDays,   // for "Days Present" tap-to-expand
       pump: {
         todayDate,
+        todayStatus,
+        needsPicker,
         assignment: todayAssignment ? {
-          islandName:    todayAssignment.islandName,
-          assignedPumps: todayAssignment.assignedPumps || [],
+          islandName:        todayAssignment.islandName,
+          islandId:          String(todayAssignment.island),
+          assignedPumps:     todayAssignment.assignedPumps || [],
           additionalIslands: todayAssignment.additionalIslands || [],
-          pinnedIslands: todayAssignment.pinnedIslands || [],
+          pinnedIslands:     todayAssignment.pinnedIslands || [],
         } : null,
+        islandPumps,
         meterLog: todayMeterLog ? {
           pumps:       todayMeterLog.pumps || [],
           totalLitres: todayMeterLog.totalLitres,
           status:      todayMeterLog.status,
         } : null,
+        todayPumpBreakdown,
         monthlyLitres,
         dailyLitres,
       },

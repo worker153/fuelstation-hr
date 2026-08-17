@@ -2,6 +2,8 @@ const Worker           = require('../models/Worker');
 const AttendanceDevice = require('../models/AttendanceDevice');
 const Attendance       = require('../models/Attendance');
 const Offence          = require('../models/Offence');
+const PumpAssignment   = require('../models/PumpAssignment');
+const Pump             = require('../models/Pump');
 
 // ─── POST /api/worker/auth ────────────────────────────────────────────────────
 // Public. PIN + optional device token.
@@ -255,4 +257,66 @@ const bookOffence = async (req, res) => {
   res.status(201).json({ success: true, data: offence });
 };
 
-module.exports = { workerPortalAuth, workerChangePin, bookOffence };
+// ─── POST /api/worker/select-pump ────────────────────────────────────────────
+// PIN-authenticated. Worker picks which pump they'll sell from today.
+const workerSelectPump = async (req, res) => {
+  const { pin, pumpId } = req.body;
+  if (!pin || !pumpId)
+    return res.status(400).json({ success: false, message: 'pin and pumpId are required' });
+
+  const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' }).lean();
+  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN' });
+
+  const watNow    = new Date(Date.now() + 60 * 60 * 1000);
+  const toDateStr = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  const today = toDateStr(watNow);
+
+  const assignment = await PumpAssignment.findOne({
+    company: worker.company,
+    worker:  worker._id,
+    date:    today,
+    status:  { $ne: 'cancelled' },
+  });
+  if (!assignment)
+    return res.status(404).json({ success: false, message: 'No pump assignment for today' });
+
+  // Block if another worker already claimed this pump
+  const conflict = await PumpAssignment.findOne({
+    company: worker.company,
+    date:    today,
+    status:  { $ne: 'cancelled' },
+    worker:  { $ne: worker._id },
+    'assignedPumps.pumpId': pumpId,
+  }).lean();
+  if (conflict)
+    return res.status(400).json({ success: false, message: 'That pump is already taken by another worker' });
+
+  const pump = await Pump.findOne({ _id: pumpId, company: worker.company }).lean();
+  if (!pump) return res.status(404).json({ success: false, message: 'Pump not found' });
+  if (pump.status === 'faulty')
+    return res.status(400).json({ success: false, message: 'That pump is marked as faulty' });
+  if (pump.status === 'out_of_stock')
+    return res.status(400).json({ success: false, message: 'That pump has no fuel' });
+
+  assignment.assignedPumps = [{
+    pumpId:      pump._id,
+    pumpNumber:  pump.pumpNumber,
+    pumpName:    pump.pumpName,
+    productType: pump.productType,
+  }];
+  await assignment.save();
+
+  res.json({
+    success: true,
+    message: `You are now on ${pump.pumpName}`,
+    data: {
+      pumpId:      String(pump._id),
+      pumpName:    pump.pumpName,
+      pumpNumber:  pump.pumpNumber,
+      productType: pump.productType,
+    },
+  });
+};
+
+module.exports = { workerPortalAuth, workerChangePin, bookOffence, workerSelectPump };

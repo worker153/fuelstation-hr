@@ -43,6 +43,17 @@ const pumpAssignmentSchema = new Schema({
   }],
   // Tracks which island this worker was displaced FROM (cleared once island is restored)
   displacedFromIsland: { type: Schema.Types.ObjectId, ref: 'PumpIsland', default: null },
+  // Pumps worker sold from before a mid-day reassignment
+  pumpHistory: [{
+    pumpId:       { type: Schema.Types.ObjectId, ref: 'Pump' },
+    pumpNumber:   { type: Number },
+    pumpName:     { type: String },
+    productType:  { type: String },
+    islandId:     { type: Schema.Types.ObjectId, ref: 'PumpIsland' },
+    islandName:   { type: String },
+    reassignedAt: { type: Date },
+    _id: false,
+  }],
   worker:          { type: Schema.Types.ObjectId, ref: 'Worker',  required: true },
   workerName:      { type: String },
   workerRole:      { type: String },
