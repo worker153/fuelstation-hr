@@ -447,6 +447,79 @@ const supervisorReassign = async (req, res) => {
   });
 };
 
+// ── POST /api/supervisor/place-worker — initial placement for workers with no assignment today ──
+const supervisorPlaceWorker = async (req, res) => {
+  const { pin, workerId, islandId, pumpId } = req.body;
+
+  if (!workerId || !islandId)
+    return res.status(400).json({ success: false, message: 'workerId and islandId required' });
+
+  const sup = await resolveSupervisor(pin);
+  if (!sup) return res.status(401).json({ success: false, message: 'Invalid PIN or not a supervisor' });
+
+  const company  = sup.company;
+  const branchId = sup.branchId?._id || sup.branchId;
+  const date     = todayWAT();
+
+  // Must not already have an assignment today
+  const existing = await PumpAssignment.findOne({
+    company, worker: workerId, date, status: { $ne: 'cancelled' },
+  }).lean();
+  if (existing)
+    return res.status(400).json({ success: false, message: 'Worker already has an assignment today — use Reassign instead' });
+
+  const island = await PumpIsland.findOne({ _id: islandId, company }).lean();
+  if (!island) return res.status(404).json({ success: false, message: 'Island not found' });
+
+  const worker = await Worker.findOne({ _id: workerId, company }).lean();
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  // How many workers are already on this island today?
+  const onIsland = await PumpAssignment.countDocuments({
+    company, date, island: island._id, status: { $ne: 'cancelled' },
+  });
+
+  // Pick pump: if caller specified one use it; otherwise pick by index (0 = first, 1 = second, etc.)
+  let pump = null;
+  if (pumpId) {
+    pump = await Pump.findOne({ _id: pumpId, company }).lean();
+  } else {
+    const pid = island.pumps?.[onIsland] ?? island.pumps?.[0];
+    if (pid) pump = await Pump.findById(pid).lean();
+  }
+
+  const assignment = await PumpAssignment.create({
+    company,
+    branchId:     island.branchId || branchId,
+    branchName:   island.branchName || '',
+    island:       island._id,
+    islandName:   island.name,
+    includesGas:  island.includesGas,
+    productTypes: island.productTypes || [],
+    pump:         pump?._id,
+    pumpNumber:   pump?.pumpNumber,
+    pumpName:     pump?.pumpName || island.name,
+    productType:  pump?.productType || (island.productTypes || [])[0] || 'PMS',
+    assignedPumps: pump ? [{ pumpId: pump._id, pumpNumber: pump.pumpNumber, pumpName: pump.pumpName, productType: pump.productType }] : [],
+    worker:       worker._id,
+    workerName:   worker.fullName,
+    workerRole:   worker.role,
+    date,
+    shiftName:    '',
+    assignedAt:   new Date(),
+    source:       'supervisor',
+  });
+
+  const { redistributeIslands } = require('../services/pumpService');
+  await redistributeIslands({ company, branchId: island.branchId || branchId, date });
+
+  return res.json({
+    success: true,
+    message: `${worker.fullName} placed on ${island.name}${pump ? ' · ' + pump.pumpName : ''}`,
+    data: assignment,
+  });
+};
+
 // ── PATCH /api/supervisor/pump-status — mark individual pump active/faulty/out_of_stock
 const supervisorPumpStatus = async (req, res) => {
   const { pin, pumpId, status } = req.body;
@@ -783,6 +856,7 @@ module.exports = {
   supervisorBookShortage,
   supervisorIslandStatus,
   supervisorReassign,
+  supervisorPlaceWorker,
   supervisorPumpStatus,
   supervisorClockWorker,
   supervisorBreakWorker,

@@ -6,6 +6,7 @@ const {
   supervisorBookShortage,
   supervisorIslandStatus,
   supervisorReassign,
+  supervisorPlaceWorker,
   supervisorPumpStatus,
   supervisorClockWorker,
   supervisorBreakWorker,
@@ -18,6 +19,7 @@ router.post('/shortage',      supervisorBookShortage);
 router.patch('/island-status', supervisorIslandStatus);
 router.patch('/pump-status',   supervisorPumpStatus);
 router.post('/reassign',      supervisorReassign);
+router.post('/place-worker',  supervisorPlaceWorker);
 router.post('/clock-worker',  supervisorClockWorker);
 router.post('/break-worker',  supervisorBreakWorker);
 

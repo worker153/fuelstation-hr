@@ -536,6 +536,107 @@ function ReassignModal({ worker, islands, pin, onClose, onSaved }) {
   );
 }
 
+// ── Place modal — initial island placement for workers with no assignment today ──
+function PlaceModal({ worker, islands, pin, onClose, onSaved }) {
+  const [selected, setSelected] = useState(null); // { pumpId, islandId, islandName, pumpName }
+  const [saving,   setSaving  ] = useState(false);
+  const [err,      setErr     ] = useState('');
+
+  const save = async () => {
+    if (!selected) return setErr('Select an island / pump');
+    setSaving(true); setErr('');
+    try {
+      const res = await axios.post(`${BASE}/supervisor/place-worker`, {
+        pin,
+        workerId: worker._id,
+        islandId: selected.islandId,
+        pumpId:   selected.pumpId || undefined,
+      });
+      onSaved(res.data);
+      onClose();
+    } catch (e) {
+      setErr(e.response?.data?.message || 'Placement failed');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <ModalSheet title={`Place — ${worker.fullName}`} onClose={onClose}>
+      <div className="pb-2">
+        <p className="text-sm text-gray-500 mb-4">
+          Select the island and pump this worker is at today
+        </p>
+
+        {islands.length === 0 ? (
+          <p className="text-center text-gray-400 py-6">No islands configured</p>
+        ) : (
+          <div className="space-y-4">
+            {islands.map(island => {
+              const pumps = island.allPumps || island.assignedPumps || [];
+              return (
+                <div key={island.islandId}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                    {island.islandName}
+                  </p>
+                  {pumps.length > 0 ? (
+                    <div className="space-y-2">
+                      {pumps.map(pump => {
+                        const taken    = pump.inUse && pump.assignedWorkerId !== worker._id;
+                        const isSelected = selected?.pumpId === pump.pumpId && selected?.islandId === island.islandId;
+                        return (
+                          <button key={pump.pumpId}
+                            onClick={() => !taken && setSelected({ pumpId: pump.pumpId, islandId: island.islandId, islandName: island.islandName, pumpName: pump.pumpName })}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all text-sm
+                              ${isSelected
+                                ? 'border-indigo-500 bg-indigo-50'
+                                : taken
+                                ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                                : 'border-gray-200 bg-white active:scale-95'
+                              }`}>
+                            <span className={`font-medium ${isSelected ? 'text-indigo-700' : 'text-gray-800'}`}>
+                              {pump.pumpName || `Pump ${pump.pumpNumber}`}
+                              {pump.productType ? <span className="text-gray-400 font-normal ml-1 text-xs">({pump.productType})</span> : null}
+                            </span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                              taken ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-700'
+                            }`}>
+                              {taken ? `${pump.assignedWorkerName || 'In Use'}` : 'Available'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    // Island with no individual pumps listed — select the island itself
+                    <button
+                      onClick={() => setSelected({ pumpId: null, islandId: island.islandId, islandName: island.islandName, pumpName: island.islandName })}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all text-sm
+                        ${selected?.islandId === island.islandId && !selected?.pumpId
+                          ? 'border-indigo-500 bg-indigo-50'
+                          : 'border-gray-200 bg-white active:scale-95'
+                        }`}>
+                      <span className={`font-medium ${selected?.islandId === island.islandId ? 'text-indigo-700' : 'text-gray-800'}`}>
+                        {island.islandName}
+                      </span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Select</span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {err && <p className="text-red-500 text-sm mt-3">{err}</p>}
+        <button onClick={save} disabled={!selected || saving}
+          className="w-full mt-4 py-3.5 bg-indigo-600 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+          {saving ? <Loader size={18} className="animate-spin" /> : null}
+          {selected ? `Place on ${selected.pumpName}` : 'Confirm Placement'}
+        </button>
+      </div>
+    </ModalSheet>
+  );
+}
+
 // ── Dedicated Meters tab ───────────────────────────────────────────────────────
 function MeterEntryTab({ islands, pin, onSaved }) {
   // keyed by islandId: { [pumpKey]: { n1Open, n1Close, n2Open, n2Close } }
@@ -1498,8 +1599,9 @@ function ClockModal({ worker, supervisorPin, skipPin, onSuccess, onClose }) {
   );
 }
 
-function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, onClock, onBreak }) {
+function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, onPlace, onClock, onBreak }) {
   const { clockedIn, clockedOut } = worker.todayStatus || {};
+  const hasAssignment = !!worker.island?.islandName;
   const clockLabel = clockedIn ? (clockedOut ? 'Clock out done' : 'Clock Out') : 'Clock In';
   const clockBg    = clockedIn ? (clockedOut ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-600')
                                : 'bg-green-50 text-green-600';
@@ -1520,7 +1622,9 @@ function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, on
             {clockedIn ? 'In' : 'Out'}
           </span>
           <span className="text-gray-300">·</span>
-          <p className="text-xs text-gray-500 truncate">{worker.island?.islandName || 'Unassigned'}</p>
+          <p className={`text-xs truncate ${hasAssignment ? 'text-gray-500' : 'text-amber-500 font-semibold'}`}>
+            {worker.island?.islandName || 'Not placed'}
+          </p>
         </div>
       </div>
       <div className="flex gap-1.5 shrink-0">
@@ -1544,11 +1648,19 @@ function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, on
           title="Book Offence">
           ⚠️
         </button>
-        <button onClick={() => onReassign(worker)}
-          className="p-2 bg-purple-50 text-purple-600 rounded-xl text-xs active:scale-95 transition-transform"
-          title="Reassign">
-          🔄
-        </button>
+        {hasAssignment ? (
+          <button onClick={() => onReassign(worker)}
+            className="p-2 bg-purple-50 text-purple-600 rounded-xl text-xs active:scale-95 transition-transform"
+            title="Reassign pump">
+            🔄
+          </button>
+        ) : (
+          <button onClick={() => onPlace(worker)}
+            className="p-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs active:scale-95 transition-transform"
+            title="Place on island">
+            📍
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1576,6 +1688,7 @@ export default function SupervisorDashboard() {
   const [shortageFor, setShortageFor]   = useState(null);  // worker object
   const [offenceFor,  setOffenceFor]    = useState(null);  // worker object
   const [reassignFor, setReassignFor]   = useState(null);  // worker object
+  const [placeFor,    setPlaceFor]      = useState(null);  // worker object (unassigned)
   const [clockFor,    setClockFor]      = useState(null);  // worker object | 'self'
   const [breakFor,    setBreakFor]      = useState(null);  // worker object
 
@@ -1921,6 +2034,7 @@ export default function SupervisorDashboard() {
                 onShortage={setShortageFor}
                 onOffence={setOffenceFor}
                 onReassign={setReassignFor}
+                onPlace={setPlaceFor}
                 onClock={setClockFor}
                 onBreak={setBreakFor}
               />
@@ -2069,6 +2183,11 @@ export default function SupervisorDashboard() {
         <ReassignModal worker={reassignFor} islands={islands} pin={pin}
           onClose={() => setReassignFor(null)}
           onSaved={() => { setReassignFor(null); handleReassignSaved(); }} />
+      )}
+      {placeFor && (
+        <PlaceModal worker={placeFor} islands={islands} pin={pin}
+          onClose={() => setPlaceFor(null)}
+          onSaved={() => { setPlaceFor(null); fetchDashboard(); }} />
       )}
       {breakFor && (
         <BreakModal worker={breakFor} supervisorPin={pin} onClose={() => setBreakFor(null)} />
