@@ -23,34 +23,70 @@ function fmtL(n) {
 }
 
 const ISLAND_STATUS = {
-  active:       { label: 'Active',        cls: 'bg-green-100  text-green-700',  icon: CheckCircle },
-  out_of_stock: { label: 'Out of Stock',  cls: 'bg-amber-100  text-amber-700',  icon: PackageX    },
-  faulty:       { label: 'Faulty',        cls: 'bg-red-100    text-red-700',    icon: Wrench      },
-  inactive:     { label: 'Inactive',      cls: 'bg-gray-100   text-gray-500',   icon: X           },
+  active:       { label: 'Active',       cls: 'bg-green-100  text-green-700',  icon: CheckCircle },
+  out_of_stock: { label: 'Out of Stock', cls: 'bg-amber-100  text-amber-700',  icon: PackageX    },
+  faulty:       { label: 'Faulty',       cls: 'bg-red-100    text-red-700',    icon: Wrench      },
+  inactive:     { label: 'Inactive',     cls: 'bg-gray-100   text-gray-500',   icon: X           },
 };
 
-// ─── Opening Meter Entry Modal ────────────────────────────────────────────────
+// Build a default pump list from assignedPumps or fall back to 2 generic pumps
+function buildPumpList(island) {
+  const assigned = island.assignedPumps || [];
+  if (assigned.length) return assigned;
+  return [
+    { pumpNumber: 1, pumpName: 'Pump 1', productType: island.productTypes?.[0] || 'PMS' },
+    { pumpNumber: 2, pumpName: 'Pump 2', productType: island.productTypes?.[0] || 'PMS' },
+  ];
+}
+
+// ─── Opening Meter Modal — per pump, 2 nozzles each ──────────────────────────
 function OpeningModal({ island, date, onClose, onSaved }) {
   const notify  = useNotify();
-  const [meter, setMeter]   = useState('');
-  const [notes, setNotes]   = useState('');
   const [saving, setSaving] = useState(false);
 
-  const existing = island.log?.openingMeter;
+  const pumps      = buildPumpList(island);
+  const existingMap = Object.fromEntries(
+    (island.log?.pumps || []).map(p => [String(p.pumpNumber), p])
+  );
+
+  const initReadings = () =>
+    pumps.map(p => {
+      const ex = existingMap[String(p.pumpNumber)] || {};
+      return {
+        pumpId:      p.pumpId   || p._id,
+        pumpNumber:  p.pumpNumber,
+        pumpName:    p.pumpName,
+        productType: p.productType,
+        nozzle1Opening: ex.nozzle1?.opening ?? '',
+        nozzle2Opening: ex.nozzle2?.opening ?? '',
+      };
+    });
+
+  const [readings, setReadings] = useState(initReadings);
+
+  const update = (idx, field, val) =>
+    setReadings(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
 
   const submit = async (e) => {
     e.preventDefault();
-    if (meter === '') return notify('Enter the opening meter reading', 'error');
+    const filled = readings.filter(r => r.nozzle1Opening !== '' || r.nozzle2Opening !== '');
+    if (!filled.length) return notify('Enter at least one nozzle reading', 'error');
     setSaving(true);
     try {
       const { data } = await api.post('/meter-logs', {
-        branchId:     island.islandId ? undefined : island.branchId,
+        branchId:  island.branchId,
         date,
-        islandId:     island.islandId,
-        openingMeter: Number(meter),
-        notes,
+        islandId:  island.islandId,
+        pumps:     readings.map(r => ({
+          pumpId:        r.pumpId,
+          pumpNumber:    r.pumpNumber,
+          pumpName:      r.pumpName,
+          productType:   r.productType,
+          nozzle1Opening: r.nozzle1Opening !== '' ? Number(r.nozzle1Opening) : null,
+          nozzle2Opening: r.nozzle2Opening !== '' ? Number(r.nozzle2Opening) : null,
+        })),
       });
-      notify('Opening meter saved ✓');
+      notify('Opening meters saved ✓');
       onSaved(data.data);
     } catch (err) {
       notify(err.response?.data?.message || 'Failed to save', 'error');
@@ -58,34 +94,48 @@ function OpeningModal({ island, date, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-10 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl mb-10">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="font-bold text-gray-900">{island.islandName}</p>
-            <p className="text-xs text-gray-400">Enter opening meter reading</p>
+            <p className="text-xs text-gray-400">Set opening meter — per pump, per nozzle</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <form onSubmit={submit} className="px-5 py-5 space-y-4">
-          {existing != null && (
-            <div className="text-xs bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-700">
-              Current opening: <strong>{fmt(existing)}</strong> — submitting will overwrite
-            </div>
-          )}
-          <div>
-            <label className="label">Opening Meter Reading</label>
-            <input
-              type="number" step="0.01" className="input" autoFocus
-              placeholder="e.g. 12450.30"
-              value={meter} onChange={e => setMeter(e.target.value)} required
-            />
+        <form onSubmit={submit}>
+          <div className="px-5 py-4 space-y-5">
+            {readings.map((r, idx) => (
+              <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Gauge size={14} className="text-brand-500" />
+                  <p className="font-semibold text-gray-800 text-sm">{r.pumpName}</p>
+                  {r.productType && <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 font-medium">{r.productType}</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label text-xs">Nozzle 1 Opening</label>
+                    <input
+                      type="number" step="0.01" className="input text-sm"
+                      placeholder="e.g. 12450.30"
+                      value={r.nozzle1Opening}
+                      onChange={e => update(idx, 'nozzle1Opening', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-xs">Nozzle 2 Opening</label>
+                    <input
+                      type="number" step="0.01" className="input text-sm"
+                      placeholder="e.g. 8900.00"
+                      value={r.nozzle2Opening}
+                      onChange={e => update(idx, 'nozzle2Opening', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="label">Notes (optional)</label>
-            <input type="text" className="input" placeholder="Any remarks…" value={notes} onChange={e => setNotes(e.target.value)} />
-          </div>
-          <div className="flex gap-3 pt-1">
+          <div className="px-5 pb-5 flex gap-3">
             <button type="submit" disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brand-600 text-white font-medium text-sm hover:bg-brand-700">
               {saving ? <Loader size={15} className="animate-spin" /> : <><Save size={14} /> Save Opening</>}
@@ -98,27 +148,61 @@ function OpeningModal({ island, date, onClose, onSaved }) {
   );
 }
 
-// ─── Closing Meter Entry Modal ────────────────────────────────────────────────
+// ─── Closing Meter Modal — per pump, 2 nozzles each ──────────────────────────
 function ClosingModal({ island, date, onClose, onSaved }) {
   const notify  = useNotify();
-  const [meter, setMeter]   = useState('');
-  const [notes, setNotes]   = useState(island.log?.notes || '');
   const [saving, setSaving] = useState(false);
+  const [notes,  setNotes ] = useState(island.log?.notes || '');
 
-  const opening = island.log?.openingMeter;
-  const litres  = meter !== '' && opening != null
-    ? Math.max(0, Number(meter) - opening) : null;
+  const logPumps = island.log?.pumps || [];
+  // Fall back to assignedPumps if no log pumps yet
+  const sourcePumps = logPumps.length ? logPumps : buildPumpList(island);
+
+  const initReadings = () =>
+    sourcePumps.map(p => ({
+      pumpId:      p.pumpId   || p._id,
+      pumpNumber:  p.pumpNumber,
+      pumpName:    p.pumpName,
+      productType: p.productType,
+      nozzle1Opening: p.nozzle1?.opening ?? null,
+      nozzle2Opening: p.nozzle2?.opening ?? null,
+      nozzle1Closing: p.nozzle1?.closing ?? '',
+      nozzle2Closing: p.nozzle2?.closing ?? '',
+    }));
+
+  const [readings, setReadings] = useState(initReadings);
+
+  const update = (idx, field, val) =>
+    setReadings(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+
+  const calcPumpLitres = (r) => {
+    const n1 = (r.nozzle1Closing !== '' && r.nozzle1Opening != null)
+      ? Math.max(0, Number(r.nozzle1Closing) - r.nozzle1Opening) : null;
+    const n2 = (r.nozzle2Closing !== '' && r.nozzle2Opening != null)
+      ? Math.max(0, Number(r.nozzle2Closing) - r.nozzle2Opening) : null;
+    return { n1, n2, total: (n1 != null || n2 != null) ? (n1 || 0) + (n2 || 0) : null };
+  };
+
+  const grandTotal = readings.reduce((s, r) => {
+    const { total } = calcPumpLitres(r);
+    return s + (total || 0);
+  }, 0);
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!island.log?._id) return notify('Save opening meter first', 'error');
-    if (meter === '') return notify('Enter the closing meter reading', 'error');
+    if (!island.log?._id) return notify('Save opening meters first', 'error');
     setSaving(true);
     try {
       const { data } = await api.put(`/meter-logs/${island.log._id}/close`, {
-        closingMeter: Number(meter), notes,
+        pumps: readings.map(r => ({
+          pumpId:        r.pumpId,
+          pumpNumber:    r.pumpNumber,
+          nozzle1Closing: r.nozzle1Closing !== '' ? Number(r.nozzle1Closing) : null,
+          nozzle2Closing: r.nozzle2Closing !== '' ? Number(r.nozzle2Closing) : null,
+        })),
+        notes,
       });
-      notify('Closing meter saved ✓');
+      notify('Shift closed ✓');
       onSaved(data.data);
     } catch (err) {
       notify(err.response?.data?.message || 'Failed to save', 'error');
@@ -126,47 +210,83 @@ function ClosingModal({ island, date, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-10 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl mb-10">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="font-bold text-gray-900">{island.islandName}</p>
-            <p className="text-xs text-gray-400">Enter closing meter reading</p>
+            <p className="text-xs text-gray-400">Close shift — enter closing meter per nozzle</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <form onSubmit={submit} className="px-5 py-5 space-y-4">
-          <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-400">Opening meter</p>
-              <p className="font-bold text-gray-900">{fmt(opening)}</p>
-            </div>
-            {island.worker && (
-              <div className="text-right">
-                <p className="text-xs text-gray-400">Worker</p>
-                <p className="text-sm font-medium text-gray-700">{island.worker.workerName}</p>
+        <form onSubmit={submit}>
+          <div className="px-5 py-4 space-y-5">
+            {readings.map((r, idx) => {
+              const { n1, n2, total } = calcPumpLitres(r);
+              return (
+                <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Gauge size={14} className="text-brand-500" />
+                      <p className="font-semibold text-gray-800 text-sm">{r.pumpName}</p>
+                      {r.productType && <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 font-medium">{r.productType}</span>}
+                    </div>
+                    {total != null && (
+                      <span className="text-sm font-bold text-brand-700">{fmtL(total)}</span>
+                    )}
+                  </div>
+
+                  {/* Nozzle 1 */}
+                  <div className="grid grid-cols-2 gap-2 items-end">
+                    <div>
+                      <label className="label text-xs">Nozzle 1 Opening</label>
+                      <div className="input bg-gray-100 text-gray-500 text-sm py-2">{fmt(r.nozzle1Opening)}</div>
+                    </div>
+                    <div>
+                      <label className="label text-xs">Nozzle 1 Closing</label>
+                      <input type="number" step="0.01" className="input text-sm" placeholder="Closing…"
+                        value={r.nozzle1Closing}
+                        onChange={e => update(idx, 'nozzle1Closing', e.target.value)} />
+                    </div>
+                  </div>
+                  {n1 != null && (
+                    <p className="text-xs text-right text-green-700 font-semibold">Nozzle 1 sold: {fmtL(n1)}</p>
+                  )}
+
+                  {/* Nozzle 2 */}
+                  <div className="grid grid-cols-2 gap-2 items-end">
+                    <div>
+                      <label className="label text-xs">Nozzle 2 Opening</label>
+                      <div className="input bg-gray-100 text-gray-500 text-sm py-2">{fmt(r.nozzle2Opening)}</div>
+                    </div>
+                    <div>
+                      <label className="label text-xs">Nozzle 2 Closing</label>
+                      <input type="number" step="0.01" className="input text-sm" placeholder="Closing…"
+                        value={r.nozzle2Closing}
+                        onChange={e => update(idx, 'nozzle2Closing', e.target.value)} />
+                    </div>
+                  </div>
+                  {n2 != null && (
+                    <p className="text-xs text-right text-green-700 font-semibold">Nozzle 2 sold: {fmtL(n2)}</p>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Grand total */}
+            {grandTotal > 0 && (
+              <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex items-center justify-between">
+                <p className="font-semibold text-brand-700">Total Litres Sold</p>
+                <p className="text-xl font-black text-brand-700">{fmtL(grandTotal)}</p>
               </div>
             )}
-          </div>
-          <div>
-            <label className="label">Closing Meter Reading</label>
-            <input
-              type="number" step="0.01" className="input" autoFocus
-              placeholder="e.g. 13200.50"
-              value={meter} onChange={e => setMeter(e.target.value)} required
-            />
-          </div>
-          {litres != null && (
-            <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-brand-700">Litres Sold</p>
-              <p className="text-xl font-bold text-brand-700">{fmtL(litres)}</p>
+
+            <div>
+              <label className="label">Notes (optional)</label>
+              <input type="text" className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any remarks…" />
             </div>
-          )}
-          <div>
-            <label className="label">Notes (optional)</label>
-            <input type="text" className="input" value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
-          <div className="flex gap-3 pt-1">
+          <div className="px-5 pb-5 flex gap-3">
             <button type="submit" disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white font-medium text-sm hover:bg-green-700">
               {saving ? <Loader size={15} className="animate-spin" /> : <><CheckCircle size={14} /> Close Shift</>}
@@ -183,7 +303,6 @@ function ClosingModal({ island, date, onClose, onSaved }) {
 function IslandStatusModal({ island, onClose, onSaved }) {
   const notify  = useNotify();
   const [saving, setSaving] = useState(false);
-
   const isDown = island.islandStatus !== 'active' && island.islandStatus !== 'inactive';
 
   const mark = async (newStatus) => {
@@ -251,18 +370,17 @@ function IslandStatusModal({ island, onClose, onSaved }) {
 
 // ─── Island Card ──────────────────────────────────────────────────────────────
 function IslandCard({ island, onOpenOpening, onOpenClosing, onStatusChange }) {
-  const log     = island.log;
-  const worker  = island.worker;
-  const st      = ISLAND_STATUS[island.islandStatus] || ISLAND_STATUS.active;
-  const StIcon  = st.icon;
-  const isDown  = island.islandStatus === 'out_of_stock' || island.islandStatus === 'faulty';
+  const log    = island.log;
+  const worker = island.worker;
+  const st     = ISLAND_STATUS[island.islandStatus] || ISLAND_STATUS.active;
+  const StIcon = st.icon;
+  const isDown = island.islandStatus === 'out_of_stock' || island.islandStatus === 'faulty';
 
-  const hasOpening = log?.openingMeter != null;
-  const hasClosing = log?.closingMeter != null;
+  const logPumps   = log?.pumps || [];
+  const hasOpening = logPumps.some(p => p.nozzle1?.opening != null || p.nozzle2?.opening != null);
+  const hasClosing = logPumps.some(p => p.nozzle1?.closing != null || p.nozzle2?.closing != null);
   const isClosed   = log?.status === 'closed';
-
-  // Restored islands: worker now covers their current island PLUS this restored island
-  const pinned = island.worker?.pinnedIslands || [];
+  const pinned     = island.worker?.pinnedIslands || [];
 
   return (
     <div className={`card p-4 space-y-3 ${isDown ? 'border-2 border-amber-300' : ''} ${isClosed ? 'opacity-80' : ''}`}>
@@ -279,26 +397,24 @@ function IslandCard({ island, onOpenOpening, onOpenClosing, onStatusChange }) {
           <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${st.cls}`}>
             <StIcon size={10} /> {st.label}
           </span>
-          {/* Status change button — only for active/down islands, not inactive */}
           {island.islandStatus !== 'inactive' && (
             <button onClick={() => onStatusChange(island)}
-              className="text-gray-400 hover:text-gray-700 p-0.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="Change island status">
+              className="text-gray-400 hover:text-gray-700 p-0.5 rounded-lg hover:bg-gray-100 transition-colors" title="Change island status">
               <ChevronDown size={14} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Down banner — shows when island is unavailable */}
+      {/* Down banner */}
       {isDown && (
-        <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl ${isDown ? 'bg-amber-50 border border-amber-200 text-amber-700' : ''}`}>
+        <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700">
           {island.islandStatus === 'faulty' ? <Wrench size={12} /> : <PackageX size={12} />}
-          <span>Island down — worker moved to another pump. Tap <strong>↓</strong> to restore when ready.</span>
+          <span>Island down — worker moved. Tap <strong>↓</strong> to restore.</span>
         </div>
       )}
 
-      {/* Restored second island (worker now covers two pumps) */}
+      {/* Restored second island */}
       {pinned.length > 0 && pinned.map((pi, idx) => (
         <div key={idx} className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl bg-green-50 border border-green-200 text-green-700">
           <Zap size={12} />
@@ -306,33 +422,65 @@ function IslandCard({ island, onOpenOpening, onOpenClosing, onStatusChange }) {
         </div>
       ))}
 
-      {/* Meter readings */}
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="bg-gray-50 rounded-xl py-2">
-          <p className="text-[10px] text-gray-400">Opening</p>
-          <p className={`text-sm font-bold ${hasOpening ? 'text-gray-800' : 'text-gray-300'}`}>{fmt(log?.openingMeter)}</p>
+      {/* Per-pump meter readings */}
+      {logPumps.length > 0 ? (
+        <div className="space-y-2">
+          {logPumps.map((p, i) => (
+            <div key={i} className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-semibold text-gray-700">{p.pumpName}</span>
+                {p.totalLitres != null && (
+                  <span className="font-bold text-brand-700">{fmtL(p.totalLitres)}</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-500">
+                <div className="flex justify-between">
+                  <span>N1 open:</span>
+                  <span className={`font-medium ${p.nozzle1?.opening != null ? 'text-gray-700' : 'text-gray-300'}`}>{fmt(p.nozzle1?.opening)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>N1 close:</span>
+                  <span className={`font-medium ${p.nozzle1?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmt(p.nozzle1?.closing)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>N2 open:</span>
+                  <span className={`font-medium ${p.nozzle2?.opening != null ? 'text-gray-700' : 'text-gray-300'}`}>{fmt(p.nozzle2?.opening)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>N2 close:</span>
+                  <span className={`font-medium ${p.nozzle2?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmt(p.nozzle2?.closing)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+          {log?.totalLitres != null && (
+            <div className="flex items-center justify-between px-3 py-2 bg-brand-50 rounded-xl">
+              <span className="text-xs font-semibold text-brand-700">Total Sold</span>
+              <span className="text-sm font-black text-brand-700">{fmtL(log.totalLitres)}</span>
+            </div>
+          )}
         </div>
-        <div className="bg-gray-50 rounded-xl py-2">
-          <p className="text-[10px] text-gray-400">Closing</p>
-          <p className={`text-sm font-bold ${hasClosing ? 'text-gray-800' : 'text-gray-300'}`}>{fmt(log?.closingMeter)}</p>
+      ) : (
+        /* No readings yet — show empty state */
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {['Opening', 'Closing', 'Sold'].map(label => (
+            <div key={label} className="bg-gray-50 rounded-xl py-2">
+              <p className="text-[10px] text-gray-400">{label}</p>
+              <p className="text-sm font-bold text-gray-300">—</p>
+            </div>
+          ))}
         </div>
-        <div className={`rounded-xl py-2 ${log?.litresSold != null ? 'bg-brand-50' : 'bg-gray-50'}`}>
-          <p className="text-[10px] text-gray-400">Sold</p>
-          <p className={`text-sm font-bold ${log?.litresSold != null ? 'text-brand-700' : 'text-gray-300'}`}>{fmtL(log?.litresSold)}</p>
-        </div>
-      </div>
+      )}
 
       {/* Actions */}
       {!isClosed && (
         <div className="flex gap-2">
-          <button
-            onClick={() => onOpenOpening(island)}
+          <button onClick={() => onOpenOpening(island)}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition-colors">
             <Gauge size={13} /> {hasOpening ? 'Edit Opening' : 'Set Opening'}
           </button>
           {hasOpening && (
-            <button
-              onClick={() => onOpenClosing(island)}
+            <button onClick={() => onOpenClosing(island)}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-600 text-white text-xs font-medium hover:bg-green-700 transition-colors">
               <CheckCircle size={13} /> Close Shift
             </button>
@@ -350,7 +498,7 @@ function IslandCard({ island, onOpenOpening, onOpenClosing, onStatusChange }) {
 }
 
 // ─── Monthly Report View ──────────────────────────────────────────────────────
-function ReportView({ branchId, branchName }) {
+function ReportView({ branchId }) {
   const now  = new Date();
   const [month,   setMonth  ] = useState(now.getMonth() + 1);
   const [year,    setYear   ] = useState(now.getFullYear());
@@ -372,7 +520,6 @@ function ReportView({ branchId, branchName }) {
 
   return (
     <div className="space-y-4">
-      {/* Filter bar */}
       <div className="card p-4 flex items-center gap-3 flex-wrap">
         <div>
           <label className="label">Month</label>
@@ -393,7 +540,6 @@ function ReportView({ branchId, branchName }) {
 
       {!loading && data && (
         <>
-          {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="card p-4 text-center">
               <p className="text-xs text-gray-400">Total Litres</p>
@@ -409,7 +555,6 @@ function ReportView({ branchId, branchName }) {
             </div>
           </div>
 
-          {/* By island */}
           {data.byIsland.length > 0 && (
             <div className="card overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
@@ -429,7 +574,6 @@ function ReportView({ branchId, branchName }) {
             </div>
           )}
 
-          {/* By worker */}
           {data.byWorker.length > 0 && (
             <div className="card overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
@@ -449,7 +593,6 @@ function ReportView({ branchId, branchName }) {
             </div>
           )}
 
-          {/* Daily log table */}
           {data.logs.length > 0 && (
             <div className="card overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
@@ -462,9 +605,7 @@ function ReportView({ branchId, branchName }) {
                       <th className="py-2 px-3 text-left text-xs font-semibold text-gray-400">Date</th>
                       <th className="py-2 px-3 text-left text-xs font-semibold text-gray-400">Island</th>
                       <th className="py-2 px-3 text-left text-xs font-semibold text-gray-400">Worker</th>
-                      <th className="py-2 px-3 text-right text-xs font-semibold text-gray-400">Opening</th>
-                      <th className="py-2 px-3 text-right text-xs font-semibold text-gray-400">Closing</th>
-                      <th className="py-2 px-3 text-right text-xs font-semibold text-brand-500">Litres</th>
+                      <th className="py-2 px-3 text-right text-xs font-semibold text-brand-500">Total Litres</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -473,9 +614,7 @@ function ReportView({ branchId, branchName }) {
                         <td className="py-2 px-3 text-gray-600 text-xs tabular-nums">{l.date}</td>
                         <td className="py-2 px-3 font-medium text-gray-800">{l.islandName}</td>
                         <td className="py-2 px-3 text-gray-600 text-xs">{l.workerName || '—'}</td>
-                        <td className="py-2 px-3 text-right tabular-nums text-gray-600">{fmt(l.openingMeter)}</td>
-                        <td className="py-2 px-3 text-right tabular-nums text-gray-600">{fmt(l.closingMeter)}</td>
-                        <td className="py-2 px-3 text-right tabular-nums font-bold text-brand-700">{fmtL(l.litresSold)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums font-bold text-brand-700">{fmtL(l.totalLitres)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -501,15 +640,15 @@ export default function DailyMeters() {
   const notify = useNotify();
   const { isSuperAdmin, can } = useAuth();
 
-  const [branches,   setBranches  ] = useState([]);
-  const [branchId,   setBranchId  ] = useState('');
-  const [branchName, setBranchName] = useState('');
-  const [date,       setDate      ] = useState(todayStr());
+  const [branches,     setBranches    ] = useState([]);
+  const [branchId,     setBranchId    ] = useState('');
+  const [branchName,   setBranchName  ] = useState('');
+  const [date,         setDate        ] = useState(todayStr());
   const [islands,      setIslands     ] = useState([]);
   const [loading,      setLoading     ] = useState(false);
-  const [view,         setView        ] = useState('daily'); // 'daily' | 'report'
-  const [openModal,    setOpenModal   ] = useState(null);    // { type: 'opening'|'closing', island }
-  const [statusIsland, setStatusIsland] = useState(null);   // island being marked down/up
+  const [view,         setView        ] = useState('daily');
+  const [openModal,    setOpenModal   ] = useState(null);
+  const [statusIsland, setStatusIsland] = useState(null);
 
   useEffect(() => {
     api.get('/branches').then(r => {
@@ -538,50 +677,37 @@ export default function DailyMeters() {
   };
 
   const updateIsland = (islandId, updatedLog) => {
-    setIslands(prev => prev.map(isl => {
-      if (String(isl.islandId) !== String(islandId)) return isl;
-      return { ...isl, log: updatedLog };
-    }));
+    setIslands(prev => prev.map(isl =>
+      String(isl.islandId) !== String(islandId) ? isl : { ...isl, log: updatedLog }
+    ));
     setOpenModal(null);
   };
 
-  // Called after supervisor changes an island's status mid-day
   const handleIslandStatusSaved = (updatedIsland) => {
-    setIslands(prev => prev.map(isl => {
-      if (String(isl.islandId) !== String(updatedIsland._id)) return isl;
-      return { ...isl, islandStatus: updatedIsland.status };
-    }));
+    setIslands(prev => prev.map(isl =>
+      String(isl.islandId) !== String(updatedIsland._id) ? isl : { ...isl, islandStatus: updatedIsland.status }
+    ));
     setStatusIsland(null);
-    // Reload full island list to get updated worker assignments
-    if (branchId && date) {
-      api.get('/meter-logs', { params: { branchId, date } })
-        .then(r => setIslands(r.data.data || []))
-        .catch(() => {});
-    }
+    if (branchId && date)
+      api.get('/meter-logs', { params: { branchId, date } }).then(r => setIslands(r.data.data || [])).catch(() => {});
   };
 
-  // Navigation helpers for date
-  const prevDay = () => {
-    const d = new Date(date); d.setDate(d.getDate() - 1);
-    setDate(d.toISOString().split('T')[0]);
-  };
+  const prevDay = () => { const d = new Date(date); d.setDate(d.getDate() - 1); setDate(d.toISOString().split('T')[0]); };
   const nextDay = () => {
     const d = new Date(date); d.setDate(d.getDate() + 1);
-    const today = todayStr();
-    if (d.toISOString().split('T')[0] <= today) setDate(d.toISOString().split('T')[0]);
+    if (d.toISOString().split('T')[0] <= todayStr()) setDate(d.toISOString().split('T')[0]);
   };
 
-  const totalOpen  = islands.filter(i => i.log?.openingMeter != null).length;
+  const totalOpen  = islands.filter(i => (i.log?.pumps || []).some(p => p.nozzle1?.opening != null || p.nozzle2?.opening != null)).length;
   const totalClose = islands.filter(i => i.log?.status === 'closed').length;
-  const totalL     = islands.reduce((s, i) => s + (i.log?.litresSold || 0), 0);
+  const totalL     = islands.reduce((s, i) => s + (i.log?.totalLitres || 0), 0);
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Daily Meter Readings</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Supervisor enters opening & closing meters per island</p>
+          <p className="text-sm text-gray-500 mt-0.5">Opening &amp; closing meters per pump, per nozzle</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setView('daily')}
@@ -595,7 +721,6 @@ export default function DailyMeters() {
         </div>
       </div>
 
-      {/* Controls */}
       <div className="card p-4 flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[160px]">
           <label className="label flex items-center gap-1"><Building2 size={11} /> Branch</label>
@@ -604,18 +729,16 @@ export default function DailyMeters() {
             {branches.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
           </select>
         </div>
-
         {view === 'daily' && (
           <div>
             <label className="label flex items-center gap-1"><Calendar size={11} /> Date</label>
             <div className="flex items-center gap-1">
               <button onClick={prevDay} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50"><ChevronLeft size={16} /></button>
               <input type="date" className="input w-36" value={date} onChange={e => setDate(e.target.value)} max={todayStr()} />
-              <button onClick={nextDay} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40" disabled={date >= todayStr()}><ChevronRight size={16} /></button>
+              <button onClick={nextDay} disabled={date >= todayStr()} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"><ChevronRight size={16} /></button>
             </div>
           </div>
         )}
-
         {view === 'daily' && branchId && (
           <button onClick={load} className="p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors mb-0.5">
             <RefreshCw size={16} className="text-gray-500" />
@@ -623,13 +746,9 @@ export default function DailyMeters() {
         )}
       </div>
 
-      {/* Report View */}
-      {view === 'report' && branchId && <ReportView branchId={branchId} branchName={branchName} />}
-      {view === 'report' && !branchId && (
-        <div className="card p-8 text-center text-gray-400">Select a branch to view the report.</div>
-      )}
+      {view === 'report' && branchId && <ReportView branchId={branchId} />}
+      {view === 'report' && !branchId && <div className="card p-8 text-center text-gray-400">Select a branch to view the report.</div>}
 
-      {/* Daily View */}
       {view === 'daily' && (
         <>
           {!branchId && (
@@ -638,14 +757,9 @@ export default function DailyMeters() {
               <p>Select a branch to manage meter readings</p>
             </div>
           )}
-
-          {branchId && loading && (
-            <div className="text-center py-10"><Loader size={24} className="animate-spin text-brand-600 mx-auto" /></div>
-          )}
-
+          {branchId && loading && <div className="text-center py-10"><Loader size={24} className="animate-spin text-brand-600 mx-auto" /></div>}
           {branchId && !loading && (
             <>
-              {/* Day summary bar */}
               {islands.length > 0 && (
                 <div className="grid grid-cols-3 gap-3">
                   <div className="card p-3 text-center">
@@ -662,15 +776,12 @@ export default function DailyMeters() {
                   </div>
                 </div>
               )}
-
               {islands.length === 0 && (
                 <div className="card p-10 text-center text-gray-400">
                   <Gauge size={32} className="mx-auto mb-2 text-gray-300" />
                   <p>No islands set up for this branch yet</p>
                 </div>
               )}
-
-              {/* Island cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {islands.map(island => (
                   <IslandCard
@@ -687,29 +798,16 @@ export default function DailyMeters() {
         </>
       )}
 
-      {/* Modals */}
       {openModal?.type === 'opening' && (
-        <OpeningModal
-          island={openModal.island}
-          date={date}
-          onClose={() => setOpenModal(null)}
-          onSaved={(log) => updateIsland(openModal.island.islandId, log)}
-        />
+        <OpeningModal island={openModal.island} date={date} onClose={() => setOpenModal(null)}
+          onSaved={(log) => updateIsland(openModal.island.islandId, log)} />
       )}
       {openModal?.type === 'closing' && (
-        <ClosingModal
-          island={openModal.island}
-          date={date}
-          onClose={() => setOpenModal(null)}
-          onSaved={(log) => updateIsland(openModal.island.islandId, log)}
-        />
+        <ClosingModal island={openModal.island} date={date} onClose={() => setOpenModal(null)}
+          onSaved={(log) => updateIsland(openModal.island.islandId, log)} />
       )}
       {statusIsland && (
-        <IslandStatusModal
-          island={statusIsland}
-          onClose={() => setStatusIsland(null)}
-          onSaved={handleIslandStatusSaved}
-        />
+        <IslandStatusModal island={statusIsland} onClose={() => setStatusIsland(null)} onSaved={handleIslandStatusSaved} />
       )}
     </div>
   );

@@ -2,6 +2,27 @@ const IslandMeterLog = require('../models/IslandMeterLog');
 const PumpIsland     = require('../models/PumpIsland');
 const PumpAssignment = require('../models/PumpAssignment');
 
+// ── Recompute per-pump and total litres ───────────────────────────────────────
+function calcLitres(pumps = []) {
+  let total = 0;
+  let anyReading = false;
+  const updated = pumps.map(p => {
+    const n1 = p.nozzle1 || {};
+    const n2 = p.nozzle2 || {};
+    const n1L = (n1.opening != null && n1.closing != null) ? Math.max(0, n1.closing - n1.opening) : null;
+    const n2L = (n2.opening != null && n2.closing != null) ? Math.max(0, n2.closing - n2.opening) : null;
+    const pumpTotal = (n1L != null || n2L != null) ? (n1L || 0) + (n2L || 0) : null;
+    if (pumpTotal != null) { total += pumpTotal; anyReading = true; }
+    return {
+      ...p,
+      nozzle1: { ...n1, litresSold: n1L },
+      nozzle2: { ...n2, litresSold: n2L },
+      totalLitres: pumpTotal,
+    };
+  });
+  return { pumps: updated, totalLitres: anyReading ? total : null };
+}
+
 // ── GET /api/meter-logs?branchId=&date= ─────────────────────────────────────
 const getLogs = async (req, res) => {
   const cid = req.user.company._id;
@@ -9,28 +30,23 @@ const getLogs = async (req, res) => {
   if (!branchId || !date)
     return res.status(400).json({ success: false, message: 'branchId and date required' });
 
-  // Load all active islands for the branch
-  const islands = await PumpIsland.find({ company: cid, branchId }).sort({ rotationOrder: 1 }).lean();
-
-  // Load existing logs for this date
-  const logs = await IslandMeterLog.find({ company: cid, branchId, date }).lean();
-  const logMap = Object.fromEntries(logs.map(l => [String(l.islandId), l]));
-
-  // Load today's pump assignments (to show which worker is on each island)
+  const islands     = await PumpIsland.find({ company: cid, branchId }).sort({ rotationOrder: 1 }).lean();
+  const logs        = await IslandMeterLog.find({ company: cid, branchId, date }).lean();
+  const logMap      = Object.fromEntries(logs.map(l => [String(l.islandId), l]));
   const assignments = await PumpAssignment.find({
     company: cid, branchId, date, status: { $ne: 'cancelled' },
   }).lean();
   const assignMap = Object.fromEntries(assignments.map(a => [String(a.island), a]));
 
-  // Merge: one entry per island
   const data = islands.map(island => {
     const log    = logMap[String(island._id)] || null;
     const assign = assignMap[String(island._id)] || null;
     return {
-      islandId:   island._id,
-      islandName: island.name,
+      islandId:     island._id,
+      islandName:   island.name,
       islandStatus: island.status,
       log,
+      assignedPumps: assign?.assignedPumps || [],
       worker: assign ? {
         workerId:      assign.worker,
         workerName:    assign.workerName,
@@ -43,97 +59,123 @@ const getLogs = async (req, res) => {
   res.json({ success: true, data, date });
 };
 
-// ── POST /api/meter-logs  — supervisor saves opening meter for an island ─────
+// ── POST /api/meter-logs  — save opening meters (per pump, per nozzle) ────────
 const saveOpening = async (req, res) => {
   const cid = req.user.company._id;
-  const { branchId, branchName, date, islandId, openingMeter, notes } = req.body;
+  const { branchId, branchName, date, islandId, pumps, notes } = req.body;
 
-  if (!branchId || !date || !islandId || openingMeter == null)
-    return res.status(400).json({ success: false, message: 'branchId, date, islandId and openingMeter required' });
+  if (!branchId || !date || !islandId || !Array.isArray(pumps) || !pumps.length)
+    return res.status(400).json({ success: false, message: 'branchId, date, islandId and pumps[] required' });
 
   const island = await PumpIsland.findOne({ _id: islandId, company: cid }).lean();
   if (!island) return res.status(404).json({ success: false, message: 'Island not found' });
+
+  // Build pumps array — preserve any existing closing values
+  const existing = await IslandMeterLog.findOne({ company: cid, islandId, date }).lean();
+  const existingPumpMap = Object.fromEntries(
+    (existing?.pumps || []).map(p => [String(p.pumpId || p.pumpNumber), p])
+  );
+
+  const mergedPumps = pumps.map(p => {
+    const key = String(p.pumpId || p.pumpNumber);
+    const ex  = existingPumpMap[key] || {};
+    return {
+      pumpId:      p.pumpId || ex.pumpId,
+      pumpNumber:  p.pumpNumber,
+      pumpName:    p.pumpName,
+      productType: p.productType || ex.productType,
+      nozzle1: {
+        opening: p.nozzle1Opening != null ? Number(p.nozzle1Opening) : (ex.nozzle1?.opening ?? null),
+        closing: ex.nozzle1?.closing ?? null,
+      },
+      nozzle2: {
+        opening: p.nozzle2Opening != null ? Number(p.nozzle2Opening) : (ex.nozzle2?.opening ?? null),
+        closing: ex.nozzle2?.closing ?? null,
+      },
+    };
+  });
+
+  const { pumps: computed, totalLitres } = calcLitres(mergedPumps);
+
+  const assign = await PumpAssignment.findOne({
+    company: cid, branchId, date, island: islandId, status: { $ne: 'cancelled' },
+  }).lean();
 
   const log = await IslandMeterLog.findOneAndUpdate(
     { company: cid, islandId, date },
     {
       $set: {
         company: cid, branchId, branchName: branchName || island.branchName || '',
-        islandName: island.name,
-        openingMeter: Number(openingMeter),
-        notes: notes || '',
-        openedBy: req.user._id,
-        openedAt: new Date(),
+        islandName:  island.name,
+        pumps:       computed,
+        totalLitres,
+        notes:       notes || '',
+        openedBy:    req.user._id,
+        openedAt:    new Date(),
+        workerId:    assign?.worker || null,
+        workerName:  assign?.workerName || '',
+        pumpAssignmentId: assign?._id || null,
       },
       $setOnInsert: { status: 'open' },
     },
     { upsert: true, new: true }
   );
 
-  // If a PumpAssignment already exists for this island+date, backfill the opening meter
-  const assign = await PumpAssignment.findOne({
-    company: cid, branchId, date,
-    island: islandId, status: { $ne: 'cancelled' },
-  }).lean();
-  if (assign) {
-    await PumpAssignment.findByIdAndUpdate(assign._id, { openingMeter: Number(openingMeter) });
-    await IslandMeterLog.findByIdAndUpdate(log._id, {
-      workerId: assign.worker,
-      workerName: assign.workerName,
-      pumpAssignmentId: assign._id,
-    });
-  }
-
   res.json({ success: true, data: log });
 };
 
-// ── PUT /api/meter-logs/:id/close  — supervisor saves closing meter ──────────
+// ── PUT /api/meter-logs/:id/close  — save closing meters (per pump, per nozzle)
 const saveClosing = async (req, res) => {
   const cid = req.user.company._id;
   const log = await IslandMeterLog.findOne({ _id: req.params.id, company: cid });
   if (!log) return res.status(404).json({ success: false, message: 'Log not found' });
 
-  const { closingMeter, notes } = req.body;
-  if (closingMeter == null)
-    return res.status(400).json({ success: false, message: 'closingMeter required' });
+  const { pumps: closingPumps, notes } = req.body;
+  if (!Array.isArray(closingPumps) || !closingPumps.length)
+    return res.status(400).json({ success: false, message: 'pumps[] with closing meters required' });
 
-  const closing = Number(closingMeter);
-  const litres  = log.openingMeter != null ? Math.max(0, closing - log.openingMeter) : null;
+  // Merge closing values into existing pumps
+  const closingMap = Object.fromEntries(
+    closingPumps.map(p => [String(p.pumpId || p.pumpNumber), p])
+  );
 
-  log.closingMeter = closing;
-  log.litresSold   = litres;
-  log.status       = 'closed';
-  log.closedBy     = req.user._id;
-  log.closedAt     = new Date();
+  const mergedPumps = log.pumps.map(p => {
+    const key = String(p.pumpId || p.pumpNumber);
+    const cl  = closingMap[key] || {};
+    return {
+      ...p.toObject?.() ?? p,
+      nozzle1: {
+        opening:  p.nozzle1?.opening ?? null,
+        closing:  cl.nozzle1Closing != null ? Number(cl.nozzle1Closing) : (p.nozzle1?.closing ?? null),
+      },
+      nozzle2: {
+        opening:  p.nozzle2?.opening ?? null,
+        closing:  cl.nozzle2Closing != null ? Number(cl.nozzle2Closing) : (p.nozzle2?.closing ?? null),
+      },
+    };
+  });
+
+  const { pumps: computed, totalLitres } = calcLitres(mergedPumps);
+
+  log.pumps       = computed;
+  log.totalLitres = totalLitres;
+  log.status      = 'closed';
+  log.closedBy    = req.user._id;
+  log.closedAt    = new Date();
   if (notes !== undefined) log.notes = notes;
   await log.save();
 
-  // Update linked PumpAssignment with closing meter + volume
+  // Update linked PumpAssignment
   if (log.pumpAssignmentId) {
     await PumpAssignment.findByIdAndUpdate(log.pumpAssignmentId, {
-      closingMeter: closing,
-      volume:       litres,
-      status:       'completed',
+      volume: totalLitres, status: 'completed',
     });
-  } else {
-    // Try to find the assignment by island+date
-    const assign = await PumpAssignment.findOne({
-      company: cid, branchId: log.branchId, date: log.date,
-      island: log.islandId, status: { $ne: 'cancelled' },
-    }).lean();
-    if (assign) {
-      await PumpAssignment.findByIdAndUpdate(assign._id, {
-        closingMeter: closing,
-        volume:       litres,
-        status:       'completed',
-      });
-    }
   }
 
   res.json({ success: true, data: log });
 };
 
-// ── GET /api/meter-logs/report?branchId=&month=&year= ───────────────────────
+// ── GET /api/meter-logs/report?branchId=&month=&year= ────────────────────────
 const getReport = async (req, res) => {
   const cid = req.user.company._id;
   const { branchId, month, year } = req.query;
@@ -146,27 +188,25 @@ const getReport = async (req, res) => {
 
   const logs = await IslandMeterLog.find(filter).sort({ date: 1, islandName: 1 }).lean();
 
-  // Summaries per island
   const byIsland = {};
   logs.forEach(l => {
     const key = String(l.islandId);
     if (!byIsland[key]) byIsland[key] = { islandName: l.islandName, totalLitres: 0, days: 0, records: [] };
     byIsland[key].records.push(l);
     byIsland[key].days++;
-    if (l.litresSold != null) byIsland[key].totalLitres += l.litresSold;
+    if (l.totalLitres != null) byIsland[key].totalLitres += l.totalLitres;
   });
 
-  // Summary per worker
   const byWorker = {};
   logs.forEach(l => {
     if (!l.workerId) return;
     const key = String(l.workerId);
     if (!byWorker[key]) byWorker[key] = { workerName: l.workerName, totalLitres: 0, days: 0 };
     byWorker[key].days++;
-    if (l.litresSold != null) byWorker[key].totalLitres += l.litresSold;
+    if (l.totalLitres != null) byWorker[key].totalLitres += l.totalLitres;
   });
 
-  const totalLitres = logs.reduce((s, l) => s + (l.litresSold || 0), 0);
+  const totalLitres = logs.reduce((s, l) => s + (l.totalLitres || 0), 0);
 
   res.json({
     success: true,

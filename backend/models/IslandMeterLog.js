@@ -1,6 +1,22 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const nozzleSchema = new Schema({
+  opening:    { type: Number, default: null },
+  closing:    { type: Number, default: null },
+  litresSold: { type: Number, default: null }, // closing - opening
+}, { _id: false });
+
+const pumpMeterSchema = new Schema({
+  pumpId:      { type: Schema.Types.ObjectId, ref: 'Pump' },
+  pumpNumber:  { type: Number },
+  pumpName:    { type: String },
+  productType: { type: String },
+  nozzle1:     { type: nozzleSchema, default: () => ({}) },
+  nozzle2:     { type: nozzleSchema, default: () => ({}) },
+  totalLitres: { type: Number, default: null }, // nozzle1 + nozzle2 sales
+}, { _id: false });
+
 const islandMeterLogSchema = new Schema({
   company:    { type: Schema.Types.ObjectId, ref: 'Company', required: true },
   branchId:   { type: Schema.Types.ObjectId, ref: 'Branch',  required: true },
@@ -10,22 +26,23 @@ const islandMeterLogSchema = new Schema({
   islandId:   { type: Schema.Types.ObjectId, ref: 'PumpIsland', required: true },
   islandName: { type: String },
 
-  // Filled in after worker clocks in
   workerId:         { type: Schema.Types.ObjectId, ref: 'Worker', default: null },
   workerName:       { type: String, default: '' },
   pumpAssignmentId: { type: Schema.Types.ObjectId, ref: 'PumpAssignment', default: null },
 
-  openingMeter: { type: Number, default: null },
-  closingMeter: { type: Number, default: null },
-  litresSold:   { type: Number, default: null }, // auto: closingMeter - openingMeter
+  // Per-pump, per-nozzle readings
+  pumps: { type: [pumpMeterSchema], default: [] },
 
-  status:     { type: String, enum: ['open', 'closed'], default: 'open' },
-  notes:      { type: String, default: '' },
+  // Computed totals across all pumps (for reporting)
+  totalLitres: { type: Number, default: null },
 
-  openedBy:  { type: Schema.Types.ObjectId, ref: 'User' },
-  openedAt:  { type: Date },
-  closedBy:  { type: Schema.Types.ObjectId, ref: 'User' },
-  closedAt:  { type: Date },
+  status: { type: String, enum: ['open', 'closed'], default: 'open' },
+  notes:  { type: String, default: '' },
+
+  openedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  openedAt: { type: Date },
+  closedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  closedAt: { type: Date },
 }, { timestamps: true });
 
 // One log per island per day
