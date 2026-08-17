@@ -752,6 +752,14 @@ export default function SupervisorDashboard() {
   const [tab, setTab]           = useState('islands');
   const [refreshing, setRefreshing] = useState(false);
 
+  // Profile tab state
+  const [profileData,    setProfileData]    = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileErr,     setProfileErr]     = useState('');
+  const now = new Date();
+  const [profileMonth, setProfileMonth] = useState(now.getMonth() + 1);
+  const [profileYear,  setProfileYear]  = useState(now.getFullYear());
+
   // Modal states
   const [shortageFor, setShortageFor]   = useState(null);  // worker object
   const [offenceFor,  setOffenceFor]    = useState(null);  // worker object
@@ -779,6 +787,31 @@ export default function SupervisorDashboard() {
     setRefreshing(true);
     await fetchDashboard();
     setRefreshing(false);
+  };
+
+  const loadProfile = async (p, mo, yr) => {
+    setProfileLoading(true); setProfileErr('');
+    try {
+      const res = await axios.get(`${BASE}/shortages/worker/dashboard`, {
+        params: { pin: p || pin, month: mo || profileMonth, year: yr || profileYear },
+      });
+      setProfileData(res.data.data);
+    } catch (e) {
+      setProfileErr(e.response?.data?.message || 'Could not load profile');
+    } finally { setProfileLoading(false); }
+  };
+
+  const changeProfileMonth = (dir) => {
+    let mo = profileMonth + dir, yr = profileYear;
+    if (mo < 1)  { mo = 12; yr--; }
+    if (mo > 12) { mo = 1;  yr++; }
+    setProfileMonth(mo); setProfileYear(yr);
+    loadProfile(pin, mo, yr);
+  };
+
+  const handleTabChange = (t) => {
+    setTab(t);
+    if (t === 'profile' && !profileData && !profileLoading) loadProfile();
   };
 
   const handleMeterSaved = (log) => {
@@ -870,12 +903,16 @@ export default function SupervisorDashboard() {
 
       {/* Tabs */}
       <div className="flex gap-1 px-5 mt-4">
-        {['islands', 'workers'].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm capitalize transition-colors ${
-              tab === t ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200'
+        {[
+          { key: 'islands', label: `⛽ Islands (${islands.length})` },
+          { key: 'workers', label: `👷 Workers (${workers.length})` },
+          { key: 'profile', label: '👤 Profile' },
+        ].map(t => (
+          <button key={t.key} onClick={() => handleTabChange(t.key)}
+            className={`flex-1 py-2.5 rounded-xl font-semibold text-xs transition-colors ${
+              tab === t.key ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200'
             }`}>
-            {t === 'islands' ? `⛽ Islands (${islands.length})` : `👷 Workers (${workers.length})`}
+            {t.label}
           </button>
         ))}
       </div>
@@ -938,6 +975,143 @@ export default function SupervisorDashboard() {
             ))}
           </>
         )}
+
+        {tab === 'profile' && (() => {
+          const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG')}`;
+          const fmtT = ts => ts ? new Date(ts).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+
+          if (profileLoading) return (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 text-indigo-600">
+              <Loader size={28} className="animate-spin" />
+              <p className="text-sm font-medium text-gray-500">Loading profile…</p>
+            </div>
+          );
+
+          if (profileErr) return (
+            <div className="text-center py-12">
+              <p className="text-red-500 text-sm mb-3">{profileErr}</p>
+              <button onClick={() => loadProfile()}
+                className="text-xs bg-indigo-100 text-indigo-600 font-semibold px-4 py-2 rounded-xl">
+                Retry
+              </button>
+            </div>
+          );
+
+          if (!profileData) return null;
+
+          const { worker: w, salary, shortages, attendanceDays, daysPresent } = profileData;
+          const totalDeducted = (shortages || []).reduce((s, x) => s + x.amount, 0);
+
+          return (
+            <>
+              {/* Identity card */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
+                {w?.photo ? (
+                  <img src={w.photo} alt="" className="w-14 h-14 rounded-2xl object-cover shrink-0" />
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center shrink-0">
+                    <span className="text-2xl font-bold text-indigo-600">{supervisor.fullName.charAt(0)}</span>
+                  </div>
+                )}
+                <div>
+                  <p className="font-bold text-gray-800 text-base">{supervisor.fullName}</p>
+                  <p className="text-sm text-gray-500">{supervisor.role}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{supervisor.branch}{supervisor.shiftName ? ` · ${supervisor.shiftName}` : ''}</p>
+                </div>
+              </div>
+
+              {/* Month navigator */}
+              <div className="flex items-center justify-between bg-white rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
+                <button onClick={() => changeProfileMonth(-1)} className="p-1.5 rounded-xl bg-gray-100 active:scale-95">
+                  <ChevronDown size={16} className="rotate-90 text-gray-600" />
+                </button>
+                <p className="font-semibold text-gray-800 text-sm">{MONTHS_SHORT[profileMonth - 1]} {profileYear}</p>
+                <button onClick={() => changeProfileMonth(1)} className="p-1.5 rounded-xl bg-gray-100 active:scale-95">
+                  <ChevronDown size={16} className="-rotate-90 text-gray-600" />
+                </button>
+              </div>
+
+              {/* Salary card */}
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-4 text-white">
+                <p className="text-indigo-200 text-xs uppercase tracking-wider mb-3">Salary — {MONTHS_SHORT[profileMonth - 1]} {profileYear}</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Base Salary', value: fmt(salary?.baseSalary || 0), cls: 'text-white' },
+                    { label: 'Deductions',  value: fmt(totalDeducted),            cls: 'text-red-300' },
+                    { label: 'Net Pay',     value: salary?.netPay != null ? fmt(salary.netPay) : '—', cls: 'text-green-300 font-bold' },
+                  ].map(s => (
+                    <div key={s.label} className="bg-white/10 rounded-xl p-3 text-center">
+                      <p className={`text-sm font-bold ${s.cls}`}>{s.value}</p>
+                      <p className="text-indigo-200 text-xs mt-0.5">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+                {salary?.bonus > 0 && (
+                  <p className="text-indigo-200 text-xs text-center mt-2">+ {fmt(salary.bonus)} bonus</p>
+                )}
+              </div>
+
+              {/* Attendance summary */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Attendance</p>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="bg-green-50 rounded-xl py-3">
+                    <p className="text-xl font-bold text-green-600">{daysPresent || 0}</p>
+                    <p className="text-xs text-gray-500">Days Present</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl py-3">
+                    <p className="text-xl font-bold text-amber-500">
+                      {(shortages || []).filter(s => s.source === 'late_arrival').length}
+                    </p>
+                    <p className="text-xs text-gray-500">Late Days</p>
+                  </div>
+                  <div className="bg-red-50 rounded-xl py-3">
+                    <p className="text-xl font-bold text-red-500">
+                      {(shortages || []).filter(s => ['absent','no_clockin'].includes(s.source)).length}
+                    </p>
+                    <p className="text-xs text-gray-500">Absences</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Shortages list */}
+              {(shortages || []).length > 0 && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">
+                    Deductions this month
+                  </p>
+                  <div className="divide-y divide-gray-50">
+                    {shortages.map((s, i) => (
+                      <div key={i} className="flex items-center justify-between px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800 capitalize">
+                            {(s.about || s.reason || s.source || 'Deduction').replace(/_/g, ' ')}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {s.date ? new Date(s.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}
+                          </p>
+                        </div>
+                        <span className="text-sm font-bold text-red-500">-{fmt(s.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-100">
+                    <span className="text-sm font-semibold text-gray-600">Total Deducted</span>
+                    <span className="text-sm font-bold text-red-600">-{fmt(totalDeducted)}</span>
+                  </div>
+                </div>
+              )}
+
+              {(shortages || []).length === 0 && (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="text-3xl mb-2">✅</p>
+                  <p className="text-sm">No deductions this month</p>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* Shortage modal */}
