@@ -376,7 +376,7 @@ function IslandStatusModal({ island, pin, onClose, onSaved }) {
 
 // ── Reassign modal ─────────────────────────────────────────────────────────────
 function ReassignModal({ worker, islands, pin, onClose, onSaved }) {
-  const available = islands.filter(i => !i.worker || i.worker.workerId === worker._id);
+  const available = islands.filter(i => i.islandId !== worker.island?.islandId);
   const [targetId, setTargetId] = useState('');
   const [saving, setSaving]     = useState(false);
   const [err, setErr]           = useState('');
