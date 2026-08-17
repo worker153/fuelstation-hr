@@ -471,9 +471,6 @@ export default function WorkerDashboard() {
   const [breakActing,   setBreakActing ] = useState(false);
   const [breakErr,      setBreakErr    ] = useState('');
   const [breakConfirm,  setBreakConfirm] = useState(null); // { type, label, allowedMinutes }
-  const [simpleClockOutDone, setSimpleClockOutDone] = useState(false);
-  const [simpleClockOutErr,  setSimpleClockOutErr ] = useState('');
-  const [simpleClockOutLoading, setSimpleClockOutLoading] = useState(false);
 
   const deviceToken = localStorage.getItem(TOKEN_KEY) || '';
 
@@ -529,20 +526,6 @@ export default function WorkerDashboard() {
       await loadBreakStatus(workerId);
     } catch (e) { setBreakErr(e.response?.data?.message || 'Could not end break'); }
     finally { setBreakActing(false); }
-  };
-
-  const doSimpleClockOut = async () => {
-    setSimpleClockOutLoading(true); setSimpleClockOutErr('');
-    try {
-      await axios.post(`${BASE}/worker/clock-out`, { pin });
-      setSimpleClockOutDone(true);
-      setTimeout(async () => {
-        setSimpleClockOutDone(false);
-        await load(pin, month, year);
-      }, 2000);
-    } catch (e) {
-      setSimpleClockOutErr(e.response?.data?.message || 'Could not clock out — try again');
-    } finally { setSimpleClockOutLoading(false); }
   };
 
   useEffect(() => {
@@ -700,8 +683,6 @@ export default function WorkerDashboard() {
   const isMultiPump = breakdown.length > 1;
 
   const todayStatus    = pumpData?.todayStatus || {};
-  const canClockOut    = deviceToken && todayStatus.clockedIn && !todayStatus.clockedOut;
-  const canClockIn     = deviceToken && !todayStatus.clockedIn;
 
   const OFFENCE_LABELS = {
     late_arrival: 'Late Arrival', absent_without_notice: 'Absent Without Notice',
@@ -775,31 +756,26 @@ export default function WorkerDashboard() {
               </div>
             )}
 
-            {/* Clock-out card — any device when clocked in */}
+            {/* Clock-out card — approved device only (face scan required) */}
             {todayStatus.clockedIn && !todayStatus.clockedOut && (
-              <div className="rounded-2xl p-4 shadow-sm bg-red-50 border border-red-200">
-                <div className="flex items-center justify-between">
+              deviceToken ? (
+                <div className="rounded-2xl p-4 flex items-center justify-between shadow-sm bg-red-50 border border-red-200">
                   <div>
                     <p className="font-bold text-sm text-red-700">Ready to clock out?</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {deviceToken ? 'Tap to record end of shift' : 'PIN-only · no face scan needed'}
-                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">Face scan required</p>
                   </div>
-                  <button
-                    onClick={() => deviceToken ? setStep('clockout') : doSimpleClockOut()}
-                    disabled={simpleClockOutLoading || simpleClockOutDone}
-                    className="px-4 py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 bg-red-500 disabled:opacity-60 flex items-center gap-1.5">
-                    {simpleClockOutLoading
-                      ? <Loader size={15} className="animate-spin" />
-                      : simpleClockOutDone
-                      ? '✓ Done'
-                      : '🔴 Clock Out'}
+                  <button onClick={() => setStep('clockout')}
+                    className="px-4 py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 bg-red-500">
+                    🔴 Clock Out
                   </button>
                 </div>
-                {simpleClockOutErr && (
-                  <p className="text-xs text-red-600 font-medium mt-2 text-center">{simpleClockOutErr}</p>
-                )}
-              </div>
+              ) : (
+                <div className="rounded-2xl p-4 shadow-sm bg-red-50 border border-red-200 text-center">
+                  <p className="text-2xl mb-1">📱</p>
+                  <p className="text-sm font-semibold text-red-700">Clock Out Requires Terminal</p>
+                  <p className="text-xs text-gray-400 mt-1">Use the approved attendance device to clock out with face scan</p>
+                </div>
+              )
             )}
 
             {/* Inline pump picker — shown whenever needsPicker (any device) */}
