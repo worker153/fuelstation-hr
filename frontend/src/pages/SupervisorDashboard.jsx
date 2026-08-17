@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Delete, Loader, X, ChevronDown, ChevronUp, AlertTriangle, Fuel, Wrench, CheckCircle, RefreshCw } from 'lucide-react';
+import { Delete, Loader, X, ChevronDown, ChevronUp, AlertTriangle, Fuel, Wrench, CheckCircle, RefreshCw, BarChart2, Users, User, Gauge, ChevronRight, Save } from 'lucide-react';
 import axios from 'axios';
 import * as faceapi from '@vladmandic/face-api';
 
@@ -536,126 +536,338 @@ function ReassignModal({ worker, islands, pin, onClose, onSaved }) {
   );
 }
 
-// ── Island card ────────────────────────────────────────────────────────────────
-function IslandCard({ island, pin, workers, allIslands, onMeterSaved, onStatusSaved, onReassignSaved }) {
-  const [expanded, setExpanded]     = useState(false);
-  const [meterOpen, setMeterOpen]   = useState(false);
-  const [statusOpen, setStatusOpen] = useState(false);
+// ── Dedicated Meters tab ───────────────────────────────────────────────────────
+function MeterEntryTab({ islands, pin, onSaved }) {
+  // keyed by islandId: { [pumpKey]: { n1Open, n1Close, n2Open, n2Close } }
+  const [values,  setValues ] = useState(() => {
+    const init = {};
+    islands.forEach(isl => {
+      init[isl.islandId] = {};
+      const pumps = isl.assignedPumps || [];
+      pumps.forEach(p => {
+        const key = String(p.pumpId || p.pumpNumber);
+        const ex  = (isl.log?.pumps || []).find(lp => String(lp.pumpId || lp.pumpNumber) === key) || {};
+        init[isl.islandId][key] = {
+          n1Open:  ex.nozzle1?.opening  ?? '',
+          n1Close: ex.nozzle1?.closing  ?? '',
+          n2Open:  ex.nozzle2?.opening  ?? '',
+          n2Close: ex.nozzle2?.closing  ?? '',
+        };
+      });
+    });
+    return init;
+  });
+  const [saving,  setSaving ] = useState({});   // { islandId: bool }
+  const [saved,   setSaved  ] = useState({});   // { islandId: bool }
+  const [errors,  setErrors ] = useState({});   // { islandId: string }
+  const [expanded,setExpanded] = useState(() => {
+    const e = {};
+    islands.forEach(isl => { e[isl.islandId] = true; });
+    return e;
+  });
+
+  const setVal = (islandId, pumpKey, field, val) =>
+    setValues(prev => ({
+      ...prev,
+      [islandId]: { ...prev[islandId], [pumpKey]: { ...(prev[islandId]?.[pumpKey] || {}), [field]: val } },
+    }));
+
+  const saveIsland = async (isl) => {
+    const id    = isl.islandId;
+    const pumps = isl.assignedPumps || [];
+    setSaving(p => ({ ...p, [id]: true }));
+    setErrors(p => ({ ...p, [id]: '' }));
+    setSaved(p =>  ({ ...p, [id]: false }));
+    try {
+      const submitPumps = pumps.map(p => {
+        const key = String(p.pumpId || p.pumpNumber);
+        const v   = values[id]?.[key] || {};
+        return {
+          pumpId:         p.pumpId,
+          pumpNumber:     p.pumpNumber,
+          pumpName:       p.pumpName,
+          productType:    p.productType,
+          nozzle1Opening: v.n1Open  !== '' ? Number(v.n1Open)  : null,
+          nozzle1Closing: v.n1Close !== '' ? Number(v.n1Close) : null,
+          nozzle2Opening: v.n2Open  !== '' ? Number(v.n2Open)  : null,
+          nozzle2Closing: v.n2Close !== '' ? Number(v.n2Close) : null,
+        };
+      });
+      const res = await axios.post(`${BASE}/supervisor/meter`, { pin, islandId: id, pumps: submitPumps });
+      onSaved?.(res.data.data);
+      setSaved(p => ({ ...p, [id]: true }));
+      setTimeout(() => setSaved(p => ({ ...p, [id]: false })), 2500);
+    } catch (e) {
+      setErrors(p => ({ ...p, [id]: e.response?.data?.message || 'Save failed' }));
+    } finally {
+      setSaving(p => ({ ...p, [id]: false }));
+    }
+  };
+
+  if (islands.length === 0) return (
+    <div className="text-center py-16 text-gray-400">
+      <Gauge size={40} className="mx-auto mb-3 opacity-30" />
+      <p>No islands found</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-bold text-gray-700">Enter meter readings per pump</p>
+        <p className="text-xs text-gray-400">Morning = opening · Evening = closing</p>
+      </div>
+
+      {islands.map(isl => {
+        const id     = isl.islandId;
+        const pumps  = isl.assignedPumps || [];
+        const log    = isl.log;
+        const hasLog = !!log;
+        const isOpen = expanded[id] !== false;
+
+        // Status of this island's log
+        const anyOpening = pumps.some(p => {
+          const key = String(p.pumpId || p.pumpNumber);
+          return values[id]?.[key]?.n1Open !== '' || values[id]?.[key]?.n2Open !== '';
+        });
+        const anyClosing = pumps.some(p => {
+          const key = String(p.pumpId || p.pumpNumber);
+          return values[id]?.[key]?.n1Close !== '' || values[id]?.[key]?.n2Close !== '';
+        });
+
+        return (
+          <div key={id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* Island header */}
+            <button
+              className="w-full flex items-center justify-between px-4 py-3.5 active:bg-gray-50"
+              onClick={() => setExpanded(p => ({ ...p, [id]: !p[id] }))}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
+                  <Fuel size={16} className="text-indigo-600" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-gray-800 text-sm">{isl.islandName}</p>
+                  <p className="text-xs text-gray-400">{pumps.length} pump{pumps.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {anyClosing
+                  ? <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Closing set</span>
+                  : anyOpening
+                  ? <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Opening set</span>
+                  : <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Not entered</span>
+                }
+                {isOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+              </div>
+            </button>
+
+            {isOpen && (
+              <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                {pumps.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-3">No pumps configured for this island</p>
+                ) : pumps.map(p => {
+                  const key = String(p.pumpId || p.pumpNumber);
+                  const v   = values[id]?.[key] || {};
+                  const n1L = v.n1Close !== '' && v.n1Open !== '' ? Math.max(0, Number(v.n1Close) - Number(v.n1Open)) : null;
+                  const n2L = v.n2Close !== '' && v.n2Open !== '' ? Math.max(0, Number(v.n2Close) - Number(v.n2Open)) : null;
+                  const total = n1L != null || n2L != null ? (n1L || 0) + (n2L || 0) : null;
+
+                  return (
+                    <div key={key} className="mt-3">
+                      {/* Pump header */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-7 h-7 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
+                          <Gauge size={13} className="text-gray-500" />
+                        </div>
+                        <p className="font-bold text-gray-700 text-sm">{p.pumpName || `Pump ${p.pumpNumber}`}</p>
+                        {p.productType && (
+                          <span className="text-[10px] bg-indigo-50 text-indigo-600 font-semibold px-1.5 py-0.5 rounded-full">
+                            {p.productType}
+                          </span>
+                        )}
+                        {total != null && (
+                          <span className="ml-auto text-xs font-black text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                            {fmtL(total)}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 2-column: Outer | Inner */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Outer nozzle */}
+                        <div className="bg-blue-50 rounded-xl p-3 space-y-2">
+                          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Outer Nozzle</p>
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-medium">Opening</label>
+                            <input type="number" inputMode="decimal" value={v.n1Open}
+                              onChange={e => setVal(id, key, 'n1Open', e.target.value)}
+                              className="w-full mt-1 border border-blue-200 bg-white rounded-lg px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
+                              placeholder="0.00" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-medium">Closing</label>
+                            <input type="number" inputMode="decimal" value={v.n1Close}
+                              onChange={e => setVal(id, key, 'n1Close', e.target.value)}
+                              className="w-full mt-1 border border-blue-200 bg-white rounded-lg px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
+                              placeholder="0.00" />
+                          </div>
+                          {n1L != null && (
+                            <p className="text-xs font-bold text-blue-700 text-right">{fmtL(n1L)}</p>
+                          )}
+                        </div>
+
+                        {/* Inner nozzle */}
+                        <div className="bg-purple-50 rounded-xl p-3 space-y-2">
+                          <p className="text-[10px] font-bold text-purple-600 uppercase tracking-wide">Inner Nozzle</p>
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-medium">Opening</label>
+                            <input type="number" inputMode="decimal" value={v.n2Open}
+                              onChange={e => setVal(id, key, 'n2Open', e.target.value)}
+                              className="w-full mt-1 border border-purple-200 bg-white rounded-lg px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-300"
+                              placeholder="0.00" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-medium">Closing</label>
+                            <input type="number" inputMode="decimal" value={v.n2Close}
+                              onChange={e => setVal(id, key, 'n2Close', e.target.value)}
+                              className="w-full mt-1 border border-purple-200 bg-white rounded-lg px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-300"
+                              placeholder="0.00" />
+                          </div>
+                          {n2L != null && (
+                            <p className="text-xs font-bold text-purple-700 text-right">{fmtL(n2L)}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {errors[id] && (
+                  <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2 text-center">{errors[id]}</p>
+                )}
+
+                <button onClick={() => saveIsland(isl)} disabled={saving[id]}
+                  className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                    saved[id]
+                      ? 'bg-green-500 text-white'
+                      : 'bg-indigo-600 text-white disabled:opacity-60'
+                  }`}>
+                  {saving[id]
+                    ? <><Loader size={16} className="animate-spin" /> Saving…</>
+                    : saved[id]
+                    ? <><CheckCircle size={16} /> Saved!</>
+                    : <><Save size={16} /> Save {isl.islandName} Meters</>
+                  }
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Island card (simplified — meters now in dedicated tab) ─────────────────────
+function IslandCard({ island, pin, workers, allIslands, onStatusSaved, onReassignSaved }) {
+  const [expanded,     setExpanded    ] = useState(false);
+  const [statusOpen,   setStatusOpen  ] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
 
-  const hasLog = !!island.log;
-  const logClosed = island.log?.status === 'closed';
-
-  // Derive a summary status from individual pump statuses
   const pumps = island.assignedPumps || [];
-  const anyFaulty      = pumps.some(p => p.status === 'faulty');
-  const anyOutOfStock  = pumps.some(p => p.status === 'out_of_stock');
-  const summaryStatus  = anyFaulty ? 'faulty' : anyOutOfStock ? 'out_of_stock' : island.islandStatus;
+  const anyFaulty     = pumps.some(p => p.status === 'faulty');
+  const anyOutOfStock = pumps.some(p => p.status === 'out_of_stock');
+  const summaryStatus = anyFaulty ? 'faulty' : anyOutOfStock ? 'out_of_stock' : island.islandStatus;
   const st = STATUS_LABELS[summaryStatus] || STATUS_LABELS.active;
 
-  const assignedWorker = island.worker
-    ? workers.find(w => w._id === island.worker.workerId)
-    : null;
+  const hasLog    = !!island.log;
+  const logClosed = island.log?.status === 'closed';
+  const assignedWorker = island.worker ? workers.find(w => w._id === island.worker.workerId) : null;
 
   return (
     <>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Header row */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-800">{island.islandName}</span>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${st.cls}`}>
-              {st.icon} {st.label}
-            </span>
-          </div>
-          <button onClick={() => setExpanded(e => !e)} className="p-1 text-gray-400">
-            {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-        </div>
-
-        {/* Worker + meter summary */}
-        <div className="px-4 pb-3">
-          {island.worker ? (
-            <p className="text-sm text-gray-600">
-              👷 {island.worker.workerName}
-            </p>
-          ) : (
-            <p className="text-sm text-gray-400 italic">No worker assigned</p>
-          )}
-          {hasLog && (
-            <div className="mt-1 flex items-center gap-2">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                logClosed ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-              }`}>
-                {logClosed ? '✓ Log closed' : '⏳ Log open'}
-              </span>
-              {island.log?.totalLitres != null && (
-                <span className="text-xs text-gray-500">{fmtL(island.log.totalLitres)} sold</span>
-              )}
+        <div className="px-4 pt-4 pb-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Fuel size={18} className="text-indigo-600" />
             </div>
-          )}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-800 text-sm">{island.islandName}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.icon} {st.label}</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {island.worker ? `👷 ${island.worker.workerName}` : 'No worker assigned'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasLog && island.log?.totalLitres > 0 && (
+              <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                {fmtL(island.log.totalLitres)}
+              </span>
+            )}
+            <button onClick={() => setExpanded(e => !e)} className="p-1.5 rounded-xl hover:bg-gray-100">
+              {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+            </button>
+          </div>
         </div>
 
-        {/* Expanded pump breakdown */}
-        {expanded && hasLog && island.log.pumps?.length > 0 && (
-          <div className="px-4 pb-3 space-y-3">
+        {/* Expanded pump meter summary */}
+        {expanded && hasLog && (island.log.pumps || []).length > 0 && (
+          <div className="px-4 pb-3 space-y-2 border-t border-gray-100 pt-3">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Today's Meter Readings</p>
             {island.log.pumps.map((pump, i) => {
-              const pumpStatus = pumps.find(p => String(p.pumpId) === String(pump.pumpId))?.status || 'active';
-              const psDot = pumpStatus === 'faulty' ? 'bg-red-500' : pumpStatus === 'out_of_stock' ? 'bg-orange-500' : 'bg-green-500';
-              const psLabel = pumpStatus === 'faulty' ? 'Faulty' : pumpStatus === 'out_of_stock' ? 'Fuel Finished' : 'Active';
+              const pumpSt = pumps.find(p => String(p.pumpId) === String(pump.pumpId))?.status || 'active';
+              const dot    = pumpSt === 'faulty' ? 'bg-red-500' : pumpSt === 'out_of_stock' ? 'bg-orange-500' : 'bg-green-500';
               return (
-              <div key={i} className="bg-gray-50 rounded-xl p-3 text-xs">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-semibold text-gray-700">{pump.pumpName || `Pump ${pump.pumpNumber}`}</p>
-                  <span className={`flex items-center gap-1 text-xs font-medium`}>
-                    <span className={`w-2 h-2 rounded-full ${psDot}`} />
-                    {psLabel}
-                  </span>
+                <div key={i} className="bg-gray-50 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${dot}`} />
+                      <span className="text-xs font-bold text-gray-700">{pump.pumpName || `Pump ${pump.pumpNumber}`}</span>
+                    </div>
+                    {pump.totalLitres != null && (
+                      <span className="text-xs font-black text-green-700">{fmtL(pump.totalLitres)}</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 text-[10px]">
+                    {[
+                      { label: 'Outer Open',  val: pump.nozzle1?.opening },
+                      { label: 'Outer Close', val: pump.nozzle1?.closing },
+                      { label: 'Inner Open',  val: pump.nozzle2?.opening },
+                      { label: 'Inner Close', val: pump.nozzle2?.closing },
+                    ].map(({ label, val }) => (
+                      <div key={label} className="text-center">
+                        <p className="text-gray-400">{label}</p>
+                        <p className="font-mono font-semibold text-gray-700 mt-0.5">
+                          {val != null ? Number(val).toLocaleString('en-NG', { minimumFractionDigits: 1 }) : '—'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-y-1.5 gap-x-4">
-                  <span className="text-gray-500">Outer Opening</span>
-                  <span className="font-mono text-right">{fmtNum(pump.nozzle1?.opening)}</span>
-                  <span className="text-gray-500">Outer Closing</span>
-                  <span className="font-mono text-right">{fmtNum(pump.nozzle1?.closing)}</span>
-                  <span className="text-gray-500">Inner Opening</span>
-                  <span className="font-mono text-right">{fmtNum(pump.nozzle2?.opening)}</span>
-                  <span className="text-gray-500">Inner Closing</span>
-                  <span className="font-mono text-right">{fmtNum(pump.nozzle2?.closing)}</span>
-                  {pump.totalLitres != null && <>
-                    <span className="text-green-600 font-medium">Litres Sold</span>
-                    <span className="font-bold text-green-600 text-right">{fmtL(pump.totalLitres)}</span>
-                  </>}
-                </div>
-              </div>
               );
             })}
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="px-4 pb-4 flex flex-wrap gap-2">
-          <button onClick={() => setMeterOpen(true)}
-            className="flex-1 min-w-[80px] py-2 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-semibold active:scale-95 transition-transform">
-            📊 Meters
-          </button>
+        {/* Action row */}
+        <div className="px-4 pb-4 flex gap-2 border-t border-gray-50 pt-3">
           <button onClick={() => setStatusOpen(true)}
-            className="flex-1 min-w-[80px] py-2 bg-amber-50 text-amber-700 rounded-xl text-xs font-semibold active:scale-95 transition-transform">
-            ⚙️ Status
+            className="flex-1 py-2.5 bg-amber-50 text-amber-700 rounded-xl text-xs font-semibold active:scale-95 transition-transform">
+            ⚙️ Pump Status
           </button>
           {island.worker && (
             <button onClick={() => setReassignOpen(true)}
-              className="flex-1 min-w-[80px] py-2 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold active:scale-95 transition-transform">
+              className="flex-1 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold active:scale-95 transition-transform">
               🔄 Reassign
             </button>
           )}
         </div>
       </div>
 
-      {meterOpen && (
-        <MeterModal island={island} pin={pin}
-          onClose={() => setMeterOpen(false)}
-          onSaved={onMeterSaved} />
-      )}
       {statusOpen && (
         <PumpStatusModal island={island} pin={pin}
           onClose={() => setStatusOpen(false)}
@@ -1349,66 +1561,63 @@ export default function SupervisorDashboard() {
     return `${day} ${months[+m - 1]} ${y}`;
   };
 
+  const clockedInCount = workers.filter(w => w.todayStatus?.clockedIn).length;
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-700 to-purple-700 text-white px-5 pt-10 pb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-indigo-200 text-xs uppercase tracking-wider">Supervisor</p>
-            <h1 className="text-xl font-bold mt-0.5">{supervisor.fullName}</h1>
-            <p className="text-indigo-200 text-sm mt-0.5">{supervisor.branch}{supervisor.shiftName ? ` · ${supervisor.shiftName}` : ''}</p>
-            <p className="text-indigo-300 text-xs mt-1">{fmtDate(date)}</p>
+      <div className="bg-gradient-to-br from-indigo-700 via-indigo-600 to-purple-700 text-white px-5 pt-10 pb-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            {supervisor.photo
+              ? <img src={supervisor.photo} alt="" className="w-11 h-11 rounded-2xl object-cover border-2 border-white/30 shrink-0" />
+              : <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0 text-lg font-black">
+                  {supervisor.fullName?.[0]}
+                </div>
+            }
+            <div>
+              <p className="font-black text-base leading-tight">{supervisor.fullName}</p>
+              <p className="text-indigo-200 text-xs">{supervisor.branch}{supervisor.shiftName ? ` · ${supervisor.shiftName}` : ''}</p>
+            </div>
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
             <button onClick={refresh} disabled={refreshing}
-              className="bg-white/20 p-2.5 rounded-xl active:scale-95 transition-transform">
-              <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+              className="bg-white/15 p-2 rounded-xl active:scale-95 transition-transform border border-white/20">
+              <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             </button>
-            <button onClick={() => { setData(null); setPin(''); }}
-              className="bg-white/20 px-3 py-1.5 rounded-xl text-xs font-semibold active:scale-95">
-              Log Out
+            <button onClick={() => { setData(null); setPin(''); setRole(null); }}
+              className="bg-white/15 px-3 py-2 rounded-xl text-xs font-semibold active:scale-95 border border-white/20">
+              Exit
             </button>
           </div>
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mt-5">
+        <div className="grid grid-cols-4 gap-2">
           {[
-            { label: 'Islands', value: islands.length },
-            { label: 'Workers', value: workers.length },
-            { label: 'Active', value: islands.filter(i => i.islandStatus === 'active').length },
+            { label: 'Islands',  value: islands.length,      color: 'bg-white/10' },
+            { label: 'Workers',  value: workers.length,      color: 'bg-white/10' },
+            { label: 'Clocked',  value: clockedInCount,      color: 'bg-green-500/20' },
+            { label: 'Active',   value: islands.filter(i => i.islandStatus === 'active').length, color: 'bg-white/10' },
           ].map(s => (
-            <div key={s.label} className="bg-white/15 rounded-xl px-3 py-2.5 text-center">
-              <p className="text-lg font-bold">{s.value}</p>
-              <p className="text-indigo-200 text-xs">{s.label}</p>
+            <div key={s.label} className={`${s.color} rounded-xl px-2 py-2.5 text-center border border-white/10`}>
+              <p className="text-lg font-black">{s.value}</p>
+              <p className="text-indigo-200 text-[10px] font-medium">{s.label}</p>
             </div>
           ))}
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-5 mt-4">
-        {[
-          { key: 'islands', label: `⛽ Islands (${islands.length})` },
-          { key: 'workers', label: `👷 Workers (${workers.length})` },
-          { key: 'profile', label: '👤 Profile' },
-        ].map(t => (
-          <button key={t.key} onClick={() => handleTabChange(t.key)}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-xs transition-colors ${
-              tab === t.key ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200'
-            }`}>
-            {t.label}
-          </button>
-        ))}
+        <p className="text-indigo-300 text-xs mt-3">{fmtDate(date)}</p>
       </div>
 
       {/* Content */}
-      <div className="px-5 py-4 space-y-3 pb-20">
+      <div className="px-4 py-4 space-y-3">
+
+        {/* ── ISLANDS TAB ── */}
         {tab === 'islands' && (
           islands.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
-              <p className="text-4xl mb-3">⛽</p>
+              <Fuel size={40} className="mx-auto mb-3 opacity-30" />
               <p>No islands found for this branch</p>
             </div>
           ) : islands.map(island => (
@@ -1418,64 +1627,62 @@ export default function SupervisorDashboard() {
               pin={pin}
               workers={workers}
               allIslands={islands}
-              onMeterSaved={handleMeterSaved}
               onStatusSaved={handleStatusSaved}
               onReassignSaved={handleReassignSaved}
             />
           ))
         )}
 
+        {/* ── METERS TAB ── */}
+        {tab === 'meters' && (
+          <MeterEntryTab islands={islands} pin={pin} onSaved={handleMeterSaved} />
+        )}
+
+        {/* ── WORKERS TAB ── */}
         {tab === 'workers' && (
           <>
             {/* Supervisor self-clock card */}
             {(() => {
               const supStatus = supervisor.todayStatus || {};
-              const supClockLabel = supStatus.clockedIn
-                ? (supStatus.clockedOut ? 'Clocked Out' : 'Clock Out')
-                : 'Clock In';
               const supClockBg = supStatus.clockedIn
                 ? (supStatus.clockedOut ? 'bg-gray-200 text-gray-500' : 'bg-red-600 text-white')
                 : 'bg-green-600 text-white';
               return (
-                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 flex items-center gap-3">
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
                   {supervisor.photo
                     ? <img src={supervisor.photo} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
-                    : <div className="w-10 h-10 rounded-full bg-indigo-200 flex items-center justify-center shrink-0">
-                        <span className="text-indigo-700 font-bold text-sm">{supervisor.fullName.charAt(0)}</span>
+                    : <div className="w-10 h-10 rounded-full bg-indigo-200 flex items-center justify-center shrink-0 font-black text-indigo-700">
+                        {supervisor.fullName.charAt(0)}
                       </div>
                   }
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-indigo-800 text-sm truncate">{supervisor.fullName}</p>
+                    <p className="font-bold text-indigo-900 text-sm truncate">{supervisor.fullName}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`inline-flex items-center gap-1 text-xs font-medium ${supStatus.clockedIn ? 'text-green-600' : 'text-gray-400'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${supStatus.clockedIn ? 'bg-green-500' : 'bg-gray-300'}`} />
-                        {supStatus.clockedIn ? 'Clocked in' : 'Not clocked in'}
-                      </span>
-                      <span className="text-indigo-200">·</span>
-                      <span className="text-xs text-indigo-500 font-medium">You</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${supStatus.clockedIn ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      <span className="text-xs text-gray-500">{supStatus.clockedIn ? 'Clocked in' : 'Not clocked in'} · You</span>
                     </div>
                   </div>
-                  <button
-                    disabled={supStatus.clockedIn && supStatus.clockedOut}
+                  <button disabled={supStatus.clockedIn && supStatus.clockedOut}
                     onClick={() => setClockFor('self')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all ${supClockBg} disabled:cursor-not-allowed`}>
-                    {supStatus.clockedIn && supStatus.clockedOut ? '✓ Done' : supClockLabel}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all shrink-0 ${supClockBg} disabled:cursor-not-allowed`}>
+                    {supStatus.clockedIn && supStatus.clockedOut ? '✓ Done' : supStatus.clockedIn ? 'Clock Out' : 'Clock In'}
                   </button>
                 </div>
               );
             })()}
 
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-                {workers.length} worker{workers.length !== 1 ? 's' : ''} in your shift
-              </p>
+              <div>
+                <p className="text-sm font-bold text-gray-700">{workers.length} Worker{workers.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-gray-400">{clockedInCount} clocked in today</p>
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => setShortageFor({ _id: '', fullName: '' })}
-                  className="text-xs bg-orange-100 text-orange-600 font-semibold px-3 py-1.5 rounded-xl">
+                  className="text-xs bg-orange-100 text-orange-700 font-semibold px-3 py-2 rounded-xl active:scale-95">
                   + Shortage
                 </button>
                 <button onClick={() => setOffenceFor({ _id: '', fullName: '' })}
-                  className="text-xs bg-red-100 text-red-600 font-semibold px-3 py-1.5 rounded-xl">
+                  className="text-xs bg-red-100 text-red-700 font-semibold px-3 py-2 rounded-xl active:scale-95">
                   + Offence
                 </button>
               </div>
@@ -1483,8 +1690,8 @@ export default function SupervisorDashboard() {
 
             {workers.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
-                <p className="text-4xl mb-3">👷</p>
-                <p>No workers found in your shift</p>
+                <Users size={40} className="mx-auto mb-3 opacity-30" />
+                <p>No workers in your shift</p>
               </div>
             ) : workers.map(worker => (
               <WorkerRow
@@ -1501,10 +1708,10 @@ export default function SupervisorDashboard() {
           </>
         )}
 
+        {/* ── PROFILE TAB ── */}
         {tab === 'profile' && (() => {
           const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG')}`;
-          const fmtT = ts => ts ? new Date(ts).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
 
           if (profileLoading) return (
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-indigo-600">
@@ -1512,33 +1719,23 @@ export default function SupervisorDashboard() {
               <p className="text-sm font-medium text-gray-500">Loading profile…</p>
             </div>
           );
-
           if (profileErr) return (
             <div className="text-center py-12">
               <p className="text-red-500 text-sm mb-3">{profileErr}</p>
-              <button onClick={() => loadProfile()}
-                className="text-xs bg-indigo-100 text-indigo-600 font-semibold px-4 py-2 rounded-xl">
-                Retry
-              </button>
+              <button onClick={() => loadProfile()} className="text-xs bg-indigo-100 text-indigo-600 font-semibold px-4 py-2 rounded-xl">Retry</button>
             </div>
           );
-
           if (!profileData) return null;
-
-          const { worker: w, salary, shortages, attendanceDays, daysPresent } = profileData;
+          const { worker: w, salary, shortages, daysPresent } = profileData;
           const totalDeducted = (shortages || []).reduce((s, x) => s + x.amount, 0);
 
           return (
             <>
-              {/* Identity card */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
-                {w?.photo ? (
-                  <img src={w.photo} alt="" className="w-14 h-14 rounded-2xl object-cover shrink-0" />
-                ) : (
-                  <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center shrink-0">
-                    <span className="text-2xl font-bold text-indigo-600">{supervisor.fullName.charAt(0)}</span>
-                  </div>
-                )}
+                {w?.photo
+                  ? <img src={w.photo} alt="" className="w-14 h-14 rounded-2xl object-cover shrink-0" />
+                  : <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center shrink-0 text-2xl font-bold text-indigo-600">{supervisor.fullName.charAt(0)}</div>
+                }
                 <div>
                   <p className="font-bold text-gray-800 text-base">{supervisor.fullName}</p>
                   <p className="text-sm text-gray-500">{supervisor.role}</p>
@@ -1546,7 +1743,6 @@ export default function SupervisorDashboard() {
                 </div>
               </div>
 
-              {/* Month navigator */}
               <div className="flex items-center justify-between bg-white rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
                 <button onClick={() => changeProfileMonth(-1)} className="p-1.5 rounded-xl bg-gray-100 active:scale-95">
                   <ChevronDown size={16} className="rotate-90 text-gray-600" />
@@ -1557,78 +1753,51 @@ export default function SupervisorDashboard() {
                 </button>
               </div>
 
-              {/* Salary card */}
               <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-4 text-white">
                 <p className="text-indigo-200 text-xs uppercase tracking-wider mb-3">Salary — {MONTHS_SHORT[profileMonth - 1]} {profileYear}</p>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: 'Base Salary', value: fmt(salary?.baseSalary || 0), cls: 'text-white' },
-                    { label: 'Deductions',  value: fmt(totalDeducted),            cls: 'text-red-300' },
-                    { label: 'Net Pay',     value: salary?.netPay != null ? fmt(salary.netPay) : '—', cls: 'text-green-300 font-bold' },
+                    { label: 'Base', value: fmt(salary?.baseSalary || 0), cls: 'text-white' },
+                    { label: 'Deducted', value: fmt(totalDeducted), cls: 'text-red-300' },
+                    { label: 'Net Pay', value: salary?.netPay != null ? fmt(salary.netPay) : '—', cls: 'text-green-300 font-black' },
                   ].map(s => (
-                    <div key={s.label} className="bg-white/10 rounded-xl p-3 text-center">
+                    <div key={s.label} className="bg-white/10 rounded-xl p-3 text-center border border-white/10">
                       <p className={`text-sm font-bold ${s.cls}`}>{s.value}</p>
                       <p className="text-indigo-200 text-xs mt-0.5">{s.label}</p>
                     </div>
                   ))}
                 </div>
-                {salary?.bonus > 0 && (
-                  <p className="text-indigo-200 text-xs text-center mt-2">+ {fmt(salary.bonus)} bonus</p>
-                )}
               </div>
 
-              {/* Attendance summary */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Attendance</p>
                 <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-green-50 rounded-xl py-3">
-                    <p className="text-xl font-bold text-green-600">{daysPresent || 0}</p>
-                    <p className="text-xs text-gray-500">Days Present</p>
-                  </div>
-                  <div className="bg-amber-50 rounded-xl py-3">
-                    <p className="text-xl font-bold text-amber-500">
-                      {(shortages || []).filter(s => s.source === 'late_arrival').length}
-                    </p>
-                    <p className="text-xs text-gray-500">Late Days</p>
-                  </div>
-                  <div className="bg-red-50 rounded-xl py-3">
-                    <p className="text-xl font-bold text-red-500">
-                      {(shortages || []).filter(s => ['absent','no_clockin'].includes(s.source)).length}
-                    </p>
-                    <p className="text-xs text-gray-500">Absences</p>
-                  </div>
+                  <div className="bg-green-50 rounded-xl py-3"><p className="text-xl font-bold text-green-600">{daysPresent || 0}</p><p className="text-xs text-gray-500">Present</p></div>
+                  <div className="bg-amber-50 rounded-xl py-3"><p className="text-xl font-bold text-amber-500">{(shortages || []).filter(s => s.source === 'late_arrival').length}</p><p className="text-xs text-gray-500">Late</p></div>
+                  <div className="bg-red-50 rounded-xl py-3"><p className="text-xl font-bold text-red-500">{(shortages || []).filter(s => ['absent','no_clockin'].includes(s.source)).length}</p><p className="text-xs text-gray-500">Absent</p></div>
                 </div>
               </div>
 
-              {/* Shortages list */}
-              {(shortages || []).length > 0 && (
+              {(shortages || []).length > 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">
-                    Deductions this month
-                  </p>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">Deductions</p>
                   <div className="divide-y divide-gray-50">
                     {shortages.map((s, i) => (
                       <div key={i} className="flex items-center justify-between px-4 py-3">
                         <div>
-                          <p className="text-sm font-medium text-gray-800 capitalize">
-                            {(s.about || s.reason || s.source || 'Deduction').replace(/_/g, ' ')}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {s.date ? new Date(s.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}
-                          </p>
+                          <p className="text-sm font-medium text-gray-800 capitalize">{(s.about || s.source || 'Deduction').replace(/_/g, ' ')}</p>
+                          <p className="text-xs text-gray-400">{s.date ? new Date(s.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}</p>
                         </div>
                         <span className="text-sm font-bold text-red-500">-{fmt(s.amount)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-100">
-                    <span className="text-sm font-semibold text-gray-600">Total Deducted</span>
+                  <div className="flex justify-between px-4 py-3 bg-gray-50 border-t border-gray-100">
+                    <span className="text-sm font-semibold text-gray-600">Total</span>
                     <span className="text-sm font-bold text-red-600">-{fmt(totalDeducted)}</span>
                   </div>
                 </div>
-              )}
-
-              {(shortages || []).length === 0 && (
+              ) : (
                 <div className="text-center py-8 text-gray-400">
                   <p className="text-3xl mb-2">✅</p>
                   <p className="text-sm">No deductions this month</p>
@@ -1639,64 +1808,59 @@ export default function SupervisorDashboard() {
         })()}
       </div>
 
-      {/* Shortage modal */}
+      {/* ── Bottom navigation ── */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+        <div className="flex">
+          {[
+            { key: 'islands', icon: Fuel,      label: 'Islands'  },
+            { key: 'meters',  icon: Gauge,      label: 'Meters'   },
+            { key: 'workers', icon: Users,      label: 'Workers'  },
+            { key: 'profile', icon: User,       label: 'Profile'  },
+          ].map(({ key, icon: Icon, label }) => (
+            <button key={key} onClick={() => handleTabChange(key)}
+              className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors relative ${
+                tab === key ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
+              }`}>
+              <Icon size={22} />
+              <span className="text-[10px] font-semibold">{label}</span>
+              {tab === key && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-indigo-600 rounded-full" />
+              )}
+              {key === 'workers' && clockedInCount > 0 && tab !== 'workers' && (
+                <span className="absolute top-2 right-1/4 w-4 h-4 bg-green-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                  {clockedInCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Modals */}
       {shortageFor && (
-        <ShortageModal
-          workers={workers}
-          pin={pin}
-          defaultWorkerId={shortageFor._id}
-          onClose={() => setShortageFor(null)}
-          onSaved={() => { setShortageFor(null); }}
-        />
+        <ShortageModal workers={workers} pin={pin} defaultWorkerId={shortageFor._id}
+          onClose={() => setShortageFor(null)} onSaved={() => setShortageFor(null)} />
       )}
-
-      {/* Offence modal */}
       {offenceFor && (
-        <OffenceModal
-          workers={workers}
-          pin={pin}
-          defaultWorkerId={offenceFor._id}
-          onClose={() => setOffenceFor(null)}
-          onSaved={() => setOffenceFor(null)}
-        />
+        <OffenceModal workers={workers} pin={pin} defaultWorkerId={offenceFor._id}
+          onClose={() => setOffenceFor(null)} onSaved={() => setOffenceFor(null)} />
       )}
-
-      {/* Reassign modal */}
       {reassignFor && (
-        <ReassignModal
-          worker={reassignFor}
-          islands={islands}
-          pin={pin}
+        <ReassignModal worker={reassignFor} islands={islands} pin={pin}
           onClose={() => setReassignFor(null)}
-          onSaved={() => { setReassignFor(null); handleReassignSaved(); }}
-        />
+          onSaved={() => { setReassignFor(null); handleReassignSaved(); }} />
       )}
-
-      {/* Clock-in / clock-out modal */}
       {clockFor && (() => {
-        const isSelf = clockFor === 'self';
+        const isSelf  = clockFor === 'self';
         const workerObj = isSelf
-          ? {
-              _id:         supervisor._id || 'self',
-              fullName:    supervisor.fullName,
-              photo:       supervisor.photo,
-              hasFace:     supervisor.hasFace,
-              faceDescriptor: supervisor.faceDescriptor,
-              todayStatus: supervisor.todayStatus,
-              island:      null,
-            }
+          ? { _id: supervisor._id || 'self', fullName: supervisor.fullName, photo: supervisor.photo,
+              hasFace: supervisor.hasFace, faceDescriptor: supervisor.faceDescriptor,
+              todayStatus: supervisor.todayStatus, island: null }
           : clockFor;
         return (
-          <ClockModal
-            worker={workerObj}
-            supervisorPin={pin}
-            skipPin={isSelf}
-            onSuccess={(wid, type) => {
-              handleClockSuccess(wid, type);
-              setTimeout(() => setClockFor(null), 1800);
-            }}
-            onClose={() => setClockFor(null)}
-          />
+          <ClockModal worker={workerObj} supervisorPin={pin} skipPin={isSelf}
+            onSuccess={(wid, type) => { handleClockSuccess(wid, type); setTimeout(() => setClockFor(null), 1800); }}
+            onClose={() => setClockFor(null)} />
         );
       })()}
     </div>
