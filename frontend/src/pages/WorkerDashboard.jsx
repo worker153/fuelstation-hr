@@ -466,6 +466,11 @@ export default function WorkerDashboard() {
   const [salesPeriod,   setSalesPeriod ] = useState('month'); // 'today' | 'month' | 'year'
   const [historyData,   setHistoryData ] = useState(null);
   const [historyLoading,setHistoryLoading] = useState(false);
+  const [breakStatus,   setBreakStatus ] = useState(null);
+  const [breakLoading,  setBreakLoading] = useState(false);
+  const [breakActing,   setBreakActing ] = useState(false);
+  const [breakErr,      setBreakErr    ] = useState('');
+  const [breakConfirm,  setBreakConfirm] = useState(null); // { type, label, allowedMinutes }
 
   const deviceToken = localStorage.getItem(TOKEN_KEY) || '';
 
@@ -479,11 +484,7 @@ export default function WorkerDashboard() {
       const dashData = dashRes.data.data;
       setData(dashData);
       setDocs(docsRes.data.data);
-
-      const needsClockIn = deviceToken && !dashData.pump?.todayStatus?.clockedIn;
-      if (needsClockIn) setStep('clockin');
-      else if (dashData.pump?.needsPicker) setStep('pump-picker');
-      else setStep('dashboard');
+      setStep('dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid PIN — try again');
       setPin('');
@@ -499,9 +500,41 @@ export default function WorkerDashboard() {
     } catch {} finally { setHistoryLoading(false); }
   }, [now.getFullYear()]);
 
+  const loadBreakStatus = useCallback(async (wId) => {
+    if (!deviceToken || !wId) return;
+    setBreakLoading(true);
+    try {
+      const res = await axios.get(`${BASE}/breaks/status`, { params: { deviceToken, workerId: wId } });
+      setBreakStatus(res.data.data);
+    } catch { setBreakStatus(null); } finally { setBreakLoading(false); }
+  }, [deviceToken]);
+
+  const doStartBreak = async (breakType, workerId) => {
+    setBreakActing(true); setBreakErr('');
+    try {
+      await axios.post(`${BASE}/breaks/start`, { deviceToken, workerId, breakType });
+      setBreakConfirm(null);
+      await loadBreakStatus(workerId);
+    } catch (e) { setBreakErr(e.response?.data?.message || 'Could not start break'); }
+    finally { setBreakActing(false); }
+  };
+
+  const doEndBreak = async (workerId) => {
+    setBreakActing(true); setBreakErr('');
+    try {
+      await axios.post(`${BASE}/breaks/end`, { deviceToken, workerId });
+      await loadBreakStatus(workerId);
+    } catch (e) { setBreakErr(e.response?.data?.message || 'Could not end break'); }
+    finally { setBreakActing(false); }
+  };
+
   useEffect(() => {
     if (step === 'dashboard' && !historyData && pin) loadHistory(pin);
   }, [step, historyData, pin, loadHistory]);
+
+  useEffect(() => {
+    if (step === 'dashboard' && deviceToken && data?.worker?._id) loadBreakStatus(data.worker._id);
+  }, [step, deviceToken, data?.worker?._id, loadBreakStatus]);
 
   const handleSelectPump = async (pumpId) => {
     setPickerLoading(true); setPickerError('');
@@ -569,13 +602,8 @@ export default function WorkerDashboard() {
         worker={data.worker}
         deviceToken={deviceToken}
         clockType={clockType}
-        onSuccess={async () => {
-          await load(pin, month, year);
-        }}
-        onSkip={() => {
-          if (data.pump?.needsPicker) setStep('pump-picker');
-          else setStep('dashboard');
-        }}
+        onSuccess={async () => { await load(pin, month, year); }}
+        onSkip={() => setStep('dashboard')}
       />
     );
   }
@@ -721,7 +749,7 @@ export default function WorkerDashboard() {
               <div className={`rounded-2xl p-4 flex items-center justify-between shadow-sm ${canClockIn ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
                 <div>
                   <p className={`font-bold text-sm ${canClockIn ? 'text-green-800' : 'text-red-700'}`}>
-                    {canClockIn ? 'You haven\'t clocked in yet' : 'Ready to clock out?'}
+                    {canClockIn ? "You haven't clocked in yet" : 'Ready to clock out?'}
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {canClockIn ? 'Tap to record your arrival' : 'Tap to record end of shift'}
@@ -732,6 +760,141 @@ export default function WorkerDashboard() {
                   className={`px-4 py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 transition-all ${canClockIn ? 'bg-green-600' : 'bg-red-500'}`}>
                   {canClockIn ? '🟢 Clock In' : '🔴 Clock Out'}
                 </button>
+              </div>
+            )}
+
+            {/* Inline pump picker — shown whenever needsPicker (any device) */}
+            {pumpData?.needsPicker && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 flex items-center justify-between border-b border-amber-100">
+                  <div>
+                    <p className="font-bold text-amber-800 text-sm">⛽ Select Your Pump</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Which pump are you selling from today?</p>
+                  </div>
+                  {pickerLoading && <Loader size={14} className="animate-spin text-amber-500" />}
+                </div>
+                <div className="px-4 py-3 space-y-2">
+                  {(pumpData?.islandPumps || []).map(p => {
+                    const avail = !p.inUse && p.status === 'active';
+                    const statusLabel = p.inUse ? 'In Use' : p.status !== 'active' ? 'Unavailable' : 'Available';
+                    const statusCls   = p.inUse ? 'bg-red-100 text-red-600' : p.status !== 'active' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-700';
+                    return (
+                      <button key={p.pumpId} disabled={!avail || pickerLoading} onClick={() => handleSelectPump(p.pumpId)}
+                        className={`w-full flex items-center justify-between px-3 py-3 rounded-xl border-2 transition-all
+                          ${avail ? 'border-amber-300 bg-white active:scale-95 hover:border-amber-500' : 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'}`}>
+                        <div className="flex items-center gap-2">
+                          <Fuel size={15} className={avail ? 'text-brand-600' : 'text-gray-300'} />
+                          <span className={`font-semibold text-sm ${avail ? 'text-gray-800' : 'text-gray-400'}`}>{p.pumpName}</span>
+                          {p.productType && <span className="text-[10px] text-gray-400">({p.productType})</span>}
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusCls}`}>{statusLabel}</span>
+                      </button>
+                    );
+                  })}
+                  {pickerError && <p className="text-xs text-red-600 text-center font-medium">{pickerError}</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Break section (approved device + clocked in and not clocked out) */}
+            {deviceToken && todayStatus.clockedIn && !todayStatus.clockedOut && (
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">☕</span>
+                    <p className="font-bold text-gray-800 text-sm">Break</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {breakLoading && <Loader size={13} className="animate-spin text-gray-400" />}
+                    <button onClick={() => loadBreakStatus(data.worker._id)}
+                      className="text-[10px] text-brand-500 font-semibold px-2 py-1 rounded-lg bg-brand-50 active:scale-95">
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                {breakErr && (
+                  <p className="text-xs text-red-600 bg-red-50 px-4 py-2 text-center font-medium">{breakErr}</p>
+                )}
+                {breakStatus?.activeBreak ? (
+                  <div className="px-4 py-4">
+                    <div className={`rounded-xl p-3 mb-3 ${breakStatus.activeBreak.isOverdue ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className={`font-bold text-sm ${breakStatus.activeBreak.isOverdue ? 'text-red-700' : 'text-amber-700'}`}>
+                          {breakStatus.activeBreak.label}
+                          {breakStatus.activeBreak.isOverdue ? ' — OVERDUE ⚠️' : ''}
+                        </p>
+                        <span className={`text-xs font-black ${breakStatus.activeBreak.isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                          {breakStatus.activeBreak.elapsedMinutes} / {breakStatus.activeBreak.allowedMinutes} min
+                        </span>
+                      </div>
+                      {breakStatus.activeBreak.isOverdue && (
+                        <p className="text-xs text-red-600">{breakStatus.activeBreak.excessMinutes} min over limit</p>
+                      )}
+                    </div>
+                    <button onClick={() => doEndBreak(data.worker._id)} disabled={breakActing}
+                      className="w-full py-3 bg-green-600 text-white font-bold rounded-xl active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 text-sm">
+                      {breakActing ? <Loader size={15} className="animate-spin" /> : '✓ End Break'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-4 py-3">
+                    {(breakStatus?.availableBreaks || []).length === 0 && !breakLoading && (
+                      <p className="text-xs text-gray-400 text-center py-2">No breaks available right now</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      {(breakStatus?.availableBreaks || []).map(b => {
+                        const off = b.taken || !b.inWindow;
+                        return (
+                          <button key={b.type} disabled={off || breakActing}
+                            onClick={() => !off && setBreakConfirm(b)}
+                            className={`px-3 py-3 rounded-xl border-2 text-left transition-all active:scale-95
+                              ${b.taken ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                               : b.inWindow ? 'border-brand-200 bg-brand-50 hover:border-brand-400'
+                               : 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'}`}>
+                            <p className={`text-xs font-bold ${b.taken || !b.inWindow ? 'text-gray-400' : 'text-brand-700'}`}>
+                              {b.label}
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              {b.taken ? '✓ Done' : b.inWindow ? `${b.allowedMinutes} min` : `From ${b.windowStart}`}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {breakStatus?.todayBreaks?.some(b => b.status === 'overstayed') && (
+                      <p className="text-xs text-amber-600 text-center mt-2 font-medium">
+                        ⚠️ You exceeded break time today
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Break confirm sheet */}
+            {breakConfirm && (
+              <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setBreakConfirm(null)}>
+                <div className="absolute inset-0 bg-black/40" />
+                <div className="relative bg-white rounded-t-3xl shadow-2xl px-5 pt-4 pb-8" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-center mb-4">
+                    <div className="w-10 h-1 bg-gray-300 rounded-full" />
+                  </div>
+                  <div className="text-center mb-6">
+                    <p className="text-4xl mb-2">☕</p>
+                    <p className="font-bold text-gray-800 text-xl">{breakConfirm.label}</p>
+                    <p className="text-gray-500 text-sm mt-1">You have <strong>{breakConfirm.allowedMinutes} minutes</strong></p>
+                    <p className="text-xs text-gray-400 mt-0.5">{breakConfirm.windowStart} – {breakConfirm.windowEnd}</p>
+                  </div>
+                  {breakErr && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2 text-center mb-3 font-medium">{breakErr}</p>}
+                  <button onClick={() => doStartBreak(breakConfirm.type, data.worker._id)} disabled={breakActing}
+                    className="w-full py-4 bg-brand-600 text-white font-bold rounded-2xl active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 text-base">
+                    {breakActing ? <Loader size={18} className="animate-spin" /> : 'Start Break'}
+                  </button>
+                  <button onClick={() => { setBreakConfirm(null); setBreakErr(''); }}
+                    className="w-full py-3 mt-2 text-gray-500 text-sm font-medium text-center">
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
 

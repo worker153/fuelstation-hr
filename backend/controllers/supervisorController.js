@@ -7,8 +7,26 @@ const Pump           = require('../models/Pump');
 const Attendance     = require('../models/Attendance');
 const Branch         = require('../models/Branch');
 const Shift          = require('../models/Shift');
+const Break          = require('../models/Break');
 const { createAttendanceShortage }           = require('./shortageController');
 const { isWorkerOnDuty, getSettingsForRole } = require('../utils/attendanceHelpers');
+
+// Break config — mirrors breakController.js constants
+const BREAK_DEFAULTS = {
+  morning:   { enabled: true,  label: 'Morning Break',   allowedMinutes: 5,  windowStart: '07:00', windowEnd: '09:30' },
+  afternoon: { enabled: true,  label: 'Afternoon Break', allowedMinutes: 10, windowStart: '12:00', windowEnd: '14:00' },
+  night:     { enabled: true,  label: 'Night Break',     allowedMinutes: 5,  windowStart: '19:00', windowEnd: '21:00' },
+  break_4:   { enabled: false, label: 'Break 4',         allowedMinutes: 10, windowStart: '10:00', windowEnd: '12:00' },
+  break_5:   { enabled: false, label: 'Break 5',         allowedMinutes: 10, windowStart: '15:00', windowEnd: '17:00' },
+  break_6:   { enabled: false, label: 'Break 6',         allowedMinutes: 10, windowStart: '22:00', windowEnd: '23:30' },
+};
+function toMins(hhmm) { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; }
+function nowWATMins() { const n = new Date(); return (n.getUTCHours() * 60 + n.getUTCMinutes() + 60) % 1440; }
+function breakCfg(branch, type) {
+  const s = branch?.breakSettings?.[type] || {};
+  const d = BREAK_DEFAULTS[type] || {};
+  return { ...d, ...(s.toObject ? s.toObject() : s), label: s.label || d.label };
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WAT_OFFSET = 60 * 60 * 1000;
@@ -637,6 +655,128 @@ const supervisorClockWorker = async (req, res) => {
   });
 };
 
+// ── POST /api/supervisor/break-worker ────────────────────────────────────────
+// action: 'status' | 'start' | 'end'
+const supervisorBreakWorker = async (req, res) => {
+  const { pin, workerId, action, breakType } = req.body;
+  if (!pin || !workerId || !action)
+    return res.status(400).json({ success: false, message: 'pin, workerId, and action required' });
+
+  const supervisor = await resolveSupervisor(pin);
+  if (!supervisor)
+    return res.status(401).json({ success: false, message: 'Invalid PIN or not a supervisor' });
+
+  const company  = supervisor.company;
+  const branchId = supervisor.branchId?._id || supervisor.branchId;
+  const dateStr  = todayWAT();
+
+  const worker = await Worker.findOne({ _id: workerId, company, employmentStatus: 'active' }).lean();
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+
+  const branch = await Branch.findById(branchId).lean();
+
+  if (action === 'status') {
+    const [activeBreak, todayBreaks] = await Promise.all([
+      Break.findOne({ company, worker: worker._id, date: dateStr, status: 'active' }).lean(),
+      Break.find({ company, worker: worker._id, date: dateStr }).lean(),
+    ]);
+    const nowMins = nowWATMins();
+    const availableBreaks = Object.keys(BREAK_DEFAULTS).map(type => {
+      const cfg = breakCfg(branch, type);
+      const taken = todayBreaks.find(b => b.breakType === type);
+      return {
+        type, label: cfg.label, allowedMinutes: cfg.allowedMinutes,
+        windowStart: cfg.windowStart, windowEnd: cfg.windowEnd, enabled: cfg.enabled,
+        inWindow: nowMins >= toMins(cfg.windowStart) && nowMins <= toMins(cfg.windowEnd),
+        taken: !!taken && taken.status !== 'missed',
+        status: taken?.status || null,
+      };
+    }).filter(b => b.enabled);
+
+    let elapsed = 0, isOverdue = false;
+    if (activeBreak) {
+      elapsed   = Math.floor((Date.now() - new Date(activeBreak.startTime)) / 60000);
+      isOverdue = elapsed > activeBreak.allowedMinutes;
+    }
+    return res.json({ success: true, data: {
+      activeBreak: activeBreak ? {
+        breakType: activeBreak.breakType, label: BREAK_DEFAULTS[activeBreak.breakType]?.label,
+        startTime: activeBreak.startTime, allowedMinutes: activeBreak.allowedMinutes,
+        elapsedMinutes: elapsed, isOverdue, excessMinutes: Math.max(0, elapsed - activeBreak.allowedMinutes),
+      } : null,
+      todayBreaks: todayBreaks.map(b => ({ breakType: b.breakType, label: BREAK_DEFAULTS[b.breakType]?.label, status: b.status, actualMinutes: b.actualMinutes })),
+      availableBreaks,
+    }});
+  }
+
+  if (action === 'start') {
+    if (!breakType || !BREAK_DEFAULTS[breakType])
+      return res.status(400).json({ success: false, message: 'Valid breakType required' });
+
+    const [clockIn, clockOut] = await Promise.all([
+      Attendance.findOne({ company, worker: worker._id, date: dateStr, type: 'clock_in'  }).lean(),
+      Attendance.findOne({ company, worker: worker._id, date: dateStr, type: 'clock_out' }).lean(),
+    ]);
+    if (!clockIn)  return res.status(400).json({ success: false, message: 'Worker must be clocked in first' });
+    if (clockOut)  return res.status(400).json({ success: false, message: 'Worker has already clocked out' });
+
+    const cfg     = breakCfg(branch, breakType);
+    if (!cfg.enabled) return res.status(400).json({ success: false, message: `${cfg.label} is not enabled` });
+    const nowMins = nowWATMins();
+    if (nowMins < toMins(cfg.windowStart))
+      return res.status(400).json({ success: false, message: `${cfg.label} window hasn't started yet (from ${cfg.windowStart})` });
+    if (nowMins > toMins(cfg.windowEnd))
+      return res.status(400).json({ success: false, message: `${cfg.label} window closed at ${cfg.windowEnd}` });
+
+    const [active, prior] = await Promise.all([
+      Break.findOne({ company, worker: worker._id, date: dateStr, status: 'active' }).lean(),
+      Break.findOne({ company, worker: worker._id, date: dateStr, breakType }).lean(),
+    ]);
+    if (active) return res.status(400).json({ success: false, message: `${worker.fullName} is already on a break` });
+    if (prior && prior.status !== 'missed')
+      return res.status(400).json({ success: false, message: `${worker.fullName} already took ${cfg.label} today` });
+
+    const now      = new Date();
+    const deadline = new Date(now.getTime() + cfg.allowedMinutes * 60000);
+    await Break.findOneAndUpdate(
+      { company, worker: worker._id, date: dateStr, breakType },
+      {
+        $set: {
+          company, branchId, branchName: branch?.name || '',
+          worker: worker._id, workerName: worker.fullName, workerRole: worker.role,
+          date: dateStr, breakType, status: 'active',
+          allowedMinutes: cfg.allowedMinutes, windowStart: cfg.windowStart, windowEnd: cfg.windowEnd,
+          startTime: now, endTime: null, actualMinutes: 0, excessMinutes: 0, authType: 'supervisor',
+        },
+        $push: { auditLog: { action: 'started', timestamp: now, by: 'supervisor',
+          notes: `${worker.fullName} started ${cfg.label} (supervisor: ${supervisor.fullName})` } },
+      },
+      { upsert: true, new: true }
+    );
+    return res.json({ success: true, message: `${cfg.label} started for ${worker.fullName} — ${cfg.allowedMinutes} minutes`,
+      data: { breakType, label: cfg.label, allowedMinutes: cfg.allowedMinutes, startTime: now, deadline } });
+  }
+
+  if (action === 'end') {
+    const activeBreak = await Break.findOne({ company, worker: worker._id, date: dateStr, status: 'active' });
+    if (!activeBreak) return res.status(400).json({ success: false, message: `${worker.fullName} is not currently on a break` });
+
+    const now       = new Date();
+    const actualMins = Math.max(0, Math.round((now - activeBreak.startTime) / 60000));
+    const excessMins = Math.max(0, actualMins - activeBreak.allowedMinutes);
+    const overstayed = excessMins > 0;
+    activeBreak.endTime = now; activeBreak.actualMinutes = actualMins;
+    activeBreak.excessMinutes = excessMins; activeBreak.status = overstayed ? 'overstayed' : 'completed';
+    activeBreak.auditLog.push({ action: overstayed ? 'ended_overstayed' : 'ended', timestamp: now, by: 'supervisor',
+      notes: `Ended by supervisor ${supervisor.fullName} after ${actualMins} min${overstayed ? ` (${excessMins} min OVER)` : ''}` });
+    await activeBreak.save();
+    return res.json({ success: true, overstayed, message: overstayed ? `⚠️ ${worker.fullName} was ${excessMins} min over break` : `Break ended — ${actualMins} min taken`,
+      data: { breakType: activeBreak.breakType, label: BREAK_DEFAULTS[activeBreak.breakType]?.label, status: activeBreak.status, actualMinutes: actualMins, excessMinutes: excessMins } });
+  }
+
+  return res.status(400).json({ success: false, message: 'Invalid action (use start | end | status)' });
+};
+
 module.exports = {
   getSupervisorDashboard,
   supervisorSaveMeter,
@@ -645,4 +785,5 @@ module.exports = {
   supervisorReassign,
   supervisorPumpStatus,
   supervisorClockWorker,
+  supervisorBreakWorker,
 };

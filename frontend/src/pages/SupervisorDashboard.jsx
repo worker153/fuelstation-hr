@@ -985,6 +985,207 @@ function OffenceModal({ workers, pin, defaultWorkerId, onClose, onSaved }) {
   );
 }
 
+// ── Supervisor Break Modal ─────────────────────────────────────────────────────
+function BreakModal({ worker, supervisorPin, onClose }) {
+  const [status,    setStatus   ] = useState(null);
+  const [loading,   setLoading  ] = useState(true);
+  const [acting,    setActing   ] = useState(false);
+  const [err,       setErr      ] = useState('');
+  const [confirm,   setConfirm  ] = useState(null); // { type, label, allowedMinutes }
+
+  const loadStatus = useCallback(async () => {
+    setLoading(true); setErr('');
+    try {
+      const res = await axios.post(`${BASE}/supervisor/break-worker`, {
+        pin: supervisorPin, workerId: worker._id, action: 'status',
+      });
+      setStatus(res.data.data);
+    } catch (e) { setErr(e.response?.data?.message || 'Could not load break status'); }
+    finally { setLoading(false); }
+  }, [supervisorPin, worker._id]);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const doStart = async (breakType) => {
+    setActing(true); setErr('');
+    try {
+      await axios.post(`${BASE}/supervisor/break-worker`, {
+        pin: supervisorPin, workerId: worker._id, action: 'start', breakType,
+      });
+      setConfirm(null);
+      await loadStatus();
+    } catch (e) { setErr(e.response?.data?.message || 'Failed to start break'); }
+    finally { setActing(false); }
+  };
+
+  const doEnd = async () => {
+    setActing(true); setErr('');
+    try {
+      await axios.post(`${BASE}/supervisor/break-worker`, {
+        pin: supervisorPin, workerId: worker._id, action: 'end',
+      });
+      await loadStatus();
+    } catch (e) { setErr(e.response?.data?.message || 'Failed to end break'); }
+    finally { setActing(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        </div>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            {worker.photo
+              ? <img src={worker.photo} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+              : <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                  <span className="text-indigo-600 font-bold text-sm">{worker.fullName[0]}</span>
+                </div>
+            }
+            <div>
+              <p className="font-bold text-gray-800 text-sm">{worker.fullName}</p>
+              <p className="text-xs text-gray-400">☕ Break management</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3 text-indigo-600">
+              <Loader size={28} className="animate-spin" />
+              <p className="text-sm text-gray-400">Loading break status…</p>
+            </div>
+          ) : err ? (
+            <div className="text-center py-8">
+              <p className="text-red-500 text-sm mb-3">{err}</p>
+              <button onClick={loadStatus} className="text-xs bg-indigo-100 text-indigo-600 font-semibold px-4 py-2 rounded-xl">Retry</button>
+            </div>
+          ) : (
+            <>
+              {/* Active break */}
+              {status?.activeBreak ? (
+                <div>
+                  <div className={`rounded-2xl p-4 mb-4 ${status.activeBreak.isOverdue ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className={`font-bold text-base ${status.activeBreak.isOverdue ? 'text-red-700' : 'text-amber-700'}`}>
+                        {status.activeBreak.label}
+                        {status.activeBreak.isOverdue ? ' — OVERDUE ⚠️' : ''}
+                      </p>
+                      <span className={`text-sm font-black ${status.activeBreak.isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                        {status.activeBreak.elapsedMinutes} / {status.activeBreak.allowedMinutes} min
+                      </span>
+                    </div>
+                    {status.activeBreak.isOverdue && (
+                      <p className="text-sm text-red-600">{status.activeBreak.excessMinutes} min over limit</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Started: {new Date(status.activeBreak.startTime).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true })}</p>
+                  </div>
+                  {err && <p className="text-sm text-red-500 text-center mb-3">{err}</p>}
+                  <button onClick={doEnd} disabled={acting}
+                    className="w-full py-4 bg-green-600 text-white font-bold rounded-2xl active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2">
+                    {acting ? <Loader size={18} className="animate-spin" /> : '✓ End Break for ' + worker.fullName.split(' ')[0]}
+                  </button>
+                  <button onClick={loadStatus} className="w-full py-2 mt-2 text-xs text-gray-400 font-medium text-center">
+                    Refresh status
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                    Available Breaks for {worker.fullName.split(' ')[0]}
+                  </p>
+                  {err && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2 text-center mb-3">{err}</p>}
+                  {(status?.availableBreaks || []).length === 0 ? (
+                    <div className="text-center py-8 text-gray-400">
+                      <p className="text-3xl mb-2">☕</p>
+                      <p className="text-sm">No breaks enabled for this branch</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {(status?.availableBreaks || []).map(b => {
+                        const off = b.taken || !b.inWindow;
+                        return (
+                          <button key={b.type} disabled={off || acting}
+                            onClick={() => !off && setConfirm(b)}
+                            className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl border-2 transition-all active:scale-95
+                              ${b.taken ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                               : b.inWindow ? 'border-indigo-200 bg-indigo-50 hover:border-indigo-400'
+                               : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'}`}>
+                            <div className="text-left">
+                              <p className={`font-bold text-sm ${b.taken || !b.inWindow ? 'text-gray-400' : 'text-indigo-800'}`}>
+                                {b.label}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {b.windowStart} – {b.windowEnd}
+                              </p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full
+                                ${b.taken ? 'bg-green-100 text-green-700' : b.inWindow ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
+                                {b.taken ? '✓ Done' : b.inWindow ? `${b.allowedMinutes} min` : 'Not yet'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {status?.todayBreaks?.length > 0 && (
+                    <div className="mt-4 bg-gray-50 rounded-xl p-3">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Today's Breaks</p>
+                      {status.todayBreaks.map((b, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs py-1">
+                          <span className="text-gray-600 font-medium">{b.label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400">{b.actualMinutes} min</span>
+                            <span className={`font-bold px-1.5 py-0.5 rounded-full text-[10px]
+                              ${b.status === 'overstayed' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-700'}`}>
+                              {b.status === 'overstayed' ? 'Over' : 'OK'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Confirm sheet */}
+              {confirm && (
+                <div className="fixed inset-0 z-60 flex flex-col justify-end" onClick={() => setConfirm(null)}>
+                  <div className="absolute inset-0 bg-black/30" />
+                  <div className="relative bg-white rounded-t-3xl shadow-2xl px-5 pt-4 pb-8" onClick={e => e.stopPropagation()}>
+                    <div className="text-center mb-5">
+                      <p className="text-3xl mb-2">☕</p>
+                      <p className="font-bold text-gray-800 text-lg">{confirm.label}</p>
+                      <p className="text-gray-500 text-sm mt-1">for {worker.fullName.split(' ')[0]} · <strong>{confirm.allowedMinutes} minutes</strong></p>
+                    </div>
+                    {err && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2 text-center mb-3">{err}</p>}
+                    <button onClick={() => doStart(confirm.type)} disabled={acting}
+                      className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2">
+                      {acting ? <Loader size={18} className="animate-spin" /> : 'Start Break'}
+                    </button>
+                    <button onClick={() => { setConfirm(null); setErr(''); }}
+                      className="w-full py-3 mt-2 text-gray-500 text-sm font-medium text-center">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Worker row (in workers tab) ────────────────────────────────────────────────
 // ── Clock-in / Clock-out modal ─────────────────────────────────────────────────
 function ClockModal({ worker, supervisorPin, skipPin, onSuccess, onClose }) {
@@ -1297,7 +1498,7 @@ function ClockModal({ worker, supervisorPin, skipPin, onSuccess, onClose }) {
   );
 }
 
-function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, onClock }) {
+function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, onClock, onBreak }) {
   const { clockedIn, clockedOut } = worker.todayStatus || {};
   const clockLabel = clockedIn ? (clockedOut ? 'Clock out done' : 'Clock Out') : 'Clock In';
   const clockBg    = clockedIn ? (clockedOut ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-600')
@@ -1322,11 +1523,16 @@ function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, on
           <p className="text-xs text-gray-500 truncate">{worker.island?.islandName || 'Unassigned'}</p>
         </div>
       </div>
-      <div className="flex gap-2 shrink-0">
+      <div className="flex gap-1.5 shrink-0">
         <button onClick={() => onClock(worker)} disabled={clockedIn && clockedOut}
           className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold active:scale-95 transition-all ${clockBg} disabled:cursor-not-allowed`}
           title={clockLabel}>
           {clockedIn && clockedOut ? '✓' : clockedIn ? '🔴 Out' : '🟢 In'}
+        </button>
+        <button onClick={() => onBreak(worker)} disabled={!clockedIn || clockedOut}
+          className="p-2 bg-amber-50 text-amber-600 rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Manage Break">
+          ☕
         </button>
         <button onClick={() => onShortage(worker)}
           className="p-2 bg-orange-50 text-orange-600 rounded-xl text-xs active:scale-95 transition-transform"
@@ -1371,6 +1577,7 @@ export default function SupervisorDashboard() {
   const [offenceFor,  setOffenceFor]    = useState(null);  // worker object
   const [reassignFor, setReassignFor]   = useState(null);  // worker object
   const [clockFor,    setClockFor]      = useState(null);  // worker object | 'self'
+  const [breakFor,    setBreakFor]      = useState(null);  // worker object
 
   const handleClockSuccess = useCallback((workerId, type) => {
     setData(prev => {
@@ -1703,6 +1910,7 @@ export default function SupervisorDashboard() {
                 onOffence={setOffenceFor}
                 onReassign={setReassignFor}
                 onClock={setClockFor}
+                onBreak={setBreakFor}
               />
             ))}
           </>
@@ -1849,6 +2057,9 @@ export default function SupervisorDashboard() {
         <ReassignModal worker={reassignFor} islands={islands} pin={pin}
           onClose={() => setReassignFor(null)}
           onSaved={() => { setReassignFor(null); handleReassignSaved(); }} />
+      )}
+      {breakFor && (
+        <BreakModal worker={breakFor} supervisorPin={pin} onClose={() => setBreakFor(null)} />
       )}
       {clockFor && (() => {
         const isSelf  = clockFor === 'self';
