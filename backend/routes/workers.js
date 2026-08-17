@@ -17,7 +17,7 @@ const {
   updateSalary, updateBank,
   updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent, updateAutoClockIn,
   getWorkerPins, bulkGeneratePins,
-  selfResetPin, searchByName,
+  selfResetPin, searchByName, clearWorkerFace,
 } = require('../controllers/workerController');
 
 // ── Public routes (NO auth required — before protect) ─────────────────────────
@@ -81,6 +81,7 @@ router.put('/:id/rotation-schedule',   adminOnly, updateRotationSchedule);
 router.put('/:id/clock-in-required',   requirePermission('editWorkers'), updateClockInRequired);
 router.put('/:id/always-present',      requirePermission('editWorkers'), updateAlwaysPresent);
 router.put('/:id/auto-clock-in',       requirePermission('editWorkers'), updateAutoClockIn);
+router.delete('/:id/face',             requirePermission('editWorkers'), clearWorkerFace);
 router.delete('/:id/face',             adminOnly, async (req, res) => {
   const Worker = require('../models/Worker');
   const worker = await Worker.findOneAndUpdate(

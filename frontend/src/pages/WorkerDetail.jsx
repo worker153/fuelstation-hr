@@ -5,7 +5,7 @@ import {
   Phone, Home, Users, ShieldCheck, ArrowRight, AlertCircle, Clock, XCircle,
   BadgeCheck, Briefcase, Building2, Calendar, Wallet, Landmark, History,
   Play, Pause, Ban, RefreshCw, ArrowLeftRight, Save, Loader, ChevronDown, ChevronUp,
-  Printer, Share2, UserCog
+  Printer, Share2, UserCog, ScanFace
 } from 'lucide-react';
 import api from '../utils/api';
 import { useNotify } from '../context/NotificationContext';
@@ -490,6 +490,8 @@ function EmploymentTab({ worker, branches, onRefresh }) {
   const [savingAP,      setSavingAP     ] = useState(false);
   const [autoClockIn,   setAutoClockIn  ] = useState(!!worker.autoClockIn);
   const [savingACI,     setSavingACI    ] = useState(false);
+  const [hasFace,       setHasFace      ] = useState(!!(worker.faceDescriptor?.length || worker.hasFace));
+  const [clearingFace,  setClearingFace ] = useState(false);
 
   const done = () => { setModal(null); onRefresh(); };
 
@@ -553,6 +555,17 @@ function EmploymentTab({ worker, branches, onRefresh }) {
       onRefresh();
     } catch { notify('Failed to save', 'error'); }
     finally { setSavingACI(false); }
+  };
+
+  const clearFace = async () => {
+    if (!confirm(`Clear ${worker.fullName}'s registered face? They will need to register again at the attendance terminal.`)) return;
+    setClearingFace(true);
+    try {
+      await api.delete(`/workers/${worker._id}/face`);
+      setHasFace(false);
+      notify(`${worker.fullName}'s face cleared — they can now register fresh at the terminal ✓`);
+    } catch (e) { notify(e.response?.data?.message || 'Failed to clear face', 'error'); }
+    finally { setClearingFace(false); }
   };
 
   return (
@@ -840,6 +853,30 @@ function EmploymentTab({ worker, branches, onRefresh }) {
             </button>
           )}
         </div>
+
+        {/* Face biometric */}
+        {canEdit && (
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-2.5">
+              <ScanFace size={16} className={hasFace ? 'text-green-500' : 'text-gray-300'} />
+              <div>
+                <p className="text-xs font-semibold text-gray-700">
+                  {hasFace ? 'Face registered' : 'No face registered'}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {hasFace ? 'Worker uses face to clock in/out' : 'Worker will register face at next terminal visit'}
+                </p>
+              </div>
+            </div>
+            {hasFace && (
+              <button onClick={clearFace} disabled={clearingFace}
+                className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-medium transition-colors flex items-center gap-1.5">
+                {clearingFace ? <Loader size={11} className="animate-spin" /> : <XCircle size={11} />}
+                Clear Face
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Action buttons */}

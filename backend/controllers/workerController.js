@@ -991,6 +991,17 @@ const updateAutoClockIn = async (req, res) => {
   res.json({ success: true, data: { autoClockIn: worker.autoClockIn } });
 };
 
+// DELETE /api/workers/:id/face — admin clears a worker's registered face so they can re-register
+const clearWorkerFace = async (req, res) => {
+  const worker = await Worker.findOne({ _id: req.params.id, company: req.user.company._id });
+  if (!worker) return res.status(404).json({ success: false, message: 'Worker not found' });
+  worker.faceDescriptor   = undefined;
+  worker.faceRegisteredAt = undefined;
+  worker.faceRegisteredOn = undefined;
+  await worker.save();
+  res.json({ success: true, message: `Face cleared for ${worker.fullName}. They can now re-register at the terminal.` });
+};
+
 module.exports = {
   getStats, getWorkers, getWorker, createWorker, updateWorker, deleteWorker,
   getWorkerPins, bulkGeneratePins, selfResetPin, searchByName,
@@ -1005,4 +1016,5 @@ module.exports = {
   activateWorker, suspendWorker, sackWorker, reactivateWorker, transferWorker,
   updateSalary, updateBank,
   updateWorkerPin, updateRotationSchedule, updateClockInRequired, updateAlwaysPresent, updateAutoClockIn,
+  clearWorkerFace,
 };

@@ -316,7 +316,7 @@ const terminalRegisterFace = async (req, res) => {
   for (const other of otherWorkers) {
     if (!other.faceDescriptor?.length) continue;
     const dist = faceDistance(faceDescriptor, other.faceDescriptor);
-    if (dist < 0.40) {
+    if (dist < 0.35) {
       // Very high similarity — almost certainly the same physical person
       console.warn(`[FACE] Duplicate face blocked: ${worker.fullName} matches ${other.fullName} (dist=${dist.toFixed(3)})`);
       return res.status(400).json({
