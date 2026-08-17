@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Delete, Loader, ChevronLeft, ChevronRight, LogOut, X, Clock, Calendar } from 'lucide-react';
+import { Delete, Loader, ChevronLeft, ChevronRight, LogOut, X, Clock, Calendar, Gauge, Droplets } from 'lucide-react';
 import axios from 'axios';
 
 const BASE   = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const fmt    = n  => `₦${Number(n || 0).toLocaleString('en-NG')}`;
+const fmtL   = n  => n == null ? '—' : `${Number(n).toLocaleString('en-NG', { maximumFractionDigits: 1 })}L`;
+const fmtNum = n  => n == null ? '—' : Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
@@ -237,6 +239,16 @@ export default function WorkerDashboard() {
       }));
       setSheet({ title: 'Left Early', emoji: '🚪', rows });
     }
+
+    if (type === 'litres') {
+      const rows = (data.pump?.dailyLitres || []).map(d => ({
+        date: d.date,
+        badge:    fmtL(d.litres),
+        badgeCls: 'bg-brand-100 text-brand-700',
+        sub: d.islandName || '',
+      }));
+      setSheet({ title: 'Litres Sold', emoji: '⛽', rows });
+    }
   };
 
   if (step === 'pin') {
@@ -325,6 +337,89 @@ export default function WorkerDashboard() {
             <p className="text-xs text-brand-100 mt-1">+ Bonus: {fmt(salary.bonus)}</p>
           )}
         </div>
+
+        {/* ── TODAY'S PUMP ASSIGNMENT + METER READINGS ── */}
+        {data.pump && (
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Gauge size={15} className="text-brand-500" />
+                <p className="font-bold text-gray-800">Today's Pump</p>
+              </div>
+              {data.pump.meterLog?.totalLitres != null && (
+                <span className="text-sm font-bold text-brand-600">{fmtL(data.pump.meterLog.totalLitres)} sold</span>
+              )}
+            </div>
+
+            {!data.pump.assignment ? (
+              <div className="px-4 py-5 text-center text-gray-400 text-sm">
+                No pump assigned today
+              </div>
+            ) : (
+              <div className="px-4 py-3 space-y-3">
+                {/* Island name */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Island</span>
+                  <span className="text-sm font-bold text-gray-800">{data.pump.assignment.islandName}</span>
+                  {data.pump.meterLog?.status === 'closed' && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Closed</span>
+                  )}
+                </div>
+
+                {/* Per-pump meter readings */}
+                {data.pump.meterLog?.pumps?.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.pump.meterLog.pumps.map((p, i) => (
+                      <div key={i} className="bg-gray-50 rounded-xl px-3 py-2.5">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-gray-700">{p.pumpName}</span>
+                          {p.totalLitres != null && (
+                            <span className="text-xs font-bold text-brand-600">{fmtL(p.totalLitres)}</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <div className="flex justify-between">
+                            <span>Outer open:</span>
+                            <span className="font-medium text-gray-700">{fmtNum(p.nozzle1?.opening)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Outer close:</span>
+                            <span className={`font-medium ${p.nozzle1?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmtNum(p.nozzle1?.closing)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Inner open:</span>
+                            <span className="font-medium text-gray-700">{fmtNum(p.nozzle2?.opening)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Inner close:</span>
+                            <span className={`font-medium ${p.nozzle2?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmtNum(p.nozzle2?.closing)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 py-1">Meter readings not entered yet for today</p>
+                )}
+
+                {/* Monthly litres */}
+                {data.pump.monthlyLitres > 0 && (
+                  <button onClick={() => openSheet('litres')}
+                    className="w-full flex items-center justify-between bg-brand-50 rounded-xl px-3 py-2.5 active:bg-brand-100 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Droplets size={14} className="text-brand-500" />
+                      <span className="text-sm font-semibold text-brand-700">Total This Month</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm font-black text-brand-700">{fmtL(data.pump.monthlyLitres)}</span>
+                      <span className="text-xs text-brand-400">→</span>
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── ATTENDANCE CARDS (tappable) ── */}
         <div className="grid grid-cols-2 gap-3">

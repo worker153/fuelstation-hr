@@ -1,7 +1,9 @@
-const Shortage = require('../models/Shortage');
-const Worker   = require('../models/Worker');
-const Branch   = require('../models/Branch');
-const Payroll  = require('../models/Payroll');
+const Shortage        = require('../models/Shortage');
+const Worker          = require('../models/Worker');
+const Branch          = require('../models/Branch');
+const Payroll         = require('../models/Payroll');
+const PumpAssignment  = require('../models/PumpAssignment');
+const IslandMeterLog  = require('../models/IslandMeterLog');
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -551,6 +553,42 @@ const workerDashboard = async (req, res) => {
   const noShowDays    = shortages.filter(s => s.source === 'no_clockin').length;
   const earlyExitDays = shortages.filter(s => s.source === 'early_departure').length;
 
+  // ── Today's pump assignment + meter log ────────────────────────────────────
+  const watNow    = new Date(Date.now() + 60 * 60 * 1000);
+  const toDateStr = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  const todayDate = toDateStr(watNow);
+
+  const todayAssignment = await PumpAssignment.findOne({
+    company: worker.company,
+    worker:  worker._id,
+    date:    todayDate,
+    status:  { $ne: 'cancelled' },
+  }).lean();
+
+  let todayMeterLog = null;
+  if (todayAssignment?.island) {
+    todayMeterLog = await IslandMeterLog.findOne({
+      company:  worker.company,
+      islandId: todayAssignment.island,
+      date:     todayDate,
+    }).lean();
+  }
+
+  // Monthly litres sold — sum all meter logs for this worker this month
+  const monthlyLogs = await IslandMeterLog.find({
+    company:    worker.company,
+    workerId:   worker._id,
+    date:       { $regex: `^${datePrefix}` },
+  }).lean();
+  const monthlyLitres = monthlyLogs.reduce((s, l) => s + (l.totalLitres || 0), 0);
+
+  // Daily litre breakdown for tap-to-expand
+  const dailyLitres = monthlyLogs
+    .filter(l => l.totalLitres != null)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(l => ({ date: l.date, litres: l.totalLitres, islandName: l.islandName }));
+
   // Label map for shortage sources
   const SOURCE_LABELS = {
     late_arrival:    'Late Arrival',
@@ -593,6 +631,22 @@ const workerDashboard = async (req, res) => {
         date:   s.attendanceDate || s.date || s.createdAt,
       })),
       attendanceDays,   // for "Days Present" tap-to-expand
+      pump: {
+        todayDate,
+        assignment: todayAssignment ? {
+          islandName:    todayAssignment.islandName,
+          assignedPumps: todayAssignment.assignedPumps || [],
+          additionalIslands: todayAssignment.additionalIslands || [],
+          pinnedIslands: todayAssignment.pinnedIslands || [],
+        } : null,
+        meterLog: todayMeterLog ? {
+          pumps:       todayMeterLog.pumps || [],
+          totalLitres: todayMeterLog.totalLitres,
+          status:      todayMeterLog.status,
+        } : null,
+        monthlyLitres,
+        dailyLitres,
+      },
     },
   });
 };
