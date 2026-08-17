@@ -114,7 +114,7 @@ function OpeningModal({ island, date, onClose, onSaved }) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label text-xs">Nozzle 1 Opening</label>
+                    <label className="label text-xs">Outer Meter Opening</label>
                     <input
                       type="number" step="0.01" className="input text-sm"
                       placeholder="e.g. 12450.30"
@@ -123,7 +123,7 @@ function OpeningModal({ island, date, onClose, onSaved }) {
                     />
                   </div>
                   <div>
-                    <label className="label text-xs">Nozzle 2 Opening</label>
+                    <label className="label text-xs">Inner Meter Opening</label>
                     <input
                       type="number" step="0.01" className="input text-sm"
                       placeholder="e.g. 8900.00"
@@ -239,35 +239,35 @@ function ClosingModal({ island, date, onClose, onSaved }) {
                   {/* Nozzle 1 */}
                   <div className="grid grid-cols-2 gap-2 items-end">
                     <div>
-                      <label className="label text-xs">Nozzle 1 Opening</label>
+                      <label className="label text-xs">Outer Meter Opening</label>
                       <div className="input bg-gray-100 text-gray-500 text-sm py-2">{fmt(r.nozzle1Opening)}</div>
                     </div>
                     <div>
-                      <label className="label text-xs">Nozzle 1 Closing</label>
+                      <label className="label text-xs">Outer Meter Closing</label>
                       <input type="number" step="0.01" className="input text-sm" placeholder="Closing…"
                         value={r.nozzle1Closing}
                         onChange={e => update(idx, 'nozzle1Closing', e.target.value)} />
                     </div>
                   </div>
                   {n1 != null && (
-                    <p className="text-xs text-right text-green-700 font-semibold">Nozzle 1 sold: {fmtL(n1)}</p>
+                    <p className="text-xs text-right text-green-700 font-semibold">Outer meter sold: {fmtL(n1)}</p>
                   )}
 
-                  {/* Nozzle 2 */}
+                  {/* Inner meter */}
                   <div className="grid grid-cols-2 gap-2 items-end">
                     <div>
-                      <label className="label text-xs">Nozzle 2 Opening</label>
+                      <label className="label text-xs">Inner Meter Opening</label>
                       <div className="input bg-gray-100 text-gray-500 text-sm py-2">{fmt(r.nozzle2Opening)}</div>
                     </div>
                     <div>
-                      <label className="label text-xs">Nozzle 2 Closing</label>
+                      <label className="label text-xs">Inner Meter Closing</label>
                       <input type="number" step="0.01" className="input text-sm" placeholder="Closing…"
                         value={r.nozzle2Closing}
                         onChange={e => update(idx, 'nozzle2Closing', e.target.value)} />
                     </div>
                   </div>
                   {n2 != null && (
-                    <p className="text-xs text-right text-green-700 font-semibold">Nozzle 2 sold: {fmtL(n2)}</p>
+                    <p className="text-xs text-right text-green-700 font-semibold">Inner meter sold: {fmtL(n2)}</p>
                   )}
                 </div>
               );
@@ -435,19 +435,19 @@ function IslandCard({ island, onOpenOpening, onOpenClosing, onStatusChange }) {
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-500">
                 <div className="flex justify-between">
-                  <span>N1 open:</span>
+                  <span>Outer open:</span>
                   <span className={`font-medium ${p.nozzle1?.opening != null ? 'text-gray-700' : 'text-gray-300'}`}>{fmt(p.nozzle1?.opening)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>N1 close:</span>
+                  <span>Outer close:</span>
                   <span className={`font-medium ${p.nozzle1?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmt(p.nozzle1?.closing)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>N2 open:</span>
+                  <span>Inner open:</span>
                   <span className={`font-medium ${p.nozzle2?.opening != null ? 'text-gray-700' : 'text-gray-300'}`}>{fmt(p.nozzle2?.opening)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>N2 close:</span>
+                  <span>Inner close:</span>
                   <span className={`font-medium ${p.nozzle2?.closing != null ? 'text-green-700' : 'text-gray-300'}`}>{fmt(p.nozzle2?.closing)}</span>
                 </div>
               </div>
