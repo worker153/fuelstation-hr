@@ -291,23 +291,31 @@ async function autoAssignIsland({ company, branchId, branchName, worker, date, s
     return oa - ob;
   });
 
-  // Priority-fill: staff isPriority islands before any non-priority island.
-  // Only fall through to non-priority once every priority island is at capacity.
-  const priorityWithCapacity = rotatableIslands.filter(
-    i => i.isPriority && (islandCount[String(i._id)] || 0) < i.maxWorkers
-  );
+  // Rule: fill every island with at least 1 worker before any island gets a 2nd.
+  // Tier 1 — empty islands (0 workers): prefer priority ones, then any empty.
+  // Tier 2 — all islands occupied: allow up to maxWorkers, prefer priority.
+  // Tier 3 — all at capacity: overflow to least-loaded island.
+  const sorted = rotSort(rotatableIslands);
+  const emptyIslands    = sorted.filter(i => (islandCount[String(i._id)] || 0) === 0);
+  const emptyPriority   = emptyIslands.filter(i => i.isPriority);
 
   let selected;
-  if (priorityWithCapacity.length > 0) {
-    // Rotate fairly among whichever priority islands still have room
-    selected = rotSort(priorityWithCapacity)[0];
+  if (emptyPriority.length > 0) {
+    // Empty priority islands still exist — fill those first
+    selected = emptyPriority[0];
+  } else if (emptyIslands.length > 0) {
+    // No empty priority islands but other empty islands remain
+    selected = emptyIslands[0];
   } else {
-    // All priority islands full (or none exist) — use full rotation
-    const sorted = rotSort(rotatableIslands);
-    selected = sorted.find(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
-    // Absolute fallback when every island is at capacity
+    // All islands have ≥1 worker — now allow a 2nd (up to maxWorkers)
+    const withCapacity       = sorted.filter(i => (islandCount[String(i._id)] || 0) < i.maxWorkers);
+    const capacityPriority   = withCapacity.filter(i => i.isPriority);
+    selected = capacityPriority[0] || withCapacity[0];
+    // Absolute fallback: every island is at maxWorkers — pick least loaded
     if (!selected) {
-      selected = sorted.find(i => i.isPriority) || sorted[0] || islands[0];
+      selected = sorted.reduce((best, i) =>
+        (islandCount[String(i._id)] || 0) < (islandCount[String(best._id)] || 0) ? i : best
+      , sorted[0]) || islands[0];
     }
   }
 
