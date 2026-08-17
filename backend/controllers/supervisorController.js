@@ -67,36 +67,63 @@ const getSupervisorDashboard = async (req, res) => {
   const logMap    = Object.fromEntries(logs.map(l => [String(l.islandId), l]));
   const assignMap = Object.fromEntries(assignments.map(a => [String(a.island), a]));
 
-  // Collect all pump IDs across assignments to fetch live status in one query
-  const allPumpIds = assignments.flatMap(a =>
-    (a.assignedPumps || []).map(p => p.pumpId).filter(Boolean)
-  );
-  const pumpDocs = allPumpIds.length
-    ? await Pump.find({ _id: { $in: allPumpIds } }).select('_id status pumpName pumpNumber productType').lean()
+  // Load ALL pumps for every island in the branch (not just assigned ones)
+  const islandPumpIds = islands.flatMap(i => (i.pumps || []));
+  const allIslandPumps = islandPumpIds.length
+    ? await Pump.find({ _id: { $in: islandPumpIds } })
+        .select('_id status pumpName pumpNumber productType rotationOrder').lean()
     : [];
-  const pumpStatusMap = Object.fromEntries(pumpDocs.map(p => [String(p._id), p.status]));
+  const pumpDocMap    = Object.fromEntries(allIslandPumps.map(p => [String(p._id), p]));
+  const pumpStatusMap = Object.fromEntries(allIslandPumps.map(p => [String(p._id), p.status]));
+
+  // Build map: pumpId → { workerId, workerName } from today's assignments
+  const pumpWorkerMap = {};
+  assignments.forEach(a => {
+    (a.assignedPumps || []).forEach(p => {
+      if (p.pumpId) pumpWorkerMap[String(p.pumpId)] = {
+        workerId:   String(a.worker),
+        workerName: a.workerName,
+      };
+    });
+  });
 
   const islandData = islands.map(island => {
     const log    = logMap[String(island._id)] || null;
     const assign = assignMap[String(island._id)] || null;
-    const assignedPumps = (assign?.assignedPumps || []).map(p => ({
-      ...p,
-      pumpId: String(p.pumpId),
-      status: pumpStatusMap[String(p.pumpId)] || 'active',
-    }));
+
+    // Full pump list for this island, each tagged with in-use status
+    const allPumps = (island.pumps || [])
+      .map(pid => {
+        const id     = String(pid);
+        const pump   = pumpDocMap[id] || {};
+        const worker = pumpWorkerMap[id];
+        return {
+          pumpId:      id,
+          pumpNumber:  pump.pumpNumber,
+          pumpName:    pump.pumpName,
+          productType: pump.productType,
+          status:      pumpStatusMap[id] || 'active',
+          inUse:       !!worker,
+          assignedWorkerId:   worker?.workerId   || null,
+          assignedWorkerName: worker?.workerName || null,
+        };
+      })
+      .sort((a, b) => (a.pumpNumber || 0) - (b.pumpNumber || 0));
+
     return {
       islandId:     String(island._id),
       islandName:   island.name,
       islandStatus: island.status,
-      assignedPumps,
+      allPumps,           // full list with inUse tags — used by reassign modal
+      assignedPumps: allPumps, // same list used by meter + status modals
       worker: assign ? {
         workerId:   String(assign.worker),
         workerName: assign.workerName,
       } : null,
       log: log ? {
-        _id:        String(log._id),
-        status:     log.status,
-        pumps:      log.pumps,
+        _id:         String(log._id),
+        status:      log.status,
+        pumps:       log.pumps,
         totalLitres: log.totalLitres,
       } : null,
     };
@@ -297,12 +324,12 @@ const supervisorIslandStatus = async (req, res) => {
   res.json({ success: true, data: island });
 };
 
-// ── POST /api/supervisor/reassign — move a worker to a different island ───────
+// ── POST /api/supervisor/reassign — move a worker to a specific pump ──────────
 const supervisorReassign = async (req, res) => {
-  const { pin, workerId, newIslandId } = req.body;
+  const { pin, workerId, newIslandId, newPumpId } = req.body;
 
-  if (!workerId || !newIslandId)
-    return res.status(400).json({ success: false, message: 'workerId and newIslandId required' });
+  if (!workerId || !newIslandId || !newPumpId)
+    return res.status(400).json({ success: false, message: 'workerId, newIslandId and newPumpId required' });
 
   const sup = await resolveSupervisor(pin);
   if (!sup) return res.status(401).json({ success: false, message: 'Invalid PIN or not a supervisor' });
@@ -313,16 +340,16 @@ const supervisorReassign = async (req, res) => {
   const newIsland = await PumpIsland.findOne({ _id: newIslandId, company }).lean();
   if (!newIsland) return res.status(404).json({ success: false, message: 'Target island not found' });
 
-  // Check if another worker is already on the target island
-  const existingOnTarget = await PumpAssignment.findOne({
-    company, island: newIslandId, date,
-    status: { $ne: 'cancelled' }, worker: { $ne: workerId },
+  // Check if another worker is already on this specific pump today
+  const pumpInUse = await PumpAssignment.findOne({
+    company, date, status: { $ne: 'cancelled' },
+    worker: { $ne: workerId },
+    'assignedPumps.pumpId': newPumpId,
   }).lean();
-
-  if (existingOnTarget && newIsland.maxWorkers <= 1)
+  if (pumpInUse)
     return res.status(400).json({
       success: false,
-      message: `${newIsland.name} already has a worker assigned`,
+      message: `That pump already has a worker assigned`,
     });
 
   // Find worker's current assignment
@@ -332,28 +359,27 @@ const supervisorReassign = async (req, res) => {
   if (!assignment)
     return res.status(404).json({ success: false, message: 'No active assignment for this worker today' });
 
-  // Build new assignedPumps from the target island's pump list
-  const islandPumps = await Pump.find({ _id: { $in: newIsland.pumps || [] } })
-    .sort({ rotationOrder: 1 }).lean();
-
-  const assignedPumps = islandPumps.map(p => ({
-    pumpId:      p._id,
-    pumpNumber:  p.pumpNumber,
-    pumpName:    p.pumpName,
-    productType: p.productType,
-  }));
+  // Get the specific pump document
+  const pump = await Pump.findOne({ _id: newPumpId, company }).lean();
+  if (!pump) return res.status(404).json({ success: false, message: 'Pump not found' });
 
   const oldIslandId = assignment.island;
   assignment.island        = newIsland._id;
   assignment.islandName    = newIsland.name;
-  assignment.assignedPumps = assignedPumps;
+  assignment.assignedPumps = [{
+    pumpId:      pump._id,
+    pumpNumber:  pump.pumpNumber,
+    pumpName:    pump.pumpName,
+    productType: pump.productType,
+  }];
   await assignment.save();
 
   res.json({
     success: true,
-    message: `Worker reassigned to ${newIsland.name}`,
+    message: `Worker reassigned to ${pump.pumpName} on ${newIsland.name}`,
     oldIslandId: String(oldIslandId),
     newIslandId: String(newIsland._id),
+    newPumpId:   String(pump._id),
   });
 };
 

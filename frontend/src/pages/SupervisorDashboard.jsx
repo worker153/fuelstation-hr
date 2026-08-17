@@ -410,19 +410,22 @@ function PumpStatusModal({ island, pin, onClose, onSaved }) {
   );
 }
 
-// ── Reassign modal ─────────────────────────────────────────────────────────────
+// ── Reassign modal — per pump, with In Use / Available tags ───────────────────
 function ReassignModal({ worker, islands, pin, onClose, onSaved }) {
-  const available = islands.filter(i => i.islandId !== worker.island?.islandId);
-  const [targetId, setTargetId] = useState('');
+  // selected: { pumpId, islandId, islandName, pumpName }
+  const [selected, setSelected] = useState(null);
   const [saving, setSaving]     = useState(false);
   const [err, setErr]           = useState('');
 
   const save = async () => {
-    if (!targetId) return setErr('Select a target island');
+    if (!selected) return setErr('Select a pump to assign to');
     setSaving(true); setErr('');
     try {
       const res = await axios.post(`${BASE}/supervisor/reassign`, {
-        pin, workerId: worker._id, newIslandId: targetId,
+        pin,
+        workerId:    worker._id,
+        newIslandId: selected.islandId,
+        newPumpId:   selected.pumpId,
       });
       onSaved(res.data);
       onClose();
@@ -431,40 +434,85 @@ function ReassignModal({ worker, islands, pin, onClose, onSaved }) {
     } finally { setSaving(false); }
   };
 
+  const allPumps = islands.flatMap(i =>
+    (i.allPumps || i.assignedPumps || []).map(p => ({ ...p, islandId: i.islandId, islandName: i.islandName }))
+  );
+  const hasPumps = allPumps.length > 0;
+
   return (
     <ModalSheet title={`Reassign — ${worker.fullName}`} onClose={onClose}>
-      <div className="space-y-4 pb-2">
-        <p className="text-sm text-gray-500">
+      <div className="pb-2">
+        <p className="text-sm text-gray-500 mb-4">
           Currently on: <span className="font-semibold">{worker.island?.islandName || 'Unassigned'}</span>
         </p>
-        {available.length === 0 ? (
-          <p className="text-center text-gray-400 py-6">No available islands to reassign to</p>
+
+        {!hasPumps ? (
+          <p className="text-center text-gray-400 py-6">No pumps found</p>
         ) : (
-          <>
-            <div className="space-y-2">
-              {available.map(i => (
-                <button key={i.islandId}
-                  onClick={() => setTargetId(i.islandId)}
-                  className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border-2 text-sm font-medium transition-all ${
-                    targetId === i.islandId
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-200 bg-white text-gray-700'
-                  }`}>
-                  <span>{i.islandName}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_LABELS[i.islandStatus]?.cls || 'bg-gray-100'}`}>
-                    {STATUS_LABELS[i.islandStatus]?.label || i.islandStatus}
-                  </span>
-                </button>
-              ))}
-            </div>
-            {err && <p className="text-red-500 text-sm">{err}</p>}
-            <button onClick={save} disabled={!targetId || saving}
-              className="w-full py-3.5 bg-indigo-600 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
-              {saving ? <Loader size={18} className="animate-spin" /> : null}
-              Confirm Reassignment
-            </button>
-          </>
+          <div className="space-y-4">
+            {islands.map(island => {
+              const pumps = island.allPumps || island.assignedPumps || [];
+              if (!pumps.length) return null;
+              return (
+                <div key={island.islandId}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                    {island.islandName}
+                  </p>
+                  <div className="space-y-2">
+                    {pumps.map(pump => {
+                      const isCurrentWorker = pump.assignedWorkerId === worker._id;
+                      const isOtherWorker   = pump.inUse && !isCurrentWorker;
+                      const isSelected      = selected?.pumpId === pump.pumpId;
+
+                      return (
+                        <button key={pump.pumpId}
+                          onClick={() => !isOtherWorker && setSelected({
+                            pumpId:    pump.pumpId,
+                            islandId:  island.islandId,
+                            islandName: island.islandName,
+                            pumpName:  pump.pumpName,
+                          })}
+                          className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all text-sm
+                            ${isSelected
+                              ? 'border-indigo-500 bg-indigo-50'
+                              : isOtherWorker
+                              ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                              : 'border-gray-200 bg-white active:scale-95'
+                            }`}>
+                          <span className={`font-medium ${isSelected ? 'text-indigo-700' : 'text-gray-800'}`}>
+                            {pump.pumpName || `Pump ${pump.pumpNumber}`}
+                            {pump.productType ? <span className="text-gray-400 font-normal ml-1 text-xs">({pump.productType})</span> : null}
+                          </span>
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                              isCurrentWorker
+                                ? 'bg-blue-100 text-blue-700'
+                                : isOtherWorker
+                                ? 'bg-red-100 text-red-600'
+                                : 'bg-green-100 text-green-700'
+                            }`}>
+                              {isCurrentWorker ? 'Current' : isOtherWorker ? 'In Use' : 'Available'}
+                            </span>
+                            {isOtherWorker && pump.assignedWorkerName && (
+                              <span className="text-xs text-gray-400">{pump.assignedWorkerName}</span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
+
+        {err && <p className="text-red-500 text-sm mt-3">{err}</p>}
+        <button onClick={save} disabled={!selected || saving}
+          className="w-full mt-4 py-3.5 bg-indigo-600 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+          {saving ? <Loader size={18} className="animate-spin" /> : null}
+          {selected ? `Assign to ${selected.pumpName}` : 'Confirm Reassignment'}
+        </button>
       </div>
     </ModalSheet>
   );
