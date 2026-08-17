@@ -471,6 +471,9 @@ export default function WorkerDashboard() {
   const [breakActing,   setBreakActing ] = useState(false);
   const [breakErr,      setBreakErr    ] = useState('');
   const [breakConfirm,  setBreakConfirm] = useState(null); // { type, label, allowedMinutes }
+  const [simpleClockOutDone, setSimpleClockOutDone] = useState(false);
+  const [simpleClockOutErr,  setSimpleClockOutErr ] = useState('');
+  const [simpleClockOutLoading, setSimpleClockOutLoading] = useState(false);
 
   const deviceToken = localStorage.getItem(TOKEN_KEY) || '';
 
@@ -526,6 +529,20 @@ export default function WorkerDashboard() {
       await loadBreakStatus(workerId);
     } catch (e) { setBreakErr(e.response?.data?.message || 'Could not end break'); }
     finally { setBreakActing(false); }
+  };
+
+  const doSimpleClockOut = async () => {
+    setSimpleClockOutLoading(true); setSimpleClockOutErr('');
+    try {
+      await axios.post(`${BASE}/worker/clock-out`, { pin });
+      setSimpleClockOutDone(true);
+      setTimeout(async () => {
+        setSimpleClockOutDone(false);
+        await load(pin, month, year);
+      }, 2000);
+    } catch (e) {
+      setSimpleClockOutErr(e.response?.data?.message || 'Could not clock out — try again');
+    } finally { setSimpleClockOutLoading(false); }
   };
 
   useEffect(() => {
@@ -744,22 +761,44 @@ export default function WorkerDashboard() {
         {/* ── HOME TAB ─────────────────────────────────────────────────────── */}
         {activeTab === 'home' && (
           <>
-            {/* Clock-in / clock-out card (approved device only) */}
-            {deviceToken && (canClockIn || canClockOut) && (
-              <div className={`rounded-2xl p-4 flex items-center justify-between shadow-sm ${canClockIn ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+            {/* Clock-in card — approved device only */}
+            {deviceToken && !todayStatus.clockedIn && (
+              <div className="rounded-2xl p-4 flex items-center justify-between shadow-sm bg-green-50 border border-green-200">
                 <div>
-                  <p className={`font-bold text-sm ${canClockIn ? 'text-green-800' : 'text-red-700'}`}>
-                    {canClockIn ? "You haven't clocked in yet" : 'Ready to clock out?'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {canClockIn ? 'Tap to record your arrival' : 'Tap to record end of shift'}
-                  </p>
+                  <p className="font-bold text-sm text-green-800">You haven't clocked in yet</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Tap to record your arrival</p>
                 </div>
-                <button
-                  onClick={() => setStep(canClockIn ? 'clockin' : 'clockout')}
-                  className={`px-4 py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 transition-all ${canClockIn ? 'bg-green-600' : 'bg-red-500'}`}>
-                  {canClockIn ? '🟢 Clock In' : '🔴 Clock Out'}
+                <button onClick={() => setStep('clockin')}
+                  className="px-4 py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 bg-green-600">
+                  🟢 Clock In
                 </button>
+              </div>
+            )}
+
+            {/* Clock-out card — any device when clocked in */}
+            {todayStatus.clockedIn && !todayStatus.clockedOut && (
+              <div className="rounded-2xl p-4 shadow-sm bg-red-50 border border-red-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-sm text-red-700">Ready to clock out?</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {deviceToken ? 'Tap to record end of shift' : 'PIN-only · no face scan needed'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => deviceToken ? setStep('clockout') : doSimpleClockOut()}
+                    disabled={simpleClockOutLoading || simpleClockOutDone}
+                    className="px-4 py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 bg-red-500 disabled:opacity-60 flex items-center gap-1.5">
+                    {simpleClockOutLoading
+                      ? <Loader size={15} className="animate-spin" />
+                      : simpleClockOutDone
+                      ? '✓ Done'
+                      : '🔴 Clock Out'}
+                  </button>
+                </div>
+                {simpleClockOutErr && (
+                  <p className="text-xs text-red-600 font-medium mt-2 text-center">{simpleClockOutErr}</p>
+                )}
               </div>
             )}
 
@@ -796,8 +835,8 @@ export default function WorkerDashboard() {
               </div>
             )}
 
-            {/* Break section (approved device + clocked in and not clocked out) */}
-            {deviceToken && todayStatus.clockedIn && !todayStatus.clockedOut && (
+            {/* Break section — clocked in and not clocked out */}
+            {todayStatus.clockedIn && !todayStatus.clockedOut && (
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -812,10 +851,15 @@ export default function WorkerDashboard() {
                     </button>
                   </div>
                 </div>
-                {breakErr && (
+                {!deviceToken ? (
+                  <div className="px-4 py-5 text-center">
+                    <p className="text-2xl mb-1">📱</p>
+                    <p className="text-sm font-semibold text-gray-600">Use Attendance Terminal</p>
+                    <p className="text-xs text-gray-400 mt-1">Break can only be started from the approved station device</p>
+                  </div>
+                ) : breakErr ? (
                   <p className="text-xs text-red-600 bg-red-50 px-4 py-2 text-center font-medium">{breakErr}</p>
-                )}
-                {breakStatus?.activeBreak ? (
+                ) : breakStatus?.activeBreak ? (
                   <div className="px-4 py-4">
                     <div className={`rounded-xl p-3 mb-3 ${breakStatus.activeBreak.isOverdue ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                       <div className="flex items-center justify-between mb-1">

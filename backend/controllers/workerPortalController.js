@@ -386,4 +386,52 @@ const workerHistory = async (req, res) => {
   });
 };
 
-module.exports = { workerPortalAuth, workerChangePin, bookOffence, workerSelectPump, workerHistory };
+// ─── POST /api/worker/clock-out ───────────────────────────────────────────────
+// PIN-only clock-out — works from any device (personal phone or terminal).
+// Clock-IN still requires an approved attendance terminal device.
+const workerClockOut = async (req, res) => {
+  const { pin } = req.body;
+  if (!pin) return res.status(400).json({ success: false, message: 'PIN required' });
+
+  const worker = await Worker.findOne({ pin: String(pin).trim(), employmentStatus: 'active' })
+    .populate('branchId', 'name')
+    .lean();
+  if (!worker) return res.status(401).json({ success: false, message: 'Invalid PIN' });
+
+  const watNow    = new Date(Date.now() + 60 * 60 * 1000);
+  const toDateStr = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  const today = toDateStr(watNow);
+
+  const [clockIn, clockOut] = await Promise.all([
+    Attendance.findOne({ company: worker.company, worker: worker._id, date: today, type: 'clock_in'  }).lean(),
+    Attendance.findOne({ company: worker.company, worker: worker._id, date: today, type: 'clock_out' }).lean(),
+  ]);
+
+  if (!clockIn)  return res.status(400).json({ success: false, message: 'You have not clocked in today' });
+  if (clockOut)  return res.status(400).json({ success: false, message: 'You have already clocked out today' });
+
+  await Attendance.create({
+    company:     worker.company,
+    worker:      worker._id,
+    workerName:  worker.fullName,
+    workerRole:  worker.role,
+    branch:      worker.branchId?._id || worker.branchId,
+    branchName:  worker.branchId?.name || worker.branch || '',
+    type:        'clock_out',
+    timestamp:   new Date(),
+    date:        today,
+    faceMatchScore: null,
+    faceVerified:   false,
+    deviceVerified: false,
+    gpsVerified:    false,
+    status:      'partial',
+    source:      'worker_phone',
+    failReasons: ['Clock-out from personal phone / PIN only'],
+  });
+
+  const timeStr = watNow.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return res.json({ success: true, message: 'Clocked out successfully', data: { timeStr, type: 'clock_out' } });
+};
+
+module.exports = { workerPortalAuth, workerChangePin, bookOffence, workerSelectPump, workerHistory, workerClockOut };
