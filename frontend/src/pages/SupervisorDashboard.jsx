@@ -1138,6 +1138,7 @@ function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, on
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function SupervisorDashboard() {
+  const [role, setRole]         = useState(null);   // null | 'supervisor' | 'worker'
   const [pin, setPin]           = useState('');
   const [pinLoading, setPinLoading] = useState(false);
   const [pinError, setPinError] = useState('');
@@ -1279,9 +1280,64 @@ export default function SupervisorDashboard() {
     fetchDashboard();
   };
 
+  // ── Role picker ─────────────────────────────────────────────────────────────
+  if (!role) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center p-5">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <span className="text-3xl">⛽</span>
+            </div>
+            <h1 className="text-2xl font-black text-gray-800">Sage Energy</h1>
+            <p className="text-gray-500 text-sm mt-1">Who are you logging in as?</p>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={() => setRole('supervisor')}
+              className="w-full bg-indigo-600 text-white rounded-2xl px-5 py-5 flex items-center gap-4 shadow-md active:scale-95 transition-all">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                <span className="text-2xl">🧑‍💼</span>
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-base">Supervisor</p>
+                <p className="text-indigo-200 text-xs mt-0.5">Manage islands, meters & workers</p>
+              </div>
+              <span className="ml-auto text-indigo-300 text-lg">›</span>
+            </button>
+
+            <button
+              onClick={() => window.location.href = '/my-dashboard'}
+              className="w-full bg-white text-gray-800 rounded-2xl px-5 py-5 flex items-center gap-4 shadow-sm border border-gray-200 active:scale-95 transition-all">
+              <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                <span className="text-2xl">👷</span>
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-base">Pump Worker</p>
+                <p className="text-gray-400 text-xs mt-0.5">View your salary & pump info</p>
+              </div>
+              <span className="ml-auto text-gray-300 text-lg">›</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── PIN screen ──────────────────────────────────────────────────────────────
   if (!data) {
-    return <PinPad onSubmit={handlePin} loading={pinLoading} error={pinError} />;
+    return (
+      <div>
+        <PinPad onSubmit={handlePin} loading={pinLoading} error={pinError} />
+        <div className="fixed bottom-6 left-0 right-0 flex justify-center">
+          <button onClick={() => setRole(null)}
+            className="text-xs text-gray-400 hover:text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100">
+            ← Back to login options
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const { supervisor, date, islands, workers } = data;
