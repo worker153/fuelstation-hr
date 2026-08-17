@@ -15,6 +15,41 @@ const REASONS = [
   { value: 'other',              label: 'Other' },
 ];
 
+const OFFENCE_TYPES = [
+  { value: 'late_arrival',         label: 'Late Arrival' },
+  { value: 'absent_without_notice',label: 'Absent Without Notice' },
+  { value: 'improper_uniform',     label: 'Improper Uniform' },
+  { value: 'rude_to_customer',     label: 'Rude to Customer' },
+  { value: 'cash_shortage',        label: 'Cash Shortage' },
+  { value: 'fuel_shortage',        label: 'Fuel Shortage' },
+  { value: 'negligence',           label: 'Negligence' },
+  { value: 'theft_fraud',          label: 'Theft / Fraud' },
+  { value: 'disobedience',         label: 'Disobedience' },
+  { value: 'mobile_phone_misuse',  label: 'Mobile Phone Misuse' },
+  { value: 'fighting_misconduct',  label: 'Fighting / Misconduct' },
+  { value: 'damage_to_property',   label: 'Damage to Property' },
+  { value: 'abandoning_post',      label: 'Abandoning Post' },
+  { value: 'insubordination',      label: 'Insubordination' },
+  { value: 'sleeping_on_duty',     label: 'Sleeping on Duty' },
+  { value: 'other',                label: 'Other' },
+];
+
+const SEVERITIES = [
+  { value: 'minor',    label: 'Minor' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'serious',  label: 'Serious' },
+  { value: 'gross',    label: 'Gross' },
+];
+
+const ACTIONS = [
+  { value: 'verbal_warning',   label: 'Verbal Warning' },
+  { value: 'written_warning',  label: 'Written Warning' },
+  { value: 'suspension',       label: 'Suspension' },
+  { value: 'deduction',        label: 'Salary Deduction' },
+  { value: 'dismissal',        label: 'Dismissal' },
+  { value: 'none',             label: 'None (Record Only)' },
+];
+
 const STATUS_LABELS = {
   active:      { label: 'Active',        cls: 'bg-green-100 text-green-700',  icon: '🟢' },
   faulty:      { label: 'Faulty',        cls: 'bg-red-100 text-red-700',      icon: '🔴' },
@@ -519,8 +554,108 @@ function IslandCard({ island, pin, workers, allIslands, onMeterSaved, onStatusSa
   );
 }
 
+// ── Offence booking modal ──────────────────────────────────────────────────────
+function OffenceModal({ workers, pin, defaultWorkerId, onClose, onSaved }) {
+  const [workerId,    setWorkerId]    = useState(defaultWorkerId || '');
+  const [offenceType, setOffenceType] = useState('late_arrival');
+  const [severity,    setSeverity]    = useState('minor');
+  const [description, setDescription] = useState('');
+  const [action,      setAction]      = useState('verbal_warning');
+  const [deduction,   setDeduction]   = useState('');
+  const [witness,     setWitness]     = useState('');
+  const [saving,      setSaving]      = useState(false);
+  const [err,         setErr]         = useState('');
+
+  const save = async () => {
+    if (!workerId)    return setErr('Select a worker');
+    if (!description) return setErr('Enter a description');
+    setSaving(true); setErr('');
+    try {
+      await axios.post(`${BASE}/worker/book-offence`, {
+        pin, workerId, offenceType, severity, description,
+        action, deductionAmount: action === 'deduction' ? Number(deduction) : 0,
+        witness,
+      });
+      onSaved();
+      onClose();
+    } catch (e) {
+      setErr(e.response?.data?.message || 'Failed to book offence');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <ModalSheet title="Book Offence" onClose={onClose}>
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Worker</label>
+          <select value={workerId} onChange={e => setWorkerId(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+            <option value="">Select worker…</option>
+            {workers.map(w => <option key={w._id} value={w._id}>{w.fullName}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Offence Type</label>
+          <select value={offenceType} onChange={e => setOffenceType(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+            {OFFENCE_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Severity</label>
+            <select value={severity} onChange={e => setSeverity(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+              {SEVERITIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Action</label>
+            <select value={action} onChange={e => setAction(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+              {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {action === 'deduction' && (
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Deduction Amount (₦)</label>
+            <input type="number" inputMode="decimal" value={deduction} onChange={e => setDeduction(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+              placeholder="e.g. 5000" />
+          </div>
+        )}
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Description</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
+            placeholder="Describe what happened…" />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Witness (optional)</label>
+          <input type="text" value={witness} onChange={e => setWitness(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+            placeholder="Name of witness" />
+        </div>
+
+        {err && <p className="text-red-500 text-sm">{err}</p>}
+        <button onClick={save} disabled={saving}
+          className="w-full py-3.5 bg-red-500 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+          {saving ? <Loader size={18} className="animate-spin" /> : null}
+          Book Offence
+        </button>
+      </div>
+    </ModalSheet>
+  );
+}
+
 // ── Worker row (in workers tab) ────────────────────────────────────────────────
-function WorkerRow({ worker, islands, pin, onShortage, onReassign }) {
+function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3 flex items-center gap-3">
       {worker.photo ? (
@@ -539,6 +674,11 @@ function WorkerRow({ worker, islands, pin, onShortage, onReassign }) {
           className="p-2 bg-orange-50 text-orange-600 rounded-xl text-xs active:scale-95 transition-transform"
           title="Book Shortage">
           💸
+        </button>
+        <button onClick={() => onOffence(worker)}
+          className="p-2 bg-red-50 text-red-600 rounded-xl text-xs active:scale-95 transition-transform"
+          title="Book Offence">
+          ⚠️
         </button>
         <button onClick={() => onReassign(worker)}
           className="p-2 bg-purple-50 text-purple-600 rounded-xl text-xs active:scale-95 transition-transform"
@@ -561,6 +701,7 @@ export default function SupervisorDashboard() {
 
   // Modal states
   const [shortageFor, setShortageFor]   = useState(null);  // worker object
+  const [offenceFor,  setOffenceFor]    = useState(null);  // worker object
   const [reassignFor, setReassignFor]   = useState(null);  // worker object
 
   const fetchDashboard = useCallback(async (p) => {
@@ -706,14 +847,20 @@ export default function SupervisorDashboard() {
 
         {tab === 'workers' && (
           <>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
                 {workers.length} worker{workers.length !== 1 ? 's' : ''} in your shift
               </p>
-              <button onClick={() => setShortageFor({ _id: '', fullName: '' })}
-                className="text-xs bg-orange-100 text-orange-600 font-semibold px-3 py-1.5 rounded-xl">
-                + Book Shortage
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShortageFor({ _id: '', fullName: '' })}
+                  className="text-xs bg-orange-100 text-orange-600 font-semibold px-3 py-1.5 rounded-xl">
+                  + Shortage
+                </button>
+                <button onClick={() => setOffenceFor({ _id: '', fullName: '' })}
+                  className="text-xs bg-red-100 text-red-600 font-semibold px-3 py-1.5 rounded-xl">
+                  + Offence
+                </button>
+              </div>
             </div>
 
             {workers.length === 0 ? (
@@ -728,6 +875,7 @@ export default function SupervisorDashboard() {
                 islands={islands}
                 pin={pin}
                 onShortage={setShortageFor}
+                onOffence={setOffenceFor}
                 onReassign={setReassignFor}
               />
             ))}
@@ -743,6 +891,17 @@ export default function SupervisorDashboard() {
           defaultWorkerId={shortageFor._id}
           onClose={() => setShortageFor(null)}
           onSaved={() => { setShortageFor(null); }}
+        />
+      )}
+
+      {/* Offence modal */}
+      {offenceFor && (
+        <OffenceModal
+          workers={workers}
+          pin={pin}
+          defaultWorkerId={offenceFor._id}
+          onClose={() => setOffenceFor(null)}
+          onSaved={() => setOffenceFor(null)}
         />
       )}
 
