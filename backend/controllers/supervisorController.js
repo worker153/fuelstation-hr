@@ -67,14 +67,28 @@ const getSupervisorDashboard = async (req, res) => {
   const logMap    = Object.fromEntries(logs.map(l => [String(l.islandId), l]));
   const assignMap = Object.fromEntries(assignments.map(a => [String(a.island), a]));
 
+  // Collect all pump IDs across assignments to fetch live status in one query
+  const allPumpIds = assignments.flatMap(a =>
+    (a.assignedPumps || []).map(p => p.pumpId).filter(Boolean)
+  );
+  const pumpDocs = allPumpIds.length
+    ? await Pump.find({ _id: { $in: allPumpIds } }).select('_id status pumpName pumpNumber productType').lean()
+    : [];
+  const pumpStatusMap = Object.fromEntries(pumpDocs.map(p => [String(p._id), p.status]));
+
   const islandData = islands.map(island => {
     const log    = logMap[String(island._id)] || null;
     const assign = assignMap[String(island._id)] || null;
+    const assignedPumps = (assign?.assignedPumps || []).map(p => ({
+      ...p,
+      pumpId: String(p.pumpId),
+      status: pumpStatusMap[String(p.pumpId)] || 'active',
+    }));
     return {
       islandId:     String(island._id),
       islandName:   island.name,
       islandStatus: island.status,
-      assignedPumps: assign?.assignedPumps || [],
+      assignedPumps,
       worker: assign ? {
         workerId:   String(assign.worker),
         workerName: assign.workerName,
@@ -343,10 +357,32 @@ const supervisorReassign = async (req, res) => {
   });
 };
 
+// ── PATCH /api/supervisor/pump-status — mark individual pump active/faulty/out_of_stock
+const supervisorPumpStatus = async (req, res) => {
+  const { pin, pumpId, status } = req.body;
+
+  const validStatuses = ['active', 'faulty', 'out_of_stock'];
+  if (!validStatuses.includes(status))
+    return res.status(400).json({ success: false, message: 'Invalid status. Use: active, faulty, out_of_stock' });
+
+  const sup = await resolveSupervisor(pin);
+  if (!sup) return res.status(401).json({ success: false, message: 'Invalid PIN or not a supervisor' });
+
+  const pump = await Pump.findOneAndUpdate(
+    { _id: pumpId, company: sup.company },
+    { status },
+    { new: true }
+  ).lean();
+  if (!pump) return res.status(404).json({ success: false, message: 'Pump not found' });
+
+  res.json({ success: true, data: pump });
+};
+
 module.exports = {
   getSupervisorDashboard,
   supervisorSaveMeter,
   supervisorBookShortage,
   supervisorIslandStatus,
   supervisorReassign,
+  supervisorPumpStatus,
 };

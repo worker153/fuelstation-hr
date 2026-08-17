@@ -9,7 +9,7 @@ const pumpSchema = new Schema({
   pumpName:      { type: String, required: true },       // "Pump 1", "Pump A"
   productType:   { type: String, enum: ['PMS', 'AGO', 'LPG', 'DPK', 'other'], default: 'PMS' },
   externalId:    { type: String },                       // ID on the station API
-  status:        { type: String, enum: ['active', 'faulty', 'maintenance'], default: 'active' },
+  status:        { type: String, enum: ['active', 'faulty', 'maintenance', 'out_of_stock'], default: 'active' },
   rotationOrder: { type: Number, default: 0 },           // 0, 1, 2, 3 — lower = earlier in rotation
   notes:         { type: String },
 }, { timestamps: true });

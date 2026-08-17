@@ -329,46 +329,82 @@ function ShortageModal({ workers, pin, defaultWorkerId, onClose, onSaved }) {
   );
 }
 
-// ── Island status modal ────────────────────────────────────────────────────────
-function IslandStatusModal({ island, pin, onClose, onSaved }) {
-  const [saving, setSaving] = useState(null);
+// ── Per-pump status modal ─────────────────────────────────────────────────────
+const PUMP_STATUS_OPTIONS = [
+  { status: 'active',       label: 'Active',       cls: 'border-green-400 bg-green-50 text-green-700',   dot: 'bg-green-500' },
+  { status: 'faulty',       label: 'Faulty',       cls: 'border-red-400 bg-red-50 text-red-700',         dot: 'bg-red-500' },
+  { status: 'out_of_stock', label: 'Fuel Finished', cls: 'border-orange-400 bg-orange-50 text-orange-700', dot: 'bg-orange-500' },
+];
+
+function PumpStatusModal({ island, pin, onClose, onSaved }) {
+  // Track per-pump status locally so changes show immediately without closing
+  const [pumpStatuses, setPumpStatuses] = useState(() =>
+    Object.fromEntries((island.assignedPumps || []).map(p => [p.pumpId, p.status || 'active']))
+  );
+  const [saving, setSaving] = useState(null); // pumpId being saved
   const [err, setErr]       = useState('');
 
-  const options = [
-    { status: 'active',       icon: <CheckCircle size={20} />, label: 'Mark Active',     cls: 'bg-green-500' },
-    { status: 'faulty',       icon: <Wrench size={20} />,      label: 'Mark Faulty',     cls: 'bg-red-500' },
-    { status: 'out_of_stock', icon: <Fuel size={20} />,        label: 'Fuel Finished',   cls: 'bg-orange-500' },
-  ];
+  const pumps = island.assignedPumps?.length
+    ? island.assignedPumps
+    : [];
 
-  const pick = async (status) => {
-    setSaving(status); setErr('');
+  const pick = async (pumpId, status) => {
+    setSaving(pumpId + status); setErr('');
     try {
-      const res = await axios.patch(`${BASE}/supervisor/island-status`, {
-        pin, islandId: island.islandId, status,
-      });
-      onSaved(res.data.data);
-      onClose();
+      await axios.patch(`${BASE}/supervisor/pump-status`, { pin, pumpId, status });
+      setPumpStatuses(prev => ({ ...prev, [pumpId]: status }));
+      onSaved(pumpId, status);
     } catch (e) {
-      setErr(e.response?.data?.message || 'Failed to update status');
+      setErr(e.response?.data?.message || 'Failed to update pump status');
     } finally { setSaving(null); }
   };
 
   return (
-    <ModalSheet title={`Status — ${island.islandName}`} onClose={onClose}>
-      <div className="space-y-3 pb-2">
-        <p className="text-sm text-gray-500 mb-4">
-          Current: <span className="font-semibold">{STATUS_LABELS[island.islandStatus]?.label || island.islandStatus}</span>
-        </p>
-        {options.map(o => (
-          <button key={o.status} onClick={() => pick(o.status)}
-            disabled={!!saving || island.islandStatus === o.status}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-white font-semibold text-sm
-              ${o.cls} disabled:opacity-50 active:scale-95 transition-transform`}>
-            {saving === o.status ? <Loader size={18} className="animate-spin" /> : o.icon}
-            {o.label}
-          </button>
-        ))}
-        {err && <p className="text-red-500 text-sm text-center mt-2">{err}</p>}
+    <ModalSheet title={`Pump Status — ${island.islandName}`} onClose={onClose}>
+      <div className="space-y-5 pb-2">
+        {pumps.length === 0 && (
+          <p className="text-center text-gray-400 py-6">No pumps found for this island</p>
+        )}
+        {pumps.map(pump => {
+          const current = pumpStatuses[pump.pumpId] || 'active';
+          return (
+            <div key={pump.pumpId} className="bg-gray-50 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                  PUMP_STATUS_OPTIONS.find(o => o.status === current)?.dot || 'bg-gray-400'
+                }`} />
+                <p className="font-semibold text-gray-800 text-sm">
+                  {pump.pumpName || `Pump ${pump.pumpNumber}`}
+                </p>
+                {pump.productType && (
+                  <span className="text-xs text-gray-400 ml-auto">{pump.productType}</span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {PUMP_STATUS_OPTIONS.map(opt => (
+                  <button
+                    key={opt.status}
+                    onClick={() => pick(pump.pumpId, opt.status)}
+                    disabled={saving === pump.pumpId + opt.status || current === opt.status}
+                    className={`py-2.5 rounded-xl border-2 text-xs font-semibold transition-all active:scale-95
+                      ${current === opt.status
+                        ? opt.cls + ' border-opacity-100'
+                        : 'border-gray-200 bg-white text-gray-500'
+                      } disabled:opacity-60`}>
+                    {saving === pump.pumpId + opt.status
+                      ? <Loader size={14} className="animate-spin mx-auto" />
+                      : opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {err && <p className="text-red-500 text-sm text-center">{err}</p>}
+        <button onClick={onClose}
+          className="w-full py-3 bg-gray-100 text-gray-600 font-semibold rounded-2xl text-sm">
+          Done
+        </button>
       </div>
     </ModalSheet>
   );
@@ -441,9 +477,15 @@ function IslandCard({ island, pin, workers, allIslands, onMeterSaved, onStatusSa
   const [statusOpen, setStatusOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
 
-  const st = STATUS_LABELS[island.islandStatus] || STATUS_LABELS.active;
   const hasLog = !!island.log;
   const logClosed = island.log?.status === 'closed';
+
+  // Derive a summary status from individual pump statuses
+  const pumps = island.assignedPumps || [];
+  const anyFaulty      = pumps.some(p => p.status === 'faulty');
+  const anyOutOfStock  = pumps.some(p => p.status === 'out_of_stock');
+  const summaryStatus  = anyFaulty ? 'faulty' : anyOutOfStock ? 'out_of_stock' : island.islandStatus;
+  const st = STATUS_LABELS[summaryStatus] || STATUS_LABELS.active;
 
   const assignedWorker = island.worker
     ? workers.find(w => w._id === island.worker.workerId)
@@ -491,9 +533,19 @@ function IslandCard({ island, pin, workers, allIslands, onMeterSaved, onStatusSa
         {/* Expanded pump breakdown */}
         {expanded && hasLog && island.log.pumps?.length > 0 && (
           <div className="px-4 pb-3 space-y-3">
-            {island.log.pumps.map((pump, i) => (
+            {island.log.pumps.map((pump, i) => {
+              const pumpStatus = pumps.find(p => String(p.pumpId) === String(pump.pumpId))?.status || 'active';
+              const psDot = pumpStatus === 'faulty' ? 'bg-red-500' : pumpStatus === 'out_of_stock' ? 'bg-orange-500' : 'bg-green-500';
+              const psLabel = pumpStatus === 'faulty' ? 'Faulty' : pumpStatus === 'out_of_stock' ? 'Fuel Finished' : 'Active';
+              return (
               <div key={i} className="bg-gray-50 rounded-xl p-3 text-xs">
-                <p className="font-semibold text-gray-700 mb-2">{pump.pumpName || `Pump ${pump.pumpNumber}`}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-semibold text-gray-700">{pump.pumpName || `Pump ${pump.pumpNumber}`}</p>
+                  <span className={`flex items-center gap-1 text-xs font-medium`}>
+                    <span className={`w-2 h-2 rounded-full ${psDot}`} />
+                    {psLabel}
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-y-1.5 gap-x-4">
                   <span className="text-gray-500">Outer Opening</span>
                   <span className="font-mono text-right">{fmtNum(pump.nozzle1?.opening)}</span>
@@ -509,7 +561,8 @@ function IslandCard({ island, pin, workers, allIslands, onMeterSaved, onStatusSa
                   </>}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -538,7 +591,7 @@ function IslandCard({ island, pin, workers, allIslands, onMeterSaved, onStatusSa
           onSaved={onMeterSaved} />
       )}
       {statusOpen && (
-        <IslandStatusModal island={island} pin={pin}
+        <PumpStatusModal island={island} pin={pin}
           onClose={() => setStatusOpen(false)}
           onSaved={onStatusSaved} />
       )}
@@ -742,14 +795,18 @@ export default function SupervisorDashboard() {
     });
   };
 
-  const handleStatusSaved = (island) => {
+  // Called per-pump: (pumpId, newStatus)
+  const handleStatusSaved = (pumpId, newStatus) => {
     setData(prev => {
       if (!prev) return prev;
       return {
         ...prev,
-        islands: prev.islands.map(i =>
-          i.islandId === String(island._id) ? { ...i, islandStatus: island.status } : i
-        ),
+        islands: prev.islands.map(i => ({
+          ...i,
+          assignedPumps: i.assignedPumps.map(p =>
+            p.pumpId === pumpId ? { ...p, status: newStatus } : p
+          ),
+        })),
       };
     });
   };
