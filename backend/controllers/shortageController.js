@@ -705,10 +705,13 @@ const workerDashboard = async (req, res) => {
     success: true,
     data: {
       worker: {
-        fullName:   worker.fullName,
-        role:       worker.role,
-        branchName: worker.branchId?.name || worker.branch || '',
-        photo:      worker.passportPhoto?.url || null,
+        _id:          String(worker._id),
+        fullName:     worker.fullName,
+        role:         worker.role,
+        branchName:   worker.branchId?.name || worker.branch || '',
+        photo:        worker.passportPhoto?.url || null,
+        hasFace:      !!(worker.faceDescriptor?.length),
+        faceDescriptor: worker.faceDescriptor || [],
       },
       period:   { month: mo, year: yr },
       attendance: {

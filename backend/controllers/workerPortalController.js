@@ -2,6 +2,8 @@ const Worker           = require('../models/Worker');
 const AttendanceDevice = require('../models/AttendanceDevice');
 const Attendance       = require('../models/Attendance');
 const Offence          = require('../models/Offence');
+const Payroll          = require('../models/Payroll');
+const IslandMeterLog   = require('../models/IslandMeterLog');
 const PumpAssignment   = require('../models/PumpAssignment');
 const Pump             = require('../models/Pump');
 
@@ -319,4 +321,69 @@ const workerSelectPump = async (req, res) => {
   });
 };
 
-module.exports = { workerPortalAuth, workerChangePin, bookOffence, workerSelectPump };
+// ─── GET /api/worker/history ──────────────────────────────────────────────────
+// Returns offences, salary history, and yearly litres for the worker.
+const workerHistory = async (req, res) => {
+  const { pin, year } = req.query;
+  if (!pin) return res.status(400).json({ success: false, message: 'PIN required' });
+
+  const worker = await Worker.findOne({ pin: String(pin).trim() }).lean();
+  if (!worker) return res.status(404).json({ success: false, message: 'Invalid PIN' });
+
+  const yr = Number(year) || new Date().getFullYear();
+
+  // ── Offences ────────────────────────────────────────────────────────────────
+  const offences = await Offence.find({ company: worker.company, worker: worker._id })
+    .sort({ date: -1 })
+    .select('date offenceType description severity action deductionAmount status resolution createdAt')
+    .lean();
+
+  // ── Salary history (all finalised payrolls) ──────────────────────────────────
+  const payrolls = await Payroll.find({
+    company:          worker.company,
+    status:           'finalised',
+    'entries.worker': worker._id,
+  }).select('month year status finalisedAt entries').sort({ year: -1, month: -1 }).lean();
+
+  const salaryHistory = payrolls.map(p => {
+    const entry = (p.entries || []).find(e => String(e.worker) === String(worker._id));
+    if (!entry) return null;
+    return {
+      month:            p.month,
+      year:             p.year,
+      netPay:           entry.netPay || 0,
+      grossSalary:      entry.grossSalary || 0,
+      shortage:         entry.shortage || 0,
+      absenceDeduction: entry.absenceDeduction || 0,
+      bonus:            entry.bonus || 0,
+      paid:             entry.paid || false,
+      finalisedAt:      p.finalisedAt,
+    };
+  }).filter(Boolean);
+
+  // ── Yearly litres ─────────────────────────────────────────────────────────────
+  const yearlyLogs = await IslandMeterLog.find({
+    company:  worker.company,
+    workerId: worker._id,
+    date:     { $regex: `^${yr}-` },
+  }).select('totalLitres date islandName').lean();
+
+  const yearlyLitres = yearlyLogs.reduce((s, l) => s + (l.totalLitres || 0), 0);
+
+  // Monthly breakdown for the year
+  const monthlyBreakdown = {};
+  yearlyLogs.forEach(l => {
+    const mo = l.date?.slice(0, 7); // 'YYYY-MM'
+    if (mo) monthlyBreakdown[mo] = (monthlyBreakdown[mo] || 0) + (l.totalLitres || 0);
+  });
+  const yearlyByMonth = Object.entries(monthlyBreakdown)
+    .map(([month, litres]) => ({ month, litres }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  return res.json({
+    success: true,
+    data: { offences, salaryHistory, yearlyLitres, yearlyByMonth },
+  });
+};
+
+module.exports = { workerPortalAuth, workerChangePin, bookOffence, workerSelectPump, workerHistory };
