@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Gauge, X, Save, Loader, AlertCircle, CheckCircle, Clock,
   ChevronDown, Users, Search, Edit2, Droplets,
@@ -179,15 +179,44 @@ function EditShiftModal({ record, onClose, onSaved }) {
 // ─── Assign Pump Modal ────────────────────────────────────────────────────────
 function AssignPumpModal({ workers, onClose, onAssigned }) {
   const notify = useNotify();
-  const [saving,    setSaving   ] = useState(false);
-  const [search,    setSearch   ] = useState('');
-  const [workerId,  setWorkerId ] = useState('');
-  const [pumpId,    setPumpId   ] = useState('');
-  const [pumpLabel, setPumpLabel] = useState('');
+  const [saving,      setSaving    ] = useState(false);
+  const [search,      setSearch    ] = useState('');
+  const [filterBranch, setFilterBranch] = useState('');
+  const [filterShift,  setFilterShift ] = useState('');
+  const [workerId,    setWorkerId  ] = useState('');
+  const [pumpId,      setPumpId    ] = useState('');
+  const [pumpLabel,   setPumpLabel ] = useState('');
 
-  const filtered = workers.filter(w =>
-    (w.fullName || w.name || '').toLowerCase().includes(search.toLowerCase())
-  );
+  // Derive unique branches and shifts from the workers list
+  const branches = useMemo(() => {
+    const seen = new Map();
+    workers.forEach(w => {
+      const id   = w.branchId?._id || w.branchId;
+      const name = w.branchId?.name || w.branchName || w.branch;
+      if (id && name && !seen.has(String(id))) seen.set(String(id), { id, name });
+    });
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [workers]);
+
+  const shifts = useMemo(() => {
+    const seen = new Map();
+    workers.forEach(w => {
+      const id   = w.shiftId?._id || w.shiftId;
+      const name = w.shiftId?.name || w.shiftName || w.shift;
+      if (id && name && !seen.has(String(id))) seen.set(String(id), { id, name });
+    });
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [workers]);
+
+  const filtered = workers.filter(w => {
+    const name     = (w.fullName || w.name || '').toLowerCase();
+    const branchId = String(w.branchId?._id || w.branchId || '');
+    const shiftId  = String(w.shiftId?._id  || w.shiftId  || '');
+    if (filterBranch && branchId !== filterBranch) return false;
+    if (filterShift  && shiftId  !== filterShift)  return false;
+    if (search && !name.includes(search.toLowerCase()))        return false;
+    return true;
+  });
 
   const selectedWorker = workers.find(w => w._id === workerId);
 
@@ -223,15 +252,42 @@ function AssignPumpModal({ workers, onClose, onAssigned }) {
 
           <form onSubmit={submit} className="divide-y divide-gray-100">
             <div className="px-6 py-5 space-y-4">
+
+              {/* Location + Shift filters */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Location</label>
+                  <select className="input text-sm" value={filterBranch}
+                    onChange={e => { setFilterBranch(e.target.value); setWorkerId(''); }}>
+                    <option value="">All locations</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={String(b.id)}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Shift</label>
+                  <select className="input text-sm" value={filterShift}
+                    onChange={e => { setFilterShift(e.target.value); setWorkerId(''); }}>
+                    <option value="">All shifts</option>
+                    {shifts.map(s => (
+                      <option key={s.id} value={String(s.id)}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Name search */}
               <div>
                 <label className="label">Search Worker</label>
                 <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input className="input pl-9" placeholder="Type worker name…"
-                    value={search} onChange={e => setSearch(e.target.value)} />
+                    value={search} onChange={e => { setSearch(e.target.value); setWorkerId(''); }} />
                 </div>
               </div>
 
+              {/* Worker dropdown */}
               <div>
                 <label className="label">Select Worker *</label>
                 <select className="input" value={workerId} onChange={e => setWorkerId(e.target.value)} required>
@@ -243,8 +299,12 @@ function AssignPumpModal({ workers, onClose, onAssigned }) {
                     </option>
                   ))}
                 </select>
+                {filtered.length === 0 && (filterBranch || filterShift || search) && (
+                  <p className="text-xs text-gray-400 mt-1">No workers match the current filters</p>
+                )}
               </div>
 
+              {/* Pump ID + Label */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Pump ID</label>
