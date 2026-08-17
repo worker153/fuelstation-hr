@@ -44,9 +44,10 @@ const attendanceSchema = new mongoose.Schema({
 
   status: {
     type:    String,
-    enum:    ['verified', 'partial', 'failed', 'manual_override'],
+    enum:    ['verified', 'partial', 'failed', 'manual_override', 'auto'],
     default: 'partial',
   },
+  source:      { type: String, enum: ['terminal', 'auto', 'manual_admin'], default: 'terminal' },
   failReasons: [{ type: String }],
   notes:       { type: String },
 }, { timestamps: true });

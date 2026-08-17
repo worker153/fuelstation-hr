@@ -4,7 +4,7 @@ const { checkSubscription } = require('../middleware/subscription');
 const { requirePermission } = require('../middleware/permissions');
 const { terminalClock, getAttendance, getWorkerAttendance,
         todaySummary, processAbsences, getMonthlySummary, debugSettings,
-        resetTodayAttendance, runAutoClockInNow } = require('../controllers/attendanceController');
+        resetTodayAttendance, runAutoClockInNow, undoClockIn } = require('../controllers/attendanceController');
 
 // ── Public (terminal submits attendance with device token) ────────────────────
 router.post('/clock', terminalClock);
@@ -20,5 +20,6 @@ router.get('/workers/:workerId',  getWorkerAttendance);
 router.post('/process-absences',  requirePermission('manageBranches'), processAbsences);
 router.post('/reset-today',       requirePermission('manageBranches'), resetTodayAttendance);
 router.post('/run-auto-clockin',  requirePermission('manageBranches'), runAutoClockInNow);
+router.delete('/undo-clockin',    requirePermission('manageBranches'), undoClockIn);
 
 module.exports = router;

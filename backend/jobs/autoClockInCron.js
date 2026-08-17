@@ -82,11 +82,12 @@ async function runAutoClockIn(dateStr) {
         timestamp:      clockTime,
         date:           d,
         status:         'auto',
+        source:         'auto',
         deviceVerified: false,
         gpsVerified:    false,
         faceVerified:   false,
         failReasons:    ['auto clock-in'],
-        source:         'auto',
+        notes:          'Created automatically by system',
       });
 
       // Auto-assign pump for pump attendants

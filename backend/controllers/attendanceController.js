@@ -78,16 +78,21 @@ const terminalClock = async (req, res) => {
   }).lean();
 
   if (existing) {
-    const timeStr = new Date(existing.timestamp).toLocaleTimeString('en-NG', {
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
-    return res.status(400).json({
-      success:     false,
-      alreadyDone: true,
-      message:     type === 'clock_in'
-        ? `Already clocked in today at ${timeStr}`
-        : `Already clocked out today at ${timeStr}`,
-    });
+    // Allow a real terminal clock-in to replace an auto-generated one
+    if (type === 'clock_in' && existing.source === 'auto') {
+      await Attendance.deleteOne({ _id: existing._id });
+    } else {
+      const timeStr = new Date(existing.timestamp).toLocaleTimeString('en-NG', {
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Africa/Lagos',
+      });
+      return res.status(400).json({
+        success:     false,
+        alreadyDone: true,
+        message:     type === 'clock_in'
+          ? `Already clocked in today at ${timeStr}`
+          : `Already clocked out today at ${timeStr}`,
+      });
+    }
   }
 
   const failReasons = [];
@@ -823,4 +828,28 @@ const runAutoClockInNow = async (req, res) => {
   }
 };
 
-module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings, resetTodayAttendance, runAutoClockInNow };
+// DELETE /api/attendance/undo-clockin — admin removes a wrong clock-in for a worker today
+const undoClockIn = async (req, res) => {
+  const { workerId, date } = req.body;
+  if (!workerId) return res.status(400).json({ success: false, message: 'workerId is required' });
+
+  const cid = req.user.company._id;
+  const now    = new Date();
+  const watNow = new Date(now.getTime() + 60 * 60 * 1000);
+  const today  = `${watNow.getUTCFullYear()}-${String(watNow.getUTCMonth()+1).padStart(2,'0')}-${String(watNow.getUTCDate()).padStart(2,'0')}`;
+  const targetDate = date || today;
+
+  const deleted = await Attendance.deleteMany({
+    company: cid,
+    worker:  workerId,
+    date:    targetDate,
+    type:    'clock_in',
+  });
+
+  if (!deleted.deletedCount)
+    return res.status(404).json({ success: false, message: 'No clock-in record found for that worker on that date' });
+
+  res.json({ success: true, message: `Clock-in removed — worker can now clock in fresh.` });
+};
+
+module.exports = { terminalClock, getAttendance, getWorkerAttendance, todaySummary, processAbsences, getMonthlySummary, debugSettings, resetTodayAttendance, runAutoClockInNow, undoClockIn };
