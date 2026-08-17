@@ -4,6 +4,11 @@ const PumpAssignment = require('../models/PumpAssignment');
 const IslandMeterLog = require('../models/IslandMeterLog');
 const Shortage       = require('../models/Shortage');
 const Pump           = require('../models/Pump');
+const Attendance     = require('../models/Attendance');
+const Branch         = require('../models/Branch');
+const Shift          = require('../models/Shift');
+const { createAttendanceShortage }           = require('./shortageController');
+const { isWorkerOnDuty, getSettingsForRole } = require('../utils/attendanceHelpers');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WAT_OFFSET = 60 * 60 * 1000;
@@ -138,30 +143,55 @@ const getSupervisorDashboard = async (req, res) => {
   }
 
   const shiftWorkers = await Worker.find(workerFilter)
-    .select('fullName role passportPhoto')
+    .select('fullName role passportPhoto faceDescriptor')
     .lean();
+
+  // Today's clock status for all workers + supervisor
+  const allWorkerIds = [...shiftWorkers.map(w => w._id), sup._id];
+  const todayAttAll  = await Attendance.find({
+    company,
+    worker: { $in: allWorkerIds },
+    date,
+  }).select('worker type timestamp').lean();
+
+  const clockMap = {};
+  todayAttAll.forEach(r => {
+    const id = String(r.worker);
+    if (!clockMap[id]) clockMap[id] = { clockedIn: false, clockedOut: false, clockInTime: null, clockOutTime: null };
+    if (r.type === 'clock_in')  { clockMap[id].clockedIn  = true; clockMap[id].clockInTime  = r.timestamp; }
+    if (r.type === 'clock_out') { clockMap[id].clockedOut = true; clockMap[id].clockOutTime = r.timestamp; }
+  });
 
   const workerData = shiftWorkers.map(w => {
     const assign = assignments.find(a => String(a.worker) === String(w._id));
+    const tid    = String(w._id);
     return {
-      _id:      String(w._id),
-      fullName: w.fullName,
-      role:     w.role,
-      photo:    w.passportPhoto?.url,
-      island:   assign ? { islandId: String(assign.island), islandName: assign.islandName } : null,
+      _id:            String(w._id),
+      fullName:       w.fullName,
+      role:           w.role,
+      photo:          w.passportPhoto?.url,
+      hasFace:        (w.faceDescriptor?.length || 0) > 0,
+      faceDescriptor: w.faceDescriptor || null,
+      island:         assign ? { islandId: String(assign.island), islandName: assign.islandName } : null,
+      todayStatus:    clockMap[tid] || { clockedIn: false, clockedOut: false },
     };
   });
 
+  const supId = String(sup._id);
   res.json({
     success: true,
     data: {
       supervisor: {
-        _id:       String(sup._id),
-        fullName:  sup.fullName,
-        role:      sup.role,
-        branch:    sup.branchId?.name || '',
-        branchId:  String(branchId),
-        shiftName: sup.shiftId?.name || '',
+        _id:            supId,
+        fullName:       sup.fullName,
+        role:           sup.role,
+        photo:          sup.passportPhoto?.url || null,
+        branch:         sup.branchId?.name || '',
+        branchId:       String(branchId),
+        shiftName:      sup.shiftId?.name || '',
+        hasFace:        (sup.faceDescriptor?.length || 0) > 0,
+        faceDescriptor: sup.faceDescriptor || null,
+        todayStatus:    clockMap[supId] || { clockedIn: false, clockedOut: false },
       },
       date,
       islands: islandData,
@@ -420,6 +450,193 @@ const supervisorPumpStatus = async (req, res) => {
   res.json({ success: true, data: pump });
 };
 
+// ── POST /api/supervisor/clock-worker ─────────────────────────────────────────
+// Supervisor clocks a worker (or themselves) in/out via PIN + face verification.
+const supervisorClockWorker = async (req, res) => {
+  const { pin: supervisorPin, workerId, workerPin, type, faceMatchScore } = req.body;
+
+  if (!supervisorPin || !workerId || !workerPin || !type)
+    return res.status(400).json({ success: false, message: 'supervisorPin, workerId, workerPin and type are required' });
+  if (!['clock_in', 'clock_out'].includes(type))
+    return res.status(400).json({ success: false, message: 'type must be clock_in or clock_out' });
+
+  const sup = await resolveSupervisor(supervisorPin);
+  if (!sup) return res.status(401).json({ success: false, message: 'Invalid supervisor PIN' });
+
+  // Worker must match by both ID and PIN (worker physically proves identity)
+  const worker = await Worker.findOne({
+    _id:              workerId,
+    pin:              String(workerPin).trim(),
+    company:          sup.company,
+    employmentStatus: 'active',
+  }).lean();
+  if (!worker) return res.status(401).json({ success: false, message: 'Wrong worker PIN — try again' });
+
+  // Face check — block if worker has a face registered but scan score too low
+  const faceVerified = typeof faceMatchScore === 'number' && faceMatchScore >= 55;
+  if (worker.faceDescriptor?.length && !faceVerified) {
+    return res.status(400).json({
+      success: false, faceBlocked: true,
+      message: `Face not recognised for ${worker.fullName}. Look at the camera and try again.`,
+    });
+  }
+
+  const now    = new Date();
+  const watNow = new Date(now.getTime() + WAT_OFFSET);
+  const toStr  = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  let dateStr  = toStr(watNow);
+
+  // Overnight shift: if clocking out and no clock-in today, tie to yesterday's date
+  if (type === 'clock_out') {
+    const todayCI = await Attendance.findOne({ company: sup.company, worker: worker._id, date: dateStr, type: 'clock_in' }).lean();
+    if (!todayCI) {
+      const yesterday = toStr(new Date(watNow.getTime() - 24 * 60 * 60 * 1000));
+      const prevCI    = await Attendance.findOne({ company: sup.company, worker: worker._id, date: yesterday, type: 'clock_in' }).lean();
+      if (prevCI) dateStr = yesterday;
+    }
+  }
+
+  // Duplicate check
+  const existing = await Attendance.findOne({ company: sup.company, worker: worker._id, date: dateStr, type }).lean();
+  if (existing) {
+    if (type === 'clock_in' && existing.source === 'auto') {
+      await Attendance.deleteOne({ _id: existing._id });
+    } else {
+      const t = new Date(existing.timestamp).toLocaleTimeString('en-NG', {
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Africa/Lagos',
+      });
+      return res.status(400).json({
+        success: false, alreadyDone: true,
+        message: type === 'clock_in'
+          ? `${worker.fullName} already clocked in today at ${t}`
+          : `${worker.fullName} already clocked out today at ${t}`,
+      });
+    }
+  }
+
+  // Save attendance record
+  await Attendance.create({
+    company:        sup.company,
+    worker:         worker._id,
+    workerName:     worker.fullName,
+    workerRole:     worker.role,
+    branch:         worker.branchId,
+    branchName:     worker.branch || '',
+    type,
+    timestamp:      now,
+    date:           dateStr,
+    faceMatchScore: faceMatchScore || null,
+    faceVerified,
+    deviceVerified: false,
+    gpsVerified:    false,
+    status:         'partial',
+    failReasons:    [`Clocked via supervisor: ${sup.fullName}`],
+    source:         'supervisor',
+  });
+
+  // Auto-deductions — late / absent for clock_in
+  if (type === 'clock_in') {
+    try {
+      const populated = { ...worker, shiftId: worker.shiftId ? await Shift.findById(worker.shiftId).lean() : null };
+      if (worker.clockInRequired !== false && isWorkerOnDuty(populated, now)) {
+        const branch   = await Branch.findById(worker.branchId).lean();
+        const settings = getSettingsForRole(branch, worker.role);
+        if (settings) {
+          const clockH = watNow.getUTCHours(), clockM = watNow.getUTCMinutes();
+          const clockMins    = clockH * 60 + clockM;
+          const timeStr      = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
+          const attendDate   = new Date(dateStr + 'T00:00:00.000Z');
+          let deducted = false;
+          if (settings.absentThreshold && settings.absentDeductionAmount > 0) {
+            const [atH, atM] = settings.absentThreshold.split(':').map(Number);
+            if (clockMins >= atH * 60 + atM) {
+              await createAttendanceShortage({ company: sup.company, worker, branchId: worker.branchId, branchName: worker.branch || '', amount: settings.absentDeductionAmount, source: 'absent', reason: 'absent', attendanceDate: attendDate, notes: `Absent — arrived ${timeStr} via supervisor ${sup.fullName}` });
+              deducted = true;
+            }
+          }
+          if (!deducted && settings.clockInDeadline && settings.lateDeductionAmount > 0) {
+            const [dlH, dlM] = settings.clockInDeadline.split(':').map(Number);
+            if (clockMins > dlH * 60 + dlM) {
+              await createAttendanceShortage({ company: sup.company, worker, branchId: worker.branchId, branchName: worker.branch || '', amount: settings.lateDeductionAmount, source: 'late_arrival', reason: 'late_arrival', attendanceDate: attendDate, notes: `Late arrival ${timeStr} via supervisor ${sup.fullName}` });
+            }
+          }
+        }
+      }
+    } catch (e) { console.error('[SUP-CLOCK] late deduction error:', e.message); }
+  }
+
+  // Auto-deductions — early departure for clock_out
+  if (type === 'clock_out') {
+    try {
+      const populated = { ...worker, shiftId: worker.shiftId ? await Shift.findById(worker.shiftId).lean() : null };
+      if (isWorkerOnDuty(populated, now)) {
+        const branch   = await Branch.findById(worker.branchId).lean();
+        const settings = getSettingsForRole(branch, worker.role);
+        if (settings?.shiftEnd && settings.earlyDepartureDeductionAmount > 0) {
+          const clockH    = watNow.getUTCHours(), clockM = watNow.getUTCMinutes();
+          const clockMins = clockH * 60 + clockM;
+          const timeStr   = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
+          const [seH, seM] = settings.shiftEnd.split(':').map(Number);
+          if (clockMins < seH * 60 + seM) {
+            await createAttendanceShortage({ company: sup.company, worker, branchId: worker.branchId, branchName: worker.branch || '', amount: settings.earlyDepartureDeductionAmount, source: 'early_departure', reason: 'early_departure', attendanceDate: new Date(dateStr + 'T00:00:00.000Z'), notes: `Early departure ${timeStr} via supervisor ${sup.fullName}` });
+          }
+        }
+      }
+    } catch (e) { console.error('[SUP-CLOCK] early deduction error:', e.message); }
+  }
+
+  // Pump auto-assignment on clock_in (pump attendants only)
+  let pumpAssignment = null;
+  const isPumpAtt = /pump.?attendant|fuel.?attendant|station.?attendant|^attendant$/i.test(worker.role || '');
+  if (type === 'clock_in' && isPumpAtt) {
+    try {
+      const { autoAssignIsland, autoAssignPump } = require('../services/pumpService');
+      const params = { company: sup.company, branchId: worker.branchId, branchName: worker.branch || '', worker, date: dateStr, shiftName: '' };
+      pumpAssignment = await autoAssignIsland(params) || await autoAssignPump(params);
+      if (pumpAssignment?.island) {
+        await IslandMeterLog.findOneAndUpdate(
+          { company: sup.company, islandId: pumpAssignment.island, date: dateStr },
+          { $set: { workerId: worker._id, workerName: worker.fullName, pumpAssignmentId: pumpAssignment._id } },
+          { new: true }
+        );
+      }
+    } catch (e) { console.error('[SUP-CLOCK] pump assign error:', e.message); }
+  }
+
+  // Push notification (fire-and-forget)
+  setImmediate(async () => {
+    try {
+      const { sendPushToCompany } = require('./pushController');
+      const t = watNow.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true });
+      await sendPushToCompany(sup.company, {
+        title: type === 'clock_in' ? `🟢 ${worker.fullName} clocked in` : `🔴 ${worker.fullName} clocked out`,
+        body:  `${sup.branchId?.name || ''} · ${t} (via supervisor)`,
+        tag:   `attendance-${worker._id}-${type}`,
+        url:   '/admin-dashboard',
+      });
+    } catch {}
+  });
+
+  const timeStr = watNow.toLocaleTimeString('en-NG', {
+    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Africa/Lagos',
+  });
+  res.status(201).json({
+    success: true,
+    message: `${worker.fullName} ${type === 'clock_in' ? 'clocked in' : 'clocked out'} at ${timeStr}`,
+    data: {
+      workerName: worker.fullName,
+      type,
+      timestamp:  now,
+      timeStr,
+      faceVerified,
+      pumpAssignment: pumpAssignment
+        ? { islandName: pumpAssignment.islandName, assignedPumps: pumpAssignment.assignedPumps || [] }
+        : null,
+    },
+  });
+};
+
 module.exports = {
   getSupervisorDashboard,
   supervisorSaveMeter,
@@ -427,4 +644,5 @@ module.exports = {
   supervisorIslandStatus,
   supervisorReassign,
   supervisorPumpStatus,
+  supervisorClockWorker,
 };

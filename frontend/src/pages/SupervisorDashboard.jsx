@@ -1,6 +1,24 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Delete, Loader, X, ChevronDown, ChevronUp, AlertTriangle, Fuel, Wrench, CheckCircle, RefreshCw } from 'lucide-react';
 import axios from 'axios';
+import * as faceapi from '@vladmandic/face-api';
+
+const MODEL_URL       = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/model';
+const VERIFY_THRESHOLD = 0.58;
+const STABLE_FRAMES    = 3;
+let modelsLoaded = false;
+
+async function loadFaceModels(onProgress) {
+  if (modelsLoaded) return;
+  onProgress?.(10);
+  await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+  onProgress?.(50);
+  await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+  onProgress?.(80);
+  await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+  onProgress?.(100);
+  modelsLoaded = true;
+}
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -756,7 +774,322 @@ function OffenceModal({ workers, pin, defaultWorkerId, onClose, onSaved }) {
 }
 
 // ── Worker row (in workers tab) ────────────────────────────────────────────────
-function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign }) {
+// ── Clock-in / Clock-out modal ─────────────────────────────────────────────────
+function ClockModal({ worker, supervisorPin, skipPin, onSuccess, onClose }) {
+  const clockType = worker.todayStatus?.clockedIn ? 'clock_out' : 'clock_in';
+  const [step,      setStep     ] = useState(skipPin ? 'face' : 'pin');
+  const [workerPin, setWorkerPin] = useState(skipPin ? supervisorPin : '');
+  const [progress,  setProgress ] = useState(0);
+  const [liveScore, setLiveScore] = useState(null);
+  const [err,       setErr      ] = useState('');
+  const [result,    setResult   ] = useState(null);
+
+  const videoRef  = useRef(null);
+  const overlayRef = useRef(null);
+  const streamRef  = useRef(null);
+  const loopRef    = useRef(null);
+  const stableRef  = useRef(0);
+  const pinRef     = useRef(skipPin ? supervisorPin : '');  // always-current pin for closure
+
+  const stopCamera = useCallback(() => {
+    cancelAnimationFrame(loopRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  useEffect(() => () => stopCamera(), [stopCamera]);
+
+  // Start camera when entering face step (only if worker has face)
+  useEffect(() => {
+    if (step !== 'face' || !worker.hasFace) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadFaceModels(p => { if (!cancelled) setProgress(p); });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+      } catch (e) {
+        if (!cancelled) { setErr('Camera error: ' + (e.message || e)); setStep('error'); }
+      }
+    })();
+    return () => { cancelled = true; stopCamera(); };
+  }, [step, worker.hasFace, stopCamera]);
+
+  // Face detection loop
+  useEffect(() => {
+    if (step !== 'face' || !worker.hasFace || !worker.faceDescriptor?.length) return;
+    const refDesc = new Float32Array(worker.faceDescriptor);
+    const loop = async () => {
+      const video = videoRef.current, overlay = overlayRef.current;
+      if (!video || !overlay || video.readyState < 2) {
+        loopRef.current = requestAnimationFrame(loop); return;
+      }
+      try {
+        const det = await faceapi
+          .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+          .withFaceLandmarks().withFaceDescriptor();
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+        if (det) {
+          const dist  = faceapi.euclideanDistance(refDesc, det.descriptor);
+          const score = Math.round(Math.max(0, Math.min(100, (1 - dist) * 145)));
+          setLiveScore(score);
+          const matched = dist < VERIFY_THRESHOLD;
+          ctx.strokeStyle = matched ? '#22c55e' : dist < 0.65 ? '#f59e0b' : '#ef4444';
+          ctx.lineWidth = 3;
+          const b = det.detection.box;
+          ctx.strokeRect(b.x, b.y, b.width, b.height);
+          if (matched) {
+            stableRef.current++;
+            if (stableRef.current >= STABLE_FRAMES) { stopCamera(); doSubmit(score); return; }
+          } else stableRef.current = 0;
+        } else { setLiveScore(null); stableRef.current = 0; }
+      } catch {}
+      loopRef.current = requestAnimationFrame(loop);
+    };
+    loopRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(loopRef.current);
+  }, [step, worker.hasFace, worker.faceDescriptor, stopCamera]);
+
+  const doSubmit = async (faceMatchScore = null, pinOverride = null) => {
+    setStep('submitting');
+    try {
+      const res = await axios.post(`${BASE}/supervisor/clock-worker`, {
+        pin:           supervisorPin,
+        workerId:      worker._id,
+        workerPin:     pinOverride ?? pinRef.current,
+        type:          clockType,
+        faceMatchScore,
+      });
+      setResult(res.data);
+      setStep('success');
+      onSuccess?.(worker._id, clockType);
+    } catch (e) {
+      const msg = e.response?.data?.message || 'Clock failed — try again';
+      setErr(msg);
+      setStep(e.response?.data?.alreadyDone ? 'already' : 'error');
+    }
+  };
+
+  const handlePinKey = (key) => {
+    if (workerPin.length >= 4) return;
+    const next = workerPin + key;
+    pinRef.current = next;
+    setWorkerPin(next);
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (worker.hasFace) setStep('face');
+        else doSubmit(null, next);
+      }, 200);
+    }
+  };
+
+  const typeCls   = clockType === 'clock_in' ? 'text-green-700' : 'text-red-600';
+  const typeBg    = clockType === 'clock_in' ? 'bg-green-600'   : 'bg-red-500';
+  const typeLabel = clockType === 'clock_in' ? 'Clock In'        : 'Clock Out';
+
+  const KEYS = [['1','2','3'],['4','5','6'],['7','8','9'],[null,'0','del']];
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            {worker.photo
+              ? <img src={worker.photo} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+              : <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                  <span className="text-indigo-600 font-bold text-sm">{worker.fullName[0]}</span>
+                </div>
+            }
+            <div>
+              <p className="font-bold text-gray-800 text-sm leading-tight">{worker.fullName}</p>
+              <p className={`text-xs font-semibold ${typeCls}`}>{typeLabel}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* ── PIN STEP ── */}
+          {step === 'pin' && (
+            <div>
+              <p className="text-center text-sm text-gray-500 mb-5">
+                Ask <strong>{worker.fullName.split(' ')[0]}</strong> to enter their PIN
+              </p>
+              <div className="flex justify-center gap-4 mb-6">
+                {[0,1,2,3].map(i => (
+                  <div key={i} className={`w-5 h-5 rounded-full border-2 transition-all ${
+                    workerPin.length > i ? 'bg-indigo-600 border-indigo-600 scale-110' : 'border-gray-300'
+                  }`} />
+                ))}
+              </div>
+              <div className="space-y-3">
+                {KEYS.map((row, ri) => (
+                  <div key={ri} className="grid grid-cols-3 gap-3">
+                    {row.map((key, ki) => {
+                      if (key === null) return <div key={ki} />;
+                      if (key === 'del') return (
+                        <button key={ki}
+                          onClick={() => { const n = workerPin.slice(0,-1); pinRef.current = n; setWorkerPin(n); }}
+                          className="h-14 rounded-2xl bg-gray-100 hover:bg-gray-200 active:scale-95 flex items-center justify-center transition-all">
+                          <Delete size={20} className="text-gray-600" />
+                        </button>
+                      );
+                      return (
+                        <button key={ki} onClick={() => handlePinKey(key)} disabled={workerPin.length >= 4}
+                          className="h-14 rounded-2xl bg-gray-50 border border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 active:scale-95 transition-all flex items-center justify-center text-2xl font-bold text-gray-800 disabled:opacity-40 select-none">
+                          {key}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── FACE STEP ── */}
+          {step === 'face' && (
+            <div className="space-y-4">
+              {!worker.hasFace ? (
+                <div className="text-center py-10">
+                  <p className="text-5xl mb-3">👤</p>
+                  <p className="font-semibold text-gray-700">No face registered</p>
+                  <p className="text-sm text-gray-400 mt-1 mb-6">PIN verified — tap to confirm</p>
+                  <button onClick={() => doSubmit(null)}
+                    className={`w-full py-4 rounded-2xl text-white font-bold text-base ${typeBg}`}>
+                    Confirm {typeLabel}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-center text-sm text-gray-500">
+                    {worker.fullName.split(' ')[0]}, look at the camera
+                  </p>
+                  <div className="relative rounded-2xl overflow-hidden bg-black mx-auto"
+                       style={{ width: '100%', maxWidth: 280, aspectRatio: '1 / 1' }}>
+                    <video ref={videoRef} muted playsInline autoPlay
+                      className="w-full h-full object-cover scale-x-[-1]" />
+                    <canvas ref={overlayRef}
+                      className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none" />
+                    {progress < 100 && (
+                      <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-2 text-white">
+                        <Loader size={24} className="animate-spin" />
+                        <p className="text-sm">Loading… {progress}%</p>
+                      </div>
+                    )}
+                  </div>
+                  {liveScore != null && (
+                    <div className="flex items-center gap-2 max-w-xs mx-auto">
+                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div style={{ width: `${liveScore}%` }}
+                          className={`h-full rounded-full transition-all ${
+                            liveScore >= 70 ? 'bg-green-500' : liveScore >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                          }`} />
+                      </div>
+                      <span className={`text-xs font-bold w-8 ${
+                        liveScore >= 70 ? 'text-green-600' : liveScore >= 50 ? 'text-amber-500' : 'text-red-500'
+                      }`}>{liveScore}%</span>
+                    </div>
+                  )}
+                  {liveScore == null && progress >= 100 && (
+                    <p className="text-center text-xs text-gray-400">Position face in frame…</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── SUBMITTING ── */}
+          {step === 'submitting' && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <Loader size={36} className="animate-spin text-indigo-600" />
+              <p className="text-sm text-gray-500 font-medium">Recording {typeLabel.toLowerCase()}…</p>
+            </div>
+          )}
+
+          {/* ── SUCCESS ── */}
+          {step === 'success' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle size={32} className="text-green-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-800">
+                {clockType === 'clock_in' ? 'Clocked In!' : 'Clocked Out!'}
+              </p>
+              <p className="text-gray-500 text-sm mt-1">{worker.fullName}</p>
+              {result?.data?.timeStr && (
+                <p className="text-indigo-600 font-black text-2xl mt-2">{result.data.timeStr}</p>
+              )}
+              {result?.data?.pumpAssignment?.islandName && (
+                <div className="mt-4 bg-indigo-50 rounded-2xl px-4 py-3 text-left">
+                  <p className="text-xs font-semibold text-indigo-500 mb-1">⛽ Assigned To</p>
+                  <p className="text-sm font-bold text-indigo-800">{result.data.pumpAssignment.islandName}</p>
+                </div>
+              )}
+              <button onClick={onClose}
+                className="mt-6 w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl active:scale-95">
+                Done
+              </button>
+            </div>
+          )}
+
+          {/* ── ALREADY DONE ── */}
+          {step === 'already' && (
+            <div className="text-center py-10">
+              <p className="text-4xl mb-3">ℹ️</p>
+              <p className="font-semibold text-gray-700 mb-1">Already Recorded</p>
+              <p className="text-sm text-gray-500 mb-6">{err}</p>
+              <button onClick={onClose} className="w-full bg-gray-100 text-gray-600 font-bold py-3.5 rounded-2xl">Close</button>
+            </div>
+          )}
+
+          {/* ── ERROR ── */}
+          {step === 'error' && (
+            <div className="text-center py-8">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <X size={26} className="text-red-500" />
+              </div>
+              <p className="font-bold text-gray-700 mb-1">Failed</p>
+              <p className="text-sm text-gray-500 mb-6">{err}</p>
+              <div className="flex gap-3">
+                <button onClick={onClose} className="flex-1 py-3.5 rounded-2xl bg-gray-100 text-gray-600 font-semibold">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setErr(''); setLiveScore(null); stableRef.current = 0;
+                    if (skipPin) { pinRef.current = supervisorPin; setWorkerPin(supervisorPin); setStep('face'); }
+                    else { pinRef.current = ''; setWorkerPin(''); setStep('pin'); }
+                  }}
+                  className="flex-1 py-3.5 rounded-2xl bg-indigo-600 text-white font-semibold">
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign, onClock }) {
+  const { clockedIn, clockedOut } = worker.todayStatus || {};
+  const clockLabel = clockedIn ? (clockedOut ? 'Clock out done' : 'Clock Out') : 'Clock In';
+  const clockBg    = clockedIn ? (clockedOut ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-600')
+                               : 'bg-green-50 text-green-600';
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3 flex items-center gap-3">
       {worker.photo ? (
@@ -768,9 +1101,21 @@ function WorkerRow({ worker, islands, pin, onShortage, onOffence, onReassign }) 
       )}
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-gray-800 text-sm truncate">{worker.fullName}</p>
-        <p className="text-xs text-gray-500">{worker.island?.islandName || 'Unassigned'}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${clockedIn ? 'text-green-600' : 'text-gray-400'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${clockedIn ? 'bg-green-500' : 'bg-gray-300'}`} />
+            {clockedIn ? 'In' : 'Out'}
+          </span>
+          <span className="text-gray-300">·</span>
+          <p className="text-xs text-gray-500 truncate">{worker.island?.islandName || 'Unassigned'}</p>
+        </div>
       </div>
       <div className="flex gap-2 shrink-0">
+        <button onClick={() => onClock(worker)} disabled={clockedIn && clockedOut}
+          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold active:scale-95 transition-all ${clockBg} disabled:cursor-not-allowed`}
+          title={clockLabel}>
+          {clockedIn && clockedOut ? '✓' : clockedIn ? '🔴 Out' : '🟢 In'}
+        </button>
         <button onClick={() => onShortage(worker)}
           className="p-2 bg-orange-50 text-orange-600 rounded-xl text-xs active:scale-95 transition-transform"
           title="Book Shortage">
@@ -812,6 +1157,43 @@ export default function SupervisorDashboard() {
   const [shortageFor, setShortageFor]   = useState(null);  // worker object
   const [offenceFor,  setOffenceFor]    = useState(null);  // worker object
   const [reassignFor, setReassignFor]   = useState(null);  // worker object
+  const [clockFor,    setClockFor]      = useState(null);  // worker object | 'self'
+
+  const handleClockSuccess = useCallback((workerId, type) => {
+    setData(prev => {
+      if (!prev) return prev;
+      // Update workers list
+      const updatedWorkers = (prev.workers || []).map(w => {
+        if (w._id !== workerId) return w;
+        const ts = w.todayStatus || {};
+        return {
+          ...w,
+          todayStatus: {
+            ...ts,
+            clockedIn:  type === 'clock_in'  ? true  : ts.clockedIn,
+            clockedOut: type === 'clock_out' ? true  : ts.clockedOut,
+          },
+        };
+      });
+      // Update supervisor todayStatus if clocking self
+      const sup = prev.supervisor;
+      if (sup && (sup._id === workerId || workerId === 'self')) {
+        return {
+          ...prev,
+          workers: updatedWorkers,
+          supervisor: {
+            ...sup,
+            todayStatus: {
+              ...(sup.todayStatus || {}),
+              clockedIn:  type === 'clock_in'  ? true  : sup.todayStatus?.clockedIn,
+              clockedOut: type === 'clock_out' ? true  : sup.todayStatus?.clockedOut,
+            },
+          },
+        };
+      }
+      return { ...prev, workers: updatedWorkers };
+    });
+  }, []);
 
   const fetchDashboard = useCallback(async (p) => {
     try {
@@ -989,6 +1371,44 @@ export default function SupervisorDashboard() {
 
         {tab === 'workers' && (
           <>
+            {/* Supervisor self-clock card */}
+            {(() => {
+              const supStatus = supervisor.todayStatus || {};
+              const supClockLabel = supStatus.clockedIn
+                ? (supStatus.clockedOut ? 'Clocked Out' : 'Clock Out')
+                : 'Clock In';
+              const supClockBg = supStatus.clockedIn
+                ? (supStatus.clockedOut ? 'bg-gray-200 text-gray-500' : 'bg-red-600 text-white')
+                : 'bg-green-600 text-white';
+              return (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 flex items-center gap-3">
+                  {supervisor.photo
+                    ? <img src={supervisor.photo} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                    : <div className="w-10 h-10 rounded-full bg-indigo-200 flex items-center justify-center shrink-0">
+                        <span className="text-indigo-700 font-bold text-sm">{supervisor.fullName.charAt(0)}</span>
+                      </div>
+                  }
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-indigo-800 text-sm truncate">{supervisor.fullName}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium ${supStatus.clockedIn ? 'text-green-600' : 'text-gray-400'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${supStatus.clockedIn ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        {supStatus.clockedIn ? 'Clocked in' : 'Not clocked in'}
+                      </span>
+                      <span className="text-indigo-200">·</span>
+                      <span className="text-xs text-indigo-500 font-medium">You</span>
+                    </div>
+                  </div>
+                  <button
+                    disabled={supStatus.clockedIn && supStatus.clockedOut}
+                    onClick={() => setClockFor('self')}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all ${supClockBg} disabled:cursor-not-allowed`}>
+                    {supStatus.clockedIn && supStatus.clockedOut ? '✓ Done' : supClockLabel}
+                  </button>
+                </div>
+              );
+            })()}
+
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
                 {workers.length} worker{workers.length !== 1 ? 's' : ''} in your shift
@@ -1019,6 +1439,7 @@ export default function SupervisorDashboard() {
                 onShortage={setShortageFor}
                 onOffence={setOffenceFor}
                 onReassign={setReassignFor}
+                onClock={setClockFor}
               />
             ))}
           </>
@@ -1194,6 +1615,34 @@ export default function SupervisorDashboard() {
           onSaved={() => { setReassignFor(null); handleReassignSaved(); }}
         />
       )}
+
+      {/* Clock-in / clock-out modal */}
+      {clockFor && (() => {
+        const isSelf = clockFor === 'self';
+        const workerObj = isSelf
+          ? {
+              _id:         supervisor._id || 'self',
+              fullName:    supervisor.fullName,
+              photo:       supervisor.photo,
+              hasFace:     supervisor.hasFace,
+              faceDescriptor: supervisor.faceDescriptor,
+              todayStatus: supervisor.todayStatus,
+              island:      null,
+            }
+          : clockFor;
+        return (
+          <ClockModal
+            worker={workerObj}
+            supervisorPin={pin}
+            skipPin={isSelf}
+            onSuccess={(wid, type) => {
+              handleClockSuccess(wid, type);
+              setTimeout(() => setClockFor(null), 1800);
+            }}
+            onClose={() => setClockFor(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
