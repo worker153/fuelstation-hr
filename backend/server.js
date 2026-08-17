@@ -35,6 +35,7 @@ const pumpRotationRoutes       = require('./routes/pumpRotation');
 const meterLogRoutes           = require('./routes/meterLogs');
 const salaryStructureRoutes    = require('./routes/salaryStructures');
 const reportRoutes             = require('./routes/reports');
+const supervisorRoutes         = require('./routes/supervisor');
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use('/api/pump-rotation-groups', pumpRotationRoutes);
 app.use('/api/meter-logs',           meterLogRoutes);
 app.use('/api/salary-structures',    salaryStructureRoutes);
 app.use('/api/reports',              reportRoutes);
+app.use('/api/supervisor',           supervisorRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'FuelStation HR API is running' });

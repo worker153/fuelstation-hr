@@ -25,7 +25,8 @@ import Expenses            from './pages/Expenses';
 import PdfMaker            from './pages/PdfMaker';
 import PdfMakerPublic     from './pages/PdfMakerPublic';
 import WorkerShortage      from './pages/WorkerShortage';
-import WorkerDashboard     from './pages/WorkerDashboard';
+import WorkerDashboard        from './pages/WorkerDashboard';
+import SupervisorDashboard    from './pages/SupervisorDashboard';
 import AttendanceDevices   from './pages/AttendanceDevices';
 import AttendanceTerminal  from './pages/AttendanceTerminal';
 import WorkerPortal        from './pages/WorkerPortal';
@@ -127,7 +128,8 @@ export default function App() {
             <Route path="/policy"          element={<StaffPolicy />} />
             <Route path="/worker-handbook" element={<WorkerHandbook />} />
             <Route path="/ops"             element={<PrivateRoute><OpsView /></PrivateRoute>} />
-            <Route path="/my-dashboard"    element={<WorkerDashboard />} />
+            <Route path="/my-dashboard"         element={<WorkerDashboard />} />
+            <Route path="/supervisor-dashboard" element={<SupervisorDashboard />} />
             <Route path="/terminal" element={<AttendanceTerminal />} />
             <Route path="/worker"   element={<WorkerPortal />} />
             <Route path="/my-pin"   element={<WorkerPinReset />} />

@@ -39,7 +39,8 @@ export default function Sidebar({ onClose }) {
         { to: '/shortages',  icon: AlertTriangle,  label: 'Shortages',   show: isSuperAdmin() || can('manageBranches') || can('submitShortages') },
         { to: '/expenses',   icon: ShoppingCart,   label: 'Expenses',    show: isSuperAdmin() || can('manageBranches') },
         { to: '/offences',          icon: AlertOctagon, label: 'Disciplinary',       show: isSuperAdmin() || can('bookOffences') },
-        { to: '/staff-performance', icon: BarChart2,    label: 'Staff Performance',  show: isSuperAdmin() || can('manageBranches') },
+        { to: '/staff-performance',      icon: BarChart2,     label: 'Staff Performance',      show: isSuperAdmin() || can('manageBranches') },
+        { to: '/supervisor-dashboard',   icon: ClipboardList, label: 'Supervisor Dashboard',   show: isSuperAdmin() || can('manageBranches') },
       ],
     },
     {
