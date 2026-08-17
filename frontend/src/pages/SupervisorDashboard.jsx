@@ -1706,9 +1706,14 @@ export default function SupervisorDashboard() {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <span className="text-3xl">⛽</span>
+              <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-white" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 22V8l7-6 7 6v14" />
+                <path d="M9 22V14h6v8" />
+                <path d="M17 8h2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" />
+                <path d="M21 12h-4" />
+              </svg>
             </div>
-            <h1 className="text-2xl font-black text-gray-800">Sage Energy</h1>
+            <h1 className="text-2xl font-black text-gray-800">Fuelstation HR</h1>
             <p className="text-gray-500 text-sm mt-1">Who are you logging in as?</p>
           </div>
 
@@ -1717,7 +1722,11 @@ export default function SupervisorDashboard() {
               onClick={() => setRole('supervisor')}
               className="w-full bg-indigo-600 text-white rounded-2xl px-5 py-5 flex items-center gap-4 shadow-md active:scale-95 transition-all">
               <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
-                <span className="text-2xl">🧑‍💼</span>
+                <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-white" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="7" r="4" />
+                  <path d="M5.5 21a7 7 0 0 1 13 0" />
+                  <path d="M15 11l2 2 4-4" />
+                </svg>
               </div>
               <div className="text-left">
                 <p className="font-bold text-base">Supervisor</p>
@@ -1729,8 +1738,11 @@ export default function SupervisorDashboard() {
             <button
               onClick={() => window.location.href = '/my-dashboard'}
               className="w-full bg-white text-gray-800 rounded-2xl px-5 py-5 flex items-center gap-4 shadow-sm border border-gray-200 active:scale-95 transition-all">
-              <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
-                <span className="text-2xl">👷</span>
+              <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-indigo-600" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="7" r="4" />
+                  <path d="M5.5 21a7 7 0 0 1 13 0" />
+                </svg>
               </div>
               <div className="text-left">
                 <p className="font-bold text-base">Pump Worker</p>
