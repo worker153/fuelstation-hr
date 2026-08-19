@@ -42,10 +42,16 @@ function calcLitres(pumps = []) {
     const n2 = p.nozzle2 || {};
     const n1L = (n1.opening != null && n1.closing != null) ? Math.max(0, n1.closing - n1.opening) : null;
     const n2L = (n2.opening != null && n2.closing != null) ? Math.max(0, n2.closing - n2.opening) : null;
-    const pumpTotal = (n1L != null || n2L != null) ? (n1L || 0) + (n2L || 0) : null;
+    // Use only the primary meter (outer=nozzle1, inner=nozzle2) for the total.
+    // Outer and inner are two separate physical meters on the same pump — not two nozzles.
+    const useInner  = (p.primaryMeter || 'outer') === 'inner';
+    const pumpTotal = useInner
+      ? (n2L != null ? n2L : null)
+      : (n1L != null ? n1L : null);
     if (pumpTotal != null) { total += pumpTotal; anyReading = true; }
     return {
       ...p,
+      primaryMeter: p.primaryMeter || 'outer',
       nozzle1: { ...n1, litresSold: n1L },
       nozzle2: { ...n2, litresSold: n2L },
       totalLitres: pumpTotal,
@@ -250,10 +256,11 @@ const supervisorSaveMeter = async (req, res) => {
     const n2Open  = p.nozzle2Opening  != null ? Number(p.nozzle2Opening)  : (ex.nozzle2?.opening  ?? null);
     const n2Close = p.nozzle2Closing  != null ? Number(p.nozzle2Closing)  : (ex.nozzle2?.closing  ?? null);
     return {
-      pumpId:      p.pumpId      || ex.pumpId,
-      pumpNumber:  p.pumpNumber  || ex.pumpNumber,
-      pumpName:    p.pumpName    || ex.pumpName,
-      productType: p.productType || ex.productType,
+      pumpId:       p.pumpId       || ex.pumpId,
+      pumpNumber:   p.pumpNumber   || ex.pumpNumber,
+      pumpName:     p.pumpName     || ex.pumpName,
+      productType:  p.productType  || ex.productType,
+      primaryMeter: p.primaryMeter || ex.primaryMeter || 'outer',
       nozzle1: { opening: n1Open, closing: n1Close },
       nozzle2: { opening: n2Open, closing: n2Close },
     };
@@ -261,9 +268,11 @@ const supervisorSaveMeter = async (req, res) => {
 
   const { pumps: computed, totalLitres } = calcLitres(mergedPumps);
 
-  // Determine if log is now fully closed
+  // Determine if log is now fully closed — only the primary meter needs a closing reading
   const allClosed = computed.every(p =>
-    p.nozzle1?.closing != null && p.nozzle2?.closing != null
+    (p.primaryMeter || 'outer') === 'inner'
+      ? p.nozzle2?.closing != null
+      : p.nozzle1?.closing != null
   );
 
   const assign = await PumpAssignment.findOne({

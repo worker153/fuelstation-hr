@@ -8,13 +8,14 @@ const nozzleSchema = new Schema({
 }, { _id: false });
 
 const pumpMeterSchema = new Schema({
-  pumpId:      { type: Schema.Types.ObjectId, ref: 'Pump' },
-  pumpNumber:  { type: Number },
-  pumpName:    { type: String },
-  productType: { type: String },
-  nozzle1:     { type: nozzleSchema, default: () => ({}) },
-  nozzle2:     { type: nozzleSchema, default: () => ({}) },
-  totalLitres: { type: Number, default: null }, // nozzle1 + nozzle2 sales
+  pumpId:        { type: Schema.Types.ObjectId, ref: 'Pump' },
+  pumpNumber:    { type: Number },
+  pumpName:      { type: String },
+  productType:   { type: String },
+  primaryMeter:  { type: String, enum: ['outer', 'inner'], default: 'outer' }, // which meter is used to calculate litres sold
+  nozzle1:       { type: nozzleSchema, default: () => ({}) }, // outer meter
+  nozzle2:       { type: nozzleSchema, default: () => ({}) }, // inner meter
+  totalLitres:   { type: Number, default: null }, // closing - opening of primaryMeter
 }, { _id: false });
 
 const islandMeterLogSchema = new Schema({

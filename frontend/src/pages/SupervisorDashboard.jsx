@@ -175,10 +175,11 @@ function MeterModal({ island, pin, onClose, onSaved }) {
       const key = String(p.pumpId || p.pumpNumber);
       const ex  = existingMap[key] || {};
       init[key] = {
-        n1Open:  ex.nozzle1?.opening  ?? '',
-        n1Close: ex.nozzle1?.closing  ?? '',
-        n2Open:  ex.nozzle2?.opening  ?? '',
-        n2Close: ex.nozzle2?.closing  ?? '',
+        n1Open:       ex.nozzle1?.opening  ?? '',
+        n1Close:      ex.nozzle1?.closing  ?? '',
+        n2Open:       ex.nozzle2?.opening  ?? '',
+        n2Close:      ex.nozzle2?.closing  ?? '',
+        primaryMeter: ex.primaryMeter || 'outer',
       };
     });
     return init;
@@ -197,14 +198,15 @@ function MeterModal({ island, pin, onClose, onSaved }) {
         const key = String(p.pumpId || p.pumpNumber);
         const v   = values[key] || {};
         return {
-          pumpId:        p.pumpId,
-          pumpNumber:    p.pumpNumber,
-          pumpName:      p.pumpName,
-          productType:   p.productType,
-          nozzle1Opening:  v.n1Open  !== '' ? Number(v.n1Open)  : null,
-          nozzle1Closing:  v.n1Close !== '' ? Number(v.n1Close) : null,
-          nozzle2Opening:  v.n2Open  !== '' ? Number(v.n2Open)  : null,
-          nozzle2Closing:  v.n2Close !== '' ? Number(v.n2Close) : null,
+          pumpId:         p.pumpId,
+          pumpNumber:     p.pumpNumber,
+          pumpName:       p.pumpName,
+          productType:    p.productType,
+          primaryMeter:   v.primaryMeter || 'outer',
+          nozzle1Opening: v.n1Open  !== '' ? Number(v.n1Open)  : null,
+          nozzle1Closing: v.n1Close !== '' ? Number(v.n1Close) : null,
+          nozzle2Opening: v.n2Open  !== '' ? Number(v.n2Open)  : null,
+          nozzle2Closing: v.n2Close !== '' ? Number(v.n2Close) : null,
         };
       });
       const res = await axios.post(`${BASE}/supervisor/meter`, {
@@ -223,11 +225,28 @@ function MeterModal({ island, pin, onClose, onSaved }) {
     <ModalSheet title={`Meters — ${island.islandName}`} onClose={onClose}>
       <div className="space-y-5">
         {pumps.map(p => {
-          const key = String(p.pumpId || p.pumpNumber);
-          const v   = values[key] || {};
+          const key     = String(p.pumpId || p.pumpNumber);
+          const v       = values[key] || {};
+          const primary = v.primaryMeter || 'outer';
+          const n1L = v.n1Close !== '' && v.n1Open !== '' ? Math.max(0, Number(v.n1Close) - Number(v.n1Open)) : null;
+          const n2L = v.n2Close !== '' && v.n2Open !== '' ? Math.max(0, Number(v.n2Close) - Number(v.n2Open)) : null;
+          const total = primary === 'inner' ? n2L : n1L;
           return (
             <div key={key} className="bg-gray-50 rounded-2xl p-4">
-              <p className="font-semibold text-gray-700 text-sm mb-3">{p.pumpName || `Pump ${p.pumpNumber}`}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold text-gray-700 text-sm">{p.pumpName || `Pump ${p.pumpNumber}`}</p>
+                <div className="flex rounded-lg overflow-hidden border border-gray-200 text-[10px] font-bold">
+                  {['outer', 'inner'].map(opt => (
+                    <button key={opt} type="button"
+                      onClick={() => set(key, 'primaryMeter', opt)}
+                      className={`px-2.5 py-1 transition-colors ${
+                        primary === opt ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500'
+                      }`}>
+                      {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { label: 'Outer Opening', field: 'n1Open',  color: 'blue' },
@@ -248,19 +267,12 @@ function MeterModal({ island, pin, onClose, onSaved }) {
                   </div>
                 ))}
               </div>
-              {/* Live litres preview */}
-              {(() => {
-                const n1 = v.n1Close !== '' && v.n1Open !== '' ? Math.max(0, Number(v.n1Close) - Number(v.n1Open)) : null;
-                const n2 = v.n2Close !== '' && v.n2Open !== '' ? Math.max(0, Number(v.n2Close) - Number(v.n2Open)) : null;
-                const total = n1 != null || n2 != null ? (n1 || 0) + (n2 || 0) : null;
-                if (total == null) return null;
-                return (
-                  <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Litres sold</span>
-                    <span className="text-sm font-bold text-green-600">{fmtL(total)}</span>
-                  </div>
-                );
-              })()}
+              {total != null && (
+                <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Litres sold ({primary} meter)</span>
+                  <span className="text-sm font-bold text-green-600">{fmtL(total)}</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -639,7 +651,7 @@ function PlaceModal({ worker, islands, pin, onClose, onSaved }) {
 
 // ── Dedicated Meters tab ───────────────────────────────────────────────────────
 function MeterEntryTab({ islands, pin, onSaved }) {
-  // keyed by islandId: { [pumpKey]: { n1Open, n1Close, n2Open, n2Close } }
+  // keyed by islandId: { [pumpKey]: { n1Open, n1Close, n2Open, n2Close, primaryMeter } }
   const [values,  setValues ] = useState(() => {
     const init = {};
     islands.forEach(isl => {
@@ -649,10 +661,11 @@ function MeterEntryTab({ islands, pin, onSaved }) {
         const key = String(p.pumpId || p.pumpNumber);
         const ex  = (isl.log?.pumps || []).find(lp => String(lp.pumpId || lp.pumpNumber) === key) || {};
         init[isl.islandId][key] = {
-          n1Open:  ex.nozzle1?.opening  ?? '',
-          n1Close: ex.nozzle1?.closing  ?? '',
-          n2Open:  ex.nozzle2?.opening  ?? '',
-          n2Close: ex.nozzle2?.closing  ?? '',
+          n1Open:       ex.nozzle1?.opening  ?? '',
+          n1Close:      ex.nozzle1?.closing  ?? '',
+          n2Open:       ex.nozzle2?.opening  ?? '',
+          n2Close:      ex.nozzle2?.closing  ?? '',
+          primaryMeter: ex.primaryMeter || 'outer',
         };
       });
     });
@@ -688,6 +701,7 @@ function MeterEntryTab({ islands, pin, onSaved }) {
           pumpNumber:     p.pumpNumber,
           pumpName:       p.pumpName,
           productType:    p.productType,
+          primaryMeter:   v.primaryMeter || 'outer',
           nozzle1Opening: v.n1Open  !== '' ? Number(v.n1Open)  : null,
           nozzle1Closing: v.n1Close !== '' ? Number(v.n1Close) : null,
           nozzle2Opening: v.n2Open  !== '' ? Number(v.n2Open)  : null,
@@ -769,14 +783,15 @@ function MeterEntryTab({ islands, pin, onSaved }) {
                 ) : pumps.map(p => {
                   const key = String(p.pumpId || p.pumpNumber);
                   const v   = values[id]?.[key] || {};
+                  const primary = v.primaryMeter || 'outer';
                   const n1L = v.n1Close !== '' && v.n1Open !== '' ? Math.max(0, Number(v.n1Close) - Number(v.n1Open)) : null;
                   const n2L = v.n2Close !== '' && v.n2Open !== '' ? Math.max(0, Number(v.n2Close) - Number(v.n2Open)) : null;
-                  const total = n1L != null || n2L != null ? (n1L || 0) + (n2L || 0) : null;
+                  const total = primary === 'inner' ? n2L : n1L;
 
                   return (
                     <div key={key} className="mt-3">
                       {/* Pump header */}
-                      <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-2 mb-2">
                         <div className="w-7 h-7 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
                           <Gauge size={13} className="text-gray-500" />
                         </div>
@@ -791,6 +806,23 @@ function MeterEntryTab({ islands, pin, onSaved }) {
                             {fmtL(total)}
                           </span>
                         )}
+                      </div>
+                      {/* Primary meter toggle */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <p className="text-[10px] text-gray-400 font-medium">Calculate using:</p>
+                        <div className="flex rounded-lg overflow-hidden border border-gray-200 text-[10px] font-bold">
+                          {['outer', 'inner'].map(opt => (
+                            <button key={opt} type="button"
+                              onClick={() => setVal(id, key, 'primaryMeter', opt)}
+                              className={`px-2.5 py-1 transition-colors ${
+                                primary === opt
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-white text-gray-500 hover:bg-gray-50'
+                              }`}>
+                              {opt.charAt(0).toUpperCase() + opt.slice(1)} meter
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
                       {/* 2-column: Outer | Inner */}
